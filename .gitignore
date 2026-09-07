@@ -10,3 +10,5 @@ coverage/
 *.tsbuildinfo
 validation-results.json
 .postinstall.log
+.pi/
+__pycache__/

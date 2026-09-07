@@ -1,5 +1,6 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Catalog } from "./domain/catalog.js";
+import { MobileAccount } from "./domain/mobile-account.js";
 import { Pickup } from "./domain/pickup.js";
 import { Reviews } from "./domain/reviews.js";
 import { AlzaBrowser } from "./infra/browser.js";
@@ -12,9 +13,12 @@ import { createGetProductTool } from "./tools/get-product.js";
 import { createGetProductReviewsTool } from "./tools/get-product-reviews.js";
 import { createListCategoriesTool } from "./tools/list-categories.js";
 import { createSearchProductsTool } from "./tools/search-products.js";
+import { createAccountTools } from "./tools/account.js";
+import { createAdvancedTools } from "./tools/advanced.js";
+import { MobileApi } from "./infra/mobile-api.js";
 import type { ToolResult } from "./tools/types.js";
 
-const VERSION = "0.1.2";
+const VERSION = "0.3.0";
 
 export interface BuildOptions {
   baseUrl?: string;
@@ -32,7 +36,8 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
   const catalog = new Catalog(browser);
   const reviews = new Reviews(browser, catalog);
   const pickup = new Pickup(browser.locale);
-  const deps = { catalog, reviews, pickup };
+  const mobileAccount = new MobileAccount(new MobileApi({ baseUrl: opts.baseUrl }));
+  const deps = { catalog, reviews, pickup, mobileAccount };
 
   const server = new McpServer(
     { name: "alza-mcp", title: "Alza (unofficial)", version: VERSION },
@@ -43,10 +48,13 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
         prompts: {},
       },
       instructions:
-        "Read-only catalog browser for Alza.cz, the Czech/CEE e-commerce retailer. " +
+        "Alza.cz catalog and user-controlled shopping assistant. " +
         "Unofficial — not affiliated with or endorsed by Alza.cz a.s. " +
         "Use search_products to find items, get_product for full detail, " +
-        "get_product_reviews for ratings, find_pickup_points for nearby AlzaShop locations.",
+        "get_product_reviews for ratings, find_pickup_points for nearby AlzaShop locations. " +
+        "Account, checkout, profile, and payment tools use the Alza mobile REST API with OAuth PKCE; credentials are never collected by the MCP. " +
+        "Order submission requires a checkout preview token and explicit user confirmation. " +
+        "High-impact mutations (payment, registration, address, review, subscription, attachment) require a one-time token from alza_prepare_mutation.",
     }
   );
 
@@ -66,6 +74,8 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
     createGetProductReviewsTool(deps),
     createFindPickupPointsTool(deps),
     createListCategoriesTool(deps),
+    ...createAccountTools(deps),
+    ...createAdvancedTools(deps),
   ]) {
     tool.register(server, errorWrap);
   }
