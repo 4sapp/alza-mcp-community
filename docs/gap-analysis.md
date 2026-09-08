@@ -121,8 +121,8 @@ is the working execution path in the meantime.
 - **W16 Order2→3 trigger** — resolved to `SaveOrder2`/`SaveAndConfirmOrder2`
   (2026-09-08 probe: `LeaveOrder2`/`LeaveOrder3` are 404; the Save ops
   advance the WCF state machine).
-- **WCF order+payment family completeness** — closed: 88 candidate
-  operations probed, exactly 11 exist (probe record 2026-09-08).
+- **WCF order+payment family completeness** — closed: 92 candidate
+  operations probed, exactly 10 exist (probe record 2026-09-08).
 - **APK route drift** — stable across 2026.15/16.1/17.0 except the D1
   version bump (→ G2).
 - **OAuth client-secret** — decoded, wired, overridable (previous goal).
