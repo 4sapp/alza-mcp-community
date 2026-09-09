@@ -105,6 +105,8 @@ Account and checkout tools:
 | **`alza_checkout_preview`** | Previews checkout and returns a one-time confirmation token |
 | **`alza_place_order`** | Runs the mobile API order sequence only when supplied the preview token and required API payloads |
 | **`alza_web_pickup_places`** | Reads the live web pickup family (AlzaBox/branches/24-7 availability, place list, place detail) for web-checkout delivery selection (read-only) |
+| **`alza_web_add_to_cart`** | Adds a product to the live web HATEOAS basket (`basket/v1/items`, visitor-keyed) and returns the extracted basket id |
+| **`alza_web_cart`** | Reads the live web checkout cart state + item list for a basket id from `alza_web_add_to_cart` (read-only) |
 
 User-management, payments, orders, and post-purchase tools:
 

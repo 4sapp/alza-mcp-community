@@ -58,11 +58,12 @@ web rows are labeled with their exposure state (documented vs. typed-tool candid
   `alza_complaint_claims`, `alza_subscription_overview`, `alza_subscription_activate`,
   `alza_subscription_update_installment`, `alza_upload_attachment` (reviews/complaints/
   subscriptions/attachments); `alza_web_pickup_places` (web pickup family, read-only);
+  `alza_web_add_to_cart`, `alza_web_cart` (web HATEOAS cart family W3–W5, gap-analysis G4);
   `alza_web_place_order`, `alza_web_pay_after_order` (legacy web WCF order + payment
   pipeline, one-time tokens — the verified submission path while mobile `sendOrder3`
   500s; gap-analysis G1).
 - **Whitelists**:
-  - `alza_mobile_read` — 38 read operations: `search`, `category`, `facets`, `legacy_product`,
+  - `alza_mobile_read` — 39 read operations: `search`, `category`, `facets`, `legacy_product`,
     `router_product`, `alternatives`, `ean_lookup`, `hierarchical_filter`, `url_info`,
     `catalog_user_navigation`, `visitor_navigation`, `user_navigation`, `user_data`,
     `contacts`, `premium_trial`, `validate_login_name`, `validate_isic`, `o3_info`,
@@ -70,7 +71,9 @@ web rows are labeled with their exposure state (documented vs. typed-tool candid
     `delivery_countries`, `branches`, `zip_codes`, `commodity_lists`, `commodity_list`,
     `discussion_posts`, `user_review`, `after_order_payments`, `user_order`, `order_part`,
     `anonymous_orders`, `anonymous_order`, `quick_order_summary`, `order_helpdesk_questions`,
-    `web_after_payment_dialog` (2026-09-08: WCF `GetAfterPaymentDialog` read, row PA8).
+    `web_after_payment_dialog` (2026-09-08: WCF `GetAfterPaymentDialog` read, row PA8),
+    `home_categories` (2026-09-09: resolved C12 carousel route, takes the `pgri`/`ui` params
+    from the `catalog_user_navigation` response).
   - `alza_prepare_mutation` + `alza_mutate_list` — 29 guarded mutations. Low-risk (18, executed
     via `alza_mutate_list`): `create`, `rename`, `delete`, `add`, `remove`, `move` (shopping
     lists), `set_country`, `set_isic`, `add_gift`, `add_order_service`, `set_watchdog`,
@@ -102,7 +105,7 @@ web rows are labeled with their exposure state (documented vs. typed-tool candid
 | C9 | Hierarchical filter | POST | `/services/restservice.svc/v1/hierarchicalFilter` | filter tree payload (server-echoed) | Filtered results | none | none | Whitelist `hierarchical_filter` | `source-confirmed` |
 | C10 | URL info | POST | `/api/catalog/v1/homePage/getUrlInfo` | `{url}` (Alza URL string, not a user-supplied fetch target) | Resolved catalog node | none | none | Whitelist `url_info` | `live-verified` (read journey) |
 | C11 | Catalog home navigation | GET | `/api/catalog/v2/homePage/userNavigation` | none | Navigation tree | none | none | Whitelist `catalog_user_navigation` | `live-verified` |
-| C12 | Catalog home category carousel | GET | `/api/catalog/v1/homePage/categories/1/...` (fragment) | route fragment confirmed in error-handler; full sub-path built at runtime | Category carousel | none | none | `unresolved` — fragment only; not exposed until the full route is confirmed | `unresolved` |
+| C12 | Catalog home category carousel | GET | `/api/catalog/v1/homePage/categories/{id}?pgri={pgri}&ui={ui}` | `pgri`/`ui` — server-provided in the C11 navigation response (HTTP 400 without them) | `{self (appLink "catalogLocalTitlePage"), breadcrumbs, name, value, disclaimers, shareWebLink}` | public | none | Whitelisted read `home_categories`; route RESOLVED live via the C11 HATEOAS link (`GET …/categories/1?pgri=p__26752&ui=u__401f1` → 200; bare route → 400; 2026-09-09) | `live-verified` |
 | C13 | Visitor navigation | GET | `/api/visitors/{visitorId}/mainNavigation` | MCP-generated visitor id | Visitor nav | none | none | Whitelist `visitor_navigation` | `live-verified` |
 | C14 | Authenticated user navigation | GET | `/api/users/{userId}/mainNavigation?eshopUrl=` | user id (from token) | Auth nav incl. order/complaint/subscription actions | auth | none | Whitelist `user_navigation` | `source-confirmed` |
 
@@ -279,9 +282,9 @@ Mapped by live Playwright capture 2026-09-07/08 (digest:
 |---|---|---|---|---|---|---|---|---|---|
 | W1 | Next.js session bootstrap | GET | `m.alza.cz/next-api/auth/get-session` | none (cookie session) | session JSON | none | none | Documented (framework plumbing; not an MCP surface) | `live-verified` (2026-09-08 capture) |
 | W2 | Visitor status | GET | `/api/visitors/{visitorId}/statusSummary` | MCP/browser visitor id | visitor status summary | visitor cookie | none | Documented | `live-verified` |
-| W3 | Cart (HATEOAS) | GET | `/api/v1/visitors/{visitorId}/baskets/{basketId}/checkout/cart?country=CZ` | visitor + basket id | `{maxStep, sameDayDeliveryMessage, itemsAction {href, appLink "BasketCheckoutCartItems"}, emptyCartAction, …}` | visitor cart | none | Documented (typed-tool candidate for the web family) | `live-verified` |
-| W4 | Cart items (HATEOAS) | GET | `/api/v1/anonymous/baskets/{basketId}/checkout/cart/items?country=CZ` | basket id | `{items:[{productId, count, basketItemId, updateQuantityAction {href, appLink "basketItemUpdate"}, isDelayedPayment}]}` | visitor cart | none | Documented | `live-verified` |
-| W5 | Add to cart (web) | POST | `www.alza.cz/api/basket/v1/items` | product code (page-driven) | HATEOAS cart state with appActions | none | **adds to cart** | Documented (the mobile typed path is B3 `basket/add`; web route recorded for the family) | `live-verified` (capture: add of `zviratka-d5303619` created the guest basket) |
+| W3 | Cart (HATEOAS) | GET | `/api/v1/visitors/{visitorId}/baskets/{basketId}/checkout/cart?country=CZ` | visitor + basket id | `{maxStep, sameDayDeliveryMessage, itemsAction {href, appLink "BasketCheckoutCartItems"}, emptyCartAction, …}` | visitor cart | none | Typed tool `alza_web_cart` (cart half; the visitor id path segment is not validated server-side — any basket id works) | `live-verified` (2026-09-09 re-probe) |
+| W4 | Cart items (HATEOAS) | GET | `/api/v1/anonymous/baskets/{basketId}/checkout/cart/items?country=CZ` | basket id | `{items:[{productId, count, basketItemId, updateQuantityAction {href, appLink "basketItemUpdate"}, isDelayedPayment}]}` | visitor cart | none | Typed tool `alza_web_cart` (items half) | `live-verified` (2026-09-09 re-probe) |
+| W5 | Add to cart (web) | POST | `www.alza.cz/api/basket/v1/items` | `{items:[{commodityId, count}]}` | HATEOAS cart state (`crossSellAppAction`, `crossPopupAction order/{basketId}/item/{itemId}`, `updateAction.form {id, count, accessories, addHook, source}`, `gtmData`) | none (visitor-keyed basket) | **adds to cart** | Typed tool `alza_web_add_to_cart` (extracts the basket id from the `order/…/item/…` link); cookie-less add with a Balancer-Guid header live-verified 2026-09-09 (new basket 1656899525) | `live-verified` (captures: `zviratka-d5303619` guest basket 2026-09-07; cookie-less add 2026-09-09) |
 | W6 | Basket announcements | GET | `/api/basket/v1/announcements?includeAlzaPlusAnnouncement=` ; `webapi.alza.cz/api/anonymous/v1/basket/annoucements/alzaPlusBanner` (note the server-side `annoucements` typo) | none | announcement payloads | none | none | Documented | `live-verified` |
 | W7 | Cookie-consent groups | GET | `/api/Cookies/v1/groups` | none | `{self, groups:[]}` (HATEOAS) | none | none | Documented | `live-verified` |
 | W8 | Web navigation (incl. parcel-locker checkout action) | GET | `/api/navigation` ; `/api/anonymous/v1/navigation` (response carries a `parcelLockers` action → `GET /api/anonymous/v1/orders/checkout/parcelLockers`) | none | navigation trees + actions | none | none | Documented | `live-verified` |
@@ -303,7 +306,8 @@ typed read tool covers W11–W14 (form + list + detail); **G1**:
 `alza_web_place_order` + `alza_web_pay_after_order` typed tools (one-time tokens,
 `web_place_order`/`web_after_order_payment` whitelist actions) expose the verified
 O11/PA9 WCF pipeline; **G2**: the typed delivery/payment tools call v13 (v12
-fallback). Remaining W-row candidate: W3/W4/W5 (HATEOAS cart, deferred as G4).
+fallback). The remaining W-row candidate W3/W4/W5 (HATEOAS cart) is implemented as
+of 2026-09-09: `alza_web_add_to_cart` (W5) + `alza_web_cart` (W3/W4), gap-analysis G4.
 W16 (the Order2→3 trigger) resolved to `SaveOrder2`/`SaveAndConfirmOrder2` in the
 2026-09-08 probe (O11). See `docs/gap-analysis.md` for the prioritization.
 
@@ -398,6 +402,17 @@ Latest release at re-audit time: **2026.17.0** (Play Store, released 2026-09-03;
   to `SaveOrder2`/`SaveAndConfirmOrder2` as the Order2→3 trigger. Record:
   `docs/live-evidence/wcf-operation-probe-2026-09-08.md` +
   `docs/live-evidence/wcf-operation-probe-2026-09-08.json`.
+- **Gap-fix round (2026-09-09):** browser in-page fetch re-probe resolved the last
+  `unresolved` catalog row: **C12** — the C11 navigation response carries the full
+  carousel route (`GET /api/catalog/v1/homePage/categories/1?pgri=p__26752&ui=u__401f1`
+  → 200 `{self, breadcrumbs, name, value, …}`; the bare route without the params
+  returns HTTP 400), exposed as the `home_categories` read op. It also re-implemented
+  G4 live: the web basket add is **visitor-keyed and cookie-less capable** (POST
+  `basket/v1/items` with only a Balancer-Guid header → 200, new basket 1656899525),
+  and W3/W4 re-probed 200. G5/G6 re-confirmed unchanged (`sendOrder3` → HTTP 500
+  `InternalServerError` with a fresh basket; `getafterorderpayments`/`afterOrderPayment`
+  → err:1). Records: `docs/live-evidence/gap-fix-probe-2026-09-09.json`,
+  `docs/live-evidence/gap-fix-probe3-2026-09-09.json`.
 - The guest E2E probes (same endpoints, browser-backed transport) confirmed: `basket/add` → `getDeliveryPaymentGroups` → `sendOrder1` → `sendOrder2` (APK `SelectedDelivery` payload, err:0) all work; `sendOrder3` then 500s in the guest state (see Corrections).
 - Transport note: Node/Undici and curl can receive Cloudflare challenge responses from the same WSL egress while a Python `requests.Session` follows the same-origin navigation redirect, retains in-memory cookies, and receives JSON. This is transport/client variance, not proof that extra spoofed headers are needed. The live Python comparison currently reaches navigation, params, and product-detail with HTTP 200; deliberately invalid category parameters return ordinary HTTP 400 JSON.
 - The live Python journeys are read-only. Cart additions, coupon changes, list mutations, profile mutations, checkout, payment, and order submission are intentionally not exercised by the read-only scripts; the E2E record below is the only mutating live run.

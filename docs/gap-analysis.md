@@ -78,28 +78,32 @@ boundary (no new transports, typed + validated + one-time-token flows only).
 
 ## P1 — close next (documented, deferred in this goal)
 
-### G4. HATEOAS web cart family (W3/W4/W5)
+### G4. HATEOAS web cart family (W3/W4/W5) — **implemented 2026-09-09**
 
 `checkout/cart`, `checkout/cart/items`, `POST basket/v1/items` (HATEOAS
-`appAction` responses). The mobile `alza_cart` / `alza_add_to_cart`
-(restservice) already cover the mobile surface; a web-cart typed tool is a
-duplicate-adjacent convenience. Deferred: implement when the web-checkout
-tool set (G1) is in, reusing its transport + HATEOAS handling.
+`appAction` responses). Implemented as two typed tools: **`alza_web_add_to_cart`**
+(commodity_id + count → POST `basket/v1/items`; extracts the basket id from the
+response's `order/{basketId}/item/{itemId}` link; the basket is visitor-keyed and
+the cookie-less add with a Balancer-Guid header was live-verified 2026-09-09) and
+**`alza_web_cart`** (basket_id → the W3 cart state + W4 item list). Unit-tested
+(exact body, exact routes, validation); live evidence
+`docs/live-evidence/gap-fix-probe-2026-09-09.json` + `gap-fix-probe3-2026-09-09.json`.
 
 ### G5. Mobile `sendOrder3` HTTP 500 (O3) — server-side
 
-Re-confirmed 2026-09-06 **and** 2026-09-08 (full + empty `Parameters`,
+Re-confirmed 2026-09-06, 2026-09-08 **and** 2026-09-09 (full + empty `Parameters`,
 authenticated + guest): `POST /services/restservice.svc/v5/sendOrder3` →
-HTTP 500 `InternalServerError`. Nothing the MCP can fix server-side; the
+HTTP 500 `InternalServerError` (2026-09-09: fresh basket → sendOrder2 err:0 →
+sendOrder3 500, same shape). Nothing the MCP can fix server-side; the
 practical closure is G1 (typed web pipeline). Kept `unresolved`; the typed
 mobile `alza_place_order` stays live-reached/blocked with the documented
 500. **Re-test cadence:** each live-verification run (cheap: one POST).
 
 ### G6. Mobile after-order `err:1` for WCF-created orders (PA2/PA3)
 
-Re-confirmed 2026-09-08 against still-open order 1056808137
+Re-confirmed 2026-09-08 **and** 2026-09-09 against still-open order 1056808137
 (`getafterorderpayments` → “Faktura se zadaným ID neexistuje”;
-`afterOrderPayment` → “Aktualizujte prosím aplikace”). Expected until a
+`afterOrderPayment` → “Aktualizujte prosím aplikace"). Expected until a
 restservice-pipeline order exists (i.e. until G5's 500 is fixed
 server-side). The web `CreateAfterPayment` (G1's `alza_web_pay_after_order`)
 is the working execution path in the meantime.
@@ -180,3 +184,32 @@ field is 0 (order id now derived from `GetOrderDetailAction`, unit-tested),
 and the 113-gate step can also answer with a transient HTTP 404 that leaves
 the WCF state valid (the retry covers the documented 113 case). Record:
 `docs/live-evidence/web-tool-e2e-2026-09-08.md` (+ 2 JSON captures).
+
+## Implementation record (round 2, 2026-09-09 — remaining-gaps sweep)
+
+After the 2026-09-08 goal closed, a fresh triage of `docs/mobile-endpoint-coverage.md`
++ this report found four actionable items; all are now closed:
+
+- **G4 (above)** — `alza_web_add_to_cart` + `alza_web_cart` typed tools; the
+  basket add is visitor-keyed (cookie-less Balancer-Guid add live-verified), so
+  the tools work with the standard MCP transport. `webCart` needs only the
+  basket_id (the `visitors/{visitorId}` path segment is not validated
+  server-side — a placeholder UUID returned the same cart).
+- **C12 resolved** (the last `unresolved` catalog row): the C11 navigation
+  response carries the full carousel route
+  `GET /api/catalog/v1/homePage/categories/{id}?pgri=…&ui=…` (bare route → HTTP
+  400; with the server-provided params → 200 `{self, breadcrumbs, name, value,
+  disclaimers, shareWebLink}`). Exposed as the `home_categories` read op on
+  `alza_mobile_read` (39 read ops now).
+- **G5/G6 re-tested 2026-09-09** (above) — both unchanged; they stay
+  server-side `unresolved` with a per-run re-test cadence.
+- **Found & fixed during the round:** the `web_after_payment_dialog` read op
+  (added 2026-09-08) was missing from the `alza_mobile_read` zod enum — the op
+  existed in the domain layer but was unreachable through the tool. Now in the
+  enum (39 ops).
+
+Not actionable (unchanged): AT3 (vision API — no static route), the P2 table
+(boundary/server-side), and the mobile `alza_place_order` path blocked at G5.
+Gate: `npm test` 63/63, `npm run typecheck`, `npm run build`, `git diff --check`
+green (2026-09-09). Live records: `docs/live-evidence/gap-fix-probe-2026-09-09.json`,
+`docs/live-evidence/gap-fix-probe3-2026-09-09.json`.

@@ -381,6 +381,31 @@ export class MobileApi {
     return this.request(`/api/personalPickup/v1/places${qs ? `?${qs}` : ""}`);
   }
 
+  /** Web HATEOAS cart family (m.alza.cz checkout; W3–W5, gap-analysis G4).
+   * The basket is visitor-keyed: the add works with the Balancer-Guid header
+   * alone (live-verified cookie-less 2026-09-09) and its response carries the
+   * `order/{basketId}/item/{itemId}` link that yields the basket id. */
+  async webAddToCart(commodityId: number, count: number): Promise<unknown> {
+    return this.request("/api/basket/v1/items", { method: "POST", body: JSON.stringify({ items: [{ commodityId, count }] }) });
+  }
+
+  async webCart(basketId: number): Promise<{ cart: unknown; items: unknown }> {
+    const cart = await this.request(`/api/v1/visitors/${this.visitorId}/baskets/${basketId}/checkout/cart?country=CZ`);
+    const items = await this.request(`/api/v1/anonymous/baskets/${basketId}/checkout/cart/items?country=CZ`);
+    return { cart, items };
+  }
+
+  /** Home category carousel (C12): the full route is server-provided in the
+   * C11 navigation response (`appLink catalogLocalTitlePage`); the `pgri`/`ui`
+   * params are required (the bare route returns HTTP 400). */
+  async homeCategories(categoryId: number, pgri?: string, ui?: string): Promise<unknown> {
+    const q = new URLSearchParams();
+    if (pgri !== undefined) q.set("pgri", pgri);
+    if (ui !== undefined) q.set("ui", ui);
+    const qs = q.toString();
+    return this.request(`/api/catalog/v1/homePage/categories/${categoryId}${qs ? `?${qs}` : ""}`);
+  }
+
   async webPickupPlaceDetail(placeId: number, orderId?: number, groupId?: number): Promise<unknown> {
     const q = new URLSearchParams();
     if (orderId !== undefined) q.set("orderId", String(orderId));

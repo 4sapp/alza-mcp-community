@@ -201,6 +201,16 @@ export class MobileAccount {
       case "cart": return this.api.cart();
       case "cost_estimate": return this.api.costEstimate(args as Record<string, unknown>);
       case "web_after_payment_dialog": return this.webAfterPaymentDialog(String(args.order_id ?? ""), args.order_hash === undefined ? undefined : String(args.order_hash));
+      case "home_categories": {
+        const categoryId = Number(args.category_id ?? 1);
+        if (!Number.isInteger(categoryId) || categoryId < 1) throw new Error("category_id must be a positive integer");
+        const pgri = args.pgri === undefined ? undefined : String(args.pgri);
+        const ui = args.ui === undefined ? undefined : String(args.ui);
+        for (const [name, value] of [["pgri", pgri], ["ui", ui]] as const) {
+          if (value !== undefined && (value.length === 0 || value.length > 64)) throw new Error(`${name} must be a string (max 64; copy it from the catalog_user_navigation response)`);
+        }
+        return this.api.homeCategories(categoryId, pgri, ui);
+      }
       default: throw new Error(`Unsupported mobile read operation: ${operation}`);
     }
   }
@@ -309,6 +319,24 @@ export class MobileAccount {
     });
     this.pendingMutation = undefined;
     return result;
+  }
+
+  /** Web HATEOAS cart family (m.alza.cz checkout; W3–W5, gap-analysis G4).
+   * The add is visitor-keyed (Balancer-Guid) and returns the basket id in its
+   * HATEOAS links (`order/{basketId}/item/{itemId}`), which `webCart` needs. */
+  async webAddToCart(payload: Record<string, unknown>): Promise<unknown> {
+    const commodityId = requireInt(payload, "commodity_id");
+    if (commodityId < 1) throw new Error("commodity_id must be a positive integer");
+    const count = payload.count === undefined || payload.count === null ? 1 : requireInt(payload, "count");
+    if (count < 1 || count > 99) throw new Error("count must be between 1 and 99");
+    const res = await this.api.webAddToCart(commodityId, count);
+    const m = JSON.stringify(res).match(/order\/(\d+)\/item\/(\d+)/);
+    return { basket_id: m ? Number(m[1]) : undefined, item_id: m ? Number(m[2]) : undefined, response: res };
+  }
+
+  async webCart(basketId: number): Promise<unknown> {
+    if (!Number.isInteger(basketId) || basketId < 1) throw new Error("basket_id must be a positive integer (from alza_web_add_to_cart)");
+    return this.api.webCart(basketId);
   }
 
   /** Web pickup family (m.alza.cz checkout; live-mapped 2026-09-08, rows W11–W14).

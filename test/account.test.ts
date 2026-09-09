@@ -445,4 +445,53 @@ describe("web checkout family (gap-analysis G1/G2/G3, 2026-09-08)", () => {
       expect(calls[0].url).toBe("https://test.alza.invalid/Services/EShopService.svc/GetAfterPaymentDialog");
     } finally { restore(); }
   });
+
+  it("G4: web add-to-cart validates inputs, posts the HATEOAS body and extracts the basket id", async () => {
+    const account = makeAccount();
+    const { calls, restore } = mockFetch(() => new Response(JSON.stringify({
+      crossPopupAction: { webLink: "https://www.alza.cz/order/1656899450/item/1023695032", form: {} },
+      updateAction: { form: { id: 1023695032, count: 1 } }, gtmData: {},
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    try {
+      await expect(account.webAddToCart({ commodity_id: 0 })).rejects.toThrow(/commodity_id/);
+      await expect(account.webAddToCart({ commodity_id: 7229946, count: 0 })).rejects.toThrow(/count/);
+      await expect(account.webAddToCart({ commodity_id: 7229946, count: 100 })).rejects.toThrow(/count/);
+      const out = await account.webAddToCart({ commodity_id: 7229946, count: 2 }) as { basket_id: number; item_id: number; response: Record<string, unknown> };
+      expect(out.basket_id).toBe(1656899450);
+      expect(out.item_id).toBe(1023695032);
+      expect(out.response).toHaveProperty("updateAction");
+      expect(calls[0].url).toBe("https://test.alza.invalid/api/basket/v1/items");
+      expect(JSON.parse(String(calls[0].init?.body))).toEqual({ items: [{ commodityId: 7229946, count: 2 }] });
+    } finally { restore(); }
+  });
+
+  it("G4: web cart read requires a basket id and hits the cart + items routes", async () => {
+    const account = makeAccount();
+    const { calls, restore } = mockFetch(() => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } }));
+    try {
+      await expect(account.webCart(0)).rejects.toThrow(/basket_id/);
+      await expect(account.webCart(1.5)).rejects.toThrow(/basket_id/);
+      const out = await account.webCart(1656899450) as { cart: unknown; items: unknown };
+      expect(out).toEqual({ cart: { ok: true }, items: { ok: true } });
+      expect(calls.map((c) => c.url)).toEqual([
+        "https://test.alza.invalid/api/v1/visitors/visitor-test/baskets/1656899450/checkout/cart?country=CZ",
+        "https://test.alza.invalid/api/v1/anonymous/baskets/1656899450/checkout/cart/items?country=CZ",
+      ]);
+    } finally { restore(); }
+  });
+
+  it("C12: home_categories hits the resolved carousel route with the pgri/ui params", async () => {
+    const account = makeAccount();
+    const { calls, restore } = mockFetch(() => new Response(JSON.stringify({ self: { appLink: "catalogLocalTitlePage" }, value: [] }), { status: 200, headers: { "content-type": "application/json" } }));
+    try {
+      await expect(account.read("home_categories", { category_id: 0 })).rejects.toThrow(/category_id/);
+      await expect(account.read("home_categories", { category_id: 1, pgri: "" })).rejects.toThrow(/pgri/);
+      await account.read("home_categories", {}) as unknown;
+      await account.read("home_categories", { category_id: 1, pgri: "p__26752", ui: "u__401f1" }) as unknown;
+      expect(calls.map((c) => c.url)).toEqual([
+        "https://test.alza.invalid/api/catalog/v1/homePage/categories/1",
+        "https://test.alza.invalid/api/catalog/v1/homePage/categories/1?pgri=p__26752&ui=u__401f1",
+      ]);
+    } finally { restore(); }
+  });
 });
