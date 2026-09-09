@@ -143,9 +143,11 @@ export class MobileApi {
 
   async request<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
     const headers = this.mobileHeaders(init.headers as unknown as Headers | Record<string, string> | Array<[string, string]>);
-    let res = await fetch(`${this.baseUrl}${path}`, { ...init, headers });
+    // Absolute URLs (cross-host families like chatbotapi.alza.cz, row W18) bypass the base.
+    const url = /^https?:\/\//.test(path) ? path : `${this.baseUrl}${path}`;
+    let res = await fetch(url, { ...init, headers });
     if (res.status === 401 && this.refreshToken && await this.refreshAccessToken()) {
-      res = await fetch(`${this.baseUrl}${path}`, { ...init, headers: this.mobileHeaders(init.headers as unknown as Headers | Record<string, string> | Array<[string, string]>) });
+      res = await fetch(url, { ...init, headers: this.mobileHeaders(init.headers as unknown as Headers | Record<string, string> | Array<[string, string]>) });
     }
     const text = await res.text();
     let value: unknown;
@@ -188,7 +190,9 @@ export class MobileApi {
   }
 
   async category(id: number, type = "CATEGORY", typeId = 0): Promise<unknown> {
-    return this.request(`/services/restservice.svc/v1/category/${id}?type=${encodeURIComponent(type)}&typeId=${encodeURIComponent(typeId)}`);
+    // Live correction (2026-09-09): the server binds the query fields to T and P —
+    // `type=`/`typeId=` return HTTP 400 ("The T field is required"/"The P field is required").
+    return this.request(`/services/restservice.svc/v1/category/${id}?T=${encodeURIComponent(type)}&P=${encodeURIComponent(typeId)}`);
   }
 
   async facets(id: number, type = "CATEGORY", typeId = 0, search = ""): Promise<unknown> {
@@ -199,6 +203,9 @@ export class MobileApi {
     return this.request(`/api/legacy/catalog/v14/external/product/${id}`);
   }
 
+  /** C5. Live correction (2026-09-09): Pgrik and Ucik are REQUIRED server-side
+   * (HTTP 400 without them, even empty); take them from the router_product (C6)
+   * response's self.href. */
   async legacyProduct(id: number, params: { pgrik?: string; ucik?: string; country?: string; electronicContentOnly?: boolean } = {}): Promise<unknown> {
     const query = new URLSearchParams();
     if (params.pgrik) query.set("pgrik", params.pgrik);
@@ -300,7 +307,10 @@ export class MobileApi {
   async userOrder(userFlag: number, orderId: string, initialCreated = false): Promise<unknown> { return this.request(`/api/users/${userFlag}/v1/orders/${encodeURIComponent(orderId)}${initialCreated ? "?initialCreated=1" : ""}`); }
   async orderPart(orderId: string, partId: string): Promise<unknown> { return this.request(`/api/v1/orders/${encodeURIComponent(orderId)}/${encodeURIComponent(partId)}`); }
   async orderAddInfo(): Promise<unknown> { return this.request("/services/restservice.svc/v2/getOrderAddInfo?isGiftsEnabled=true"); }
-  async order2Info(): Promise<unknown> { return this.request("/services/restservice.svc/v8/getOrder2Info"); }
+  async order2Info(country = "CZ"): Promise<unknown> {
+    // Live correction (2026-09-09): requestModel.Country is required (HTTP 400 without).
+    return this.request(`/services/restservice.svc/v8/getOrder2Info?country=${encodeURIComponent(country)}`);
+  }
   async afterOrderPayments(orderId: string, partId: string): Promise<unknown> { return this.request(`/services/restservice.svc/v2/getafterorderpayments/${encodeURIComponent(orderId)}/${encodeURIComponent(partId)}`); }
   async deliveryCountries(): Promise<unknown> { return this.request("/services/restservice.svc/v1/getAllDeliveryCountries"); }
   async costEstimate(payload: Record<string, unknown>): Promise<unknown> { return this.request("/api/orders/v1/costEstimate", { method: "POST", body: JSON.stringify(payload) }); }
@@ -326,7 +336,10 @@ export class MobileApi {
   async updateBasket(basketId: number, flag: boolean, isDelayedPayment = false): Promise<unknown> {
     return this.request(`/services/restservice.svc/v2/updBasket/${encodeURIComponent(basketId)}/${flag ? 1 : 0}?isDelayedPayment=${isDelayedPayment ? "true" : "false"}`);
   }
-  async unlockBasket(): Promise<unknown> { return this.request("/services/restservice.svc/v1/unlockbasket"); }
+  async unlockBasket(country = "CZ"): Promise<unknown> {
+    // Live correction (2026-09-09): GET (POST → 405) and requestModel.Country is required.
+    return this.request(`/services/restservice.svc/v1/unlockbasket?country=${encodeURIComponent(country)}`);
+  }
   async addCoupon(coupon: string): Promise<unknown> { return this.request(`/services/restservice.svc/v1/addcoupon/${encodeURIComponent(coupon)}`); }
   async deleteCoupon(coupon: string): Promise<unknown> { return this.request(`/services/restservice.svc/v1/delcoupon/${encodeURIComponent(coupon)}`); }
 
@@ -404,6 +417,26 @@ export class MobileApi {
     if (ui !== undefined) q.set("ui", ui);
     const qs = q.toString();
     return this.request(`/api/catalog/v1/homePage/categories/${categoryId}${qs ? `?${qs}` : ""}`);
+  }
+
+  /** Chatbot family (chatbotapi.alza.cz, row W18 — live shapes 2026-09-09).
+   * Navigation needs a `country` query field (HTTP 400 without); the chat POST
+   * needs `ListCategoryId` in the body (an empty array works without product
+   * context) and returns `{configuration {configId, teamName, welcomeText,
+   * sessionExist, messages…}, showChat}`. */
+  async chatNavigation(country = "CZ"): Promise<unknown> {
+    return this.request(`https://chatbotapi.alza.cz/api/visitors/${this.visitorId}/v1/navigation?country=${encodeURIComponent(country)}`);
+  }
+
+  async chatSend(payload: { country: string; pageType: number; forceInitialize: boolean; initialInput: string | null; referrer: string | null; listCategoryId: unknown[]; commodityType?: number; commodityCode?: string | null; manufacturer?: string | null; entityId?: string | null; seoPrefix?: string | null }): Promise<unknown> {
+    return this.request(`https://chatbotapi.alza.cz/api/visitors/${this.visitorId}/v1/chat?country=${encodeURIComponent(payload.country)}`, { method: "POST", body: JSON.stringify(payload) });
+  }
+
+  /** WCF GetZipCodes twin (D5 twin, live-verified 2026-09-09): the body field is
+   * `Search` (PascalCase); the response Value is an HTML snippet of `zip-item`
+   * divs (data-id/data-city/data-text); ErrorLevel 14 when nothing matches. */
+  async webZipCodes(search: string): Promise<unknown> {
+    return this.webWcfStep("GetZipCodes", { Search: search });
   }
 
   async webPickupPlaceDetail(placeId: number, orderId?: number, groupId?: number): Promise<unknown> {

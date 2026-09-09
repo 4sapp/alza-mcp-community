@@ -94,7 +94,7 @@ Account and checkout tools:
 | **`alza_auth_start`** | Creates a mobile-API OAuth PKCE authorization URL |
 | **`alza_auth_exchange`** | Exchanges the returned authorization code for mobile-API tokens |
 | **`alza_auth_discovery`** | Reads live OIDC metadata from `identity.alza.cz` |
-| **`alza_mobile_read`** | Reads fixed APK-confirmed catalog, navigation, account, order-history, list, branch, alternative-product, basket, cost-estimate, and web after-payment-dialog capabilities |
+| **`alza_mobile_read`** | Reads fixed APK-confirmed catalog, navigation, account, order-history, list, branch, alternative-product, basket, cost-estimate, web after-payment-dialog, web zip-code (WCF `GetZipCodes` twin), and chatbot-navigation capabilities |
 | **`alza_prepare_mutation`** | Creates a one-time token for a fixed, source-confirmed mutation without sending a request |
 | **`alza_mutate_list`** | Executes a validated APK-confirmed low-risk mutation (lists, coupons, basket, country/ISIC, gift, watchdog, feedback, discussion) with that token |
 | **`alza_account_status`** | Checks whether a mobile API access token is loaded |
@@ -107,6 +107,8 @@ Account and checkout tools:
 | **`alza_web_pickup_places`** | Reads the live web pickup family (AlzaBox/branches/24-7 availability, place list, place detail) for web-checkout delivery selection (read-only) |
 | **`alza_web_add_to_cart`** | Adds a product to the live web HATEOAS basket (`basket/v1/items`, visitor-keyed) and returns the extracted basket id |
 | **`alza_web_cart`** | Reads the live web checkout cart state + item list for a basket id from `alza_web_add_to_cart` (read-only) |
+| **`alza_chat_navigation`** | Reads the live chatbot HATEOAS navigation (`chatbotapi.alza.cz`, server-provided chat actions; read-only) |
+| **`alza_chat_send`** | Opens/continues a chatbot session with page context (session-scoped, visitor-keyed; returns `{configuration, showChat}`) |
 
 User-management, payments, orders, and post-purchase tools:
 

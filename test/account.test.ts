@@ -89,7 +89,8 @@ describe("mobile API account", () => {
       await api.catalogUserNavigation();
       expect(seen.url).toContain("/api/catalog/v2/homePage/userNavigation");
       await api.category(7, "CATEGORY", 2);
-      expect(seen.url).toContain("/services/restservice.svc/v1/category/7?type=CATEGORY&typeId=2");
+      // live correction 2026-09-09: the server binds T and P (type/typeId → 400)
+      expect(seen.url).toContain("/services/restservice.svc/v1/category/7?T=CATEGORY&P=2");
       await api.updateBasket(11, true, true);
       expect(seen.url).toContain("/services/restservice.svc/v2/updBasket/11/1?isDelayedPayment=true");
       expect(seen.init?.body).toBeUndefined();
@@ -270,7 +271,11 @@ describe("typed user-management, payment, and order tools", () => {
       await account.read("search", { search_term: "notebook", page: 2 });
       expect(calls.at(-1)?.url).toBe("https://test.alza.invalid/services/restservice.svc/v5/search");
       await account.read("category", { category_id: 7 });
-      expect(calls.at(-1)?.url).toContain("/services/restservice.svc/v1/category/7");
+      // live correction 2026-09-09: T/P query fields (type/typeId → HTTP 400)
+      expect(calls.at(-1)?.url).toBe("https://test.alza.invalid/services/restservice.svc/v1/category/7?T=CATEGORY&P=0");
+      await account.read("order2_info", {});
+      // live correction 2026-09-09: requestModel.Country is required
+      expect(calls.at(-1)?.url).toBe("https://test.alza.invalid/services/restservice.svc/v8/getOrder2Info?country=CZ");
       await expect(account.read("ean_lookup", { ean_list: [] })).rejects.toThrow(/ean_list/);
       await account.read("ean_lookup", { ean_list: ["859"] });
       expect(calls.at(-1)?.url).toContain("/services/restservice.svc/v1/getProductByEANlist");
@@ -286,7 +291,8 @@ describe("typed user-management, payment, and order tools", () => {
       expect(calls.at(-1)?.url).toContain("/services/restservice.svc/v2/updBasket/5/1?isDelayedPayment=true");
       const unlock = account.prepareMutation("basket_unlock");
       await account.mutateList("basket_unlock", unlock.confirmationToken, {});
-      expect(calls.at(-1)?.url).toContain("/services/restservice.svc/v1/unlockbasket");
+      // live correction 2026-09-09: GET + required Country query field
+      expect(calls.at(-1)?.url).toContain("/services/restservice.svc/v1/unlockbasket?country=CZ");
       const typedOnly = account.prepareMutation("register");
       await expect(account.mutateList("register", typedOnly.confirmationToken, { email: "a@b.cz", phone: "+4201", pwd: "secret123" })).rejects.toThrow(/not a whitelisted low-risk mutation/);
     } finally { restore(); }
@@ -492,6 +498,71 @@ describe("web checkout family (gap-analysis G1/G2/G3, 2026-09-08)", () => {
         "https://test.alza.invalid/api/catalog/v1/homePage/categories/1",
         "https://test.alza.invalid/api/catalog/v1/homePage/categories/1?pgri=p__26752&ui=u__401f1",
       ]);
+    } finally { restore(); }
+  });
+});
+
+describe("P2 candidates implemented as typed tools (2026-09-09)", () => {
+  const makeAccount = () => new MobileAccount(new MobileApi({ visitorId: "visitor-test", baseUrl: "https://test.alza.invalid" }));
+  const mockFetch = (handler: (url: string, init?: RequestInit) => Response | Promise<Response>) => {
+    const previous = globalThis.fetch;
+    const calls: { url: string; init?: RequestInit }[] = [];
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, init });
+      return handler(url, init);
+    }) as typeof fetch;
+    return { calls, restore: () => { globalThis.fetch = previous; } };
+  };
+  const json = () => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
+  const wcf = (body: unknown) => new Response(JSON.stringify({ d: body }), { status: 200, headers: { "content-type": "application/json" } });
+
+  it("chat_navigation: validates country and hits the cross-host chatbotapi route", async () => {
+    const account = makeAccount();
+    const { calls, restore } = mockFetch(() => json());
+    try {
+      await expect(account.chatNavigation("CZX")).rejects.toThrow(/country/);
+      await account.chatNavigation();
+      await account.read("chat_navigation", { country: "sk" }) as unknown;
+      expect(calls.map((c) => c.url)).toEqual([
+        "https://chatbotapi.alza.cz/api/visitors/visitor-test/v1/navigation?country=CZ",
+        "https://chatbotapi.alza.cz/api/visitors/visitor-test/v1/navigation?country=SK",
+      ]);
+    } finally { restore(); }
+  });
+
+  it("chat_send: validates inputs and sends the captured W18 body shape", async () => {
+    const account = makeAccount();
+    const { calls, restore } = mockFetch(() => json());
+    try {
+      await expect(account.chatSend({})).rejects.toThrow(/page_type/);
+      await expect(account.chatSend({ page_type: 99 })).rejects.toThrow(/page_type/);
+      await expect(account.chatSend({ page_type: 1, referrer: "x".repeat(501) })).rejects.toThrow(/referrer/);
+      await expect(account.chatSend({ page_type: 1, initial_input: "y".repeat(2001) })).rejects.toThrow(/initial_input/);
+      await account.chatSend({ page_type: 6, referrer: "https://www.alza.cz/", initial_input: "Dobrý den", force_initialize: true });
+      expect(calls[0].url).toBe("https://chatbotapi.alza.cz/api/visitors/visitor-test/v1/chat?country=CZ");
+      expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+        country: "CZ", pageType: 6, forceInitialize: true, initialInput: "Dobrý den",
+        referrer: "https://www.alza.cz/", listCategoryId: [],
+        commodityType: 0, commodityCode: null, manufacturer: null, entityId: null, seoPrefix: null,
+      });
+      // product context mapping (the captured sample shape)
+      await account.chatSend({ page_type: 1, list_category_id: [{ category_id: 18857192, category_type_id: 1 }], commodity_code: "HRAif8316", seo_prefix: "Pexeso" });
+      expect(JSON.parse(String(calls[1].init?.body))).toMatchObject({ listCategoryId: [{ categoryId: 18857192, categoryTypeId: 1 }], commodityCode: "HRAif8316", seoPrefix: "Pexeso" });
+    } finally { restore(); }
+  });
+
+  it("web_zip_codes: the WCF twin takes {Search: input} and unwraps the d envelope", async () => {
+    const account = makeAccount();
+    const { calls, restore } = mockFetch((url) => url.includes("GetZipCodes")
+      ? wcf({ Value: '<div class="zip-item" data-id="3022826" data-city="Hradec Králové" data-text="500 00">', ErrorLevel: 0 })
+      : json());
+    try {
+      await expect(account.read("web_zip_codes", { input: "" })).rejects.toThrow(/input/);
+      const out = await account.read("web_zip_codes", { input: "Hradec Králové" }) as { Value: string; ErrorLevel: number };
+      expect(out.Value).toContain("zip-item");
+      expect(calls[0].url).toBe("https://test.alza.invalid/Services/EShopService.svc/GetZipCodes");
+      expect(JSON.parse(String(calls[0].init?.body))).toEqual({ Search: "Hradec Králové" });
     } finally { restore(); }
   });
 });

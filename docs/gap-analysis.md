@@ -108,16 +108,16 @@ restservice-pipeline order exists (i.e. until G5's 500 is fixed
 server-side). The web `CreateAfterPayment` (G1's `alza_web_pay_after_order`)
 is the working execution path in the meantime.
 
-## P2 — candidates (documented, not mapped in depth this goal)
+## P2 — candidates (status: two implemented 2026-09-09, the rest confirmed documented-only)
 
 | Candidate | Evidence | Note |
 |---|---|---|
-| Chatbot family (`chatbotapi.alza.cz` `/v1/navigation`, `/v1/chat`, pageType-coded) | W18 (live 2026-09-08) | Out of the 12 families; session-scoped chat — needs its own design (state, intents) |
+| Chatbot family (`chatbotapi.alza.cz` `/v1/navigation`, `/v1/chat`, pageType-coded) | W18 (live 2026-09-08; **implemented 2026-09-09**) | Typed tools `alza_chat_navigation` + `alza_chat_send` (session-scoped, visitor-keyed, token-free like `alza_web_add_to_cart`). Live corrections: navigation requires the `country` query field, the chat POST requires `ListCategoryId` (empty array works), pageType codes 1=product detail / 5=Order1 / 6=Order2 / 24=Order4. Record: `docs/live-evidence/p2-implementation-2026-09-09.md` |
 | Web telemetry (`logapi.alza.cz /api/log/v2/logs`, `metrics/gs/ccm/collect`, `cdn-cgi/rum`) | W19 (live 2026-09-08) | Out of scope by rule; only relevant as a transport note |
 | `next-api/auth/get-session` (Next.js bootstrap) | W1 | Framework plumbing; no user value as a tool |
-| 2026.17 server-driven action fields (`afterSelectAction`/`afterDeselectAction` on D1 items, `alzaPlusActionBannerAction`) | re-audit 2026-09-07 | `blocked` dynamic actions — typed wrappers only when an action needs server-driven follow-up |
-| Bank-app payment channel (PA11: `PayViaBankAppResolver`, preferred-bank-app preference) | re-audit 2026-09-07 | Client-side UX over the same `paymentId` flow; no new API surface |
-| `GetZipCodes` on `EShopService.svc` (WCF twin of D5) | probe 2026-09-08 | Documented; the restservice route is the canonical one |
+| 2026.17 server-driven action fields (`afterSelectAction`/`afterDeselectAction` on D1 items, `alzaPlusActionBannerAction`) | re-audit 2026-09-07; **scan 2026-09-09** | **No new API surface needed**: live scan with a real basket — 59 deliveries + 14 payments, 0 non-null actions (`alzaPlusActionBannerAction` null) — nothing to follow up on; documented-only in the coverage doc |
+| Bank-app payment channel (PA11: `PayViaBankAppResolver`, preferred-bank-app preference) | re-audit 2026-09-07; **confirmed 2026-09-09** | Client-side UX over the same `paymentId` flow; no new API surface — stays documented-only (PA11) |
+| `GetZipCodes` on `EShopService.svc` (WCF twin of D5) | probe 2026-09-08; **implemented 2026-09-09** | `web_zip_codes` whitelist op (`alza_mobile_read`): only the PascalCase `Search` body field binds (6 candidate fields probed); the response `Value` is an HTML snippet of `zip-item` divs; `ErrorLevel:14` when nothing matches. Record: `docs/live-evidence/p2-implementation-2026-09-09.md` |
 | Device tokens, admin routes, news, prescriptions | earlier audit | Documented out-of-scope (see coverage doc) |
 
 ## Explicitly NOT gaps (closed this goal)

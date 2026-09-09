@@ -201,6 +201,15 @@ export class MobileAccount {
       case "cart": return this.api.cart();
       case "cost_estimate": return this.api.costEstimate(args as Record<string, unknown>);
       case "web_after_payment_dialog": return this.webAfterPaymentDialog(String(args.order_id ?? ""), args.order_hash === undefined ? undefined : String(args.order_hash));
+      case "web_zip_codes": {
+        const input = String(args.input ?? "");
+        if (input.length === 0 || input.length > 64) throw new Error("input must be a place name or zip (1-64 chars)");
+        return this.api.webZipCodes(input);
+      }
+      case "chat_navigation": {
+        const country = args.country === undefined ? undefined : String(args.country);
+        return this.chatNavigation(country);
+      }
       case "home_categories": {
         const categoryId = Number(args.category_id ?? 1);
         if (!Number.isInteger(categoryId) || categoryId < 1) throw new Error("category_id must be a positive integer");
@@ -337,6 +346,44 @@ export class MobileAccount {
   async webCart(basketId: number): Promise<unknown> {
     if (!Number.isInteger(basketId) || basketId < 1) throw new Error("basket_id must be a positive integer (from alza_web_add_to_cart)");
     return this.api.webCart(basketId);
+  }
+
+  /** Chatbot family (W18, P2 implemented 2026-09-09). Session-scoped,
+   * visitor-keyed (no account state) — the send is a conversational write,
+   * token-free like alza_web_add_to_cart. */
+  async chatNavigation(country?: string): Promise<unknown> {
+    const c = country === undefined ? "CZ" : String(country);
+    if (!/^[A-Za-z]{2}$/.test(c)) throw new Error("country must be a 2-letter code (e.g. CZ)");
+    return this.api.chatNavigation(c.toUpperCase());
+  }
+
+  async chatSend(payload: Record<string, unknown>): Promise<unknown> {
+    const pageType = requireInt(payload, "page_type");
+    if (pageType < 1 || pageType > 30) throw new Error("page_type must be 1-30 (1=product detail, 5=Order1, 6=Order2, 24=Order4 per the W18 capture)");
+    const country = payload.country === undefined ? "CZ" : String(payload.country);
+    if (!/^[A-Za-z]{2}$/.test(country)) throw new Error("country must be a 2-letter code (e.g. CZ)");
+    const opt = (name: string, max: number): string | null => {
+      if (payload[name] === undefined || payload[name] === null) return null;
+      const v = String(payload[name]);
+      if (v.length > max) throw new Error(`${name} must be at most ${max} characters`);
+      return v;
+    };
+    const listCategoryId = payload.list_category_id === undefined || payload.list_category_id === null
+      ? []
+      : (payload.list_category_id as Record<string, unknown>[]).map((e) => ({ categoryId: requireInt(e as Record<string, unknown>, "category_id"), categoryTypeId: requireInt(e as Record<string, unknown>, "category_type_id") }));
+    return this.api.chatSend({
+      country: country.toUpperCase(), pageType, forceInitialize: payload.force_initialize === true,
+      initialInput: opt("initial_input", 2000), referrer: opt("referrer", 500), listCategoryId,
+      commodityType: payload.commodity_type === undefined ? 0 : requireInt(payload, "commodity_type"),
+      commodityCode: opt("commodity_code", 64), manufacturer: opt("manufacturer", 64),
+      entityId: opt("entity_id", 64), seoPrefix: opt("seo_prefix", 128),
+    });
+  }
+
+  async webZipCodes(input: string): Promise<unknown> {
+    const s = String(input ?? "");
+    if (s.length === 0 || s.length > 64) throw new Error("input must be a place name or zip (1-64 chars; the WCF twin takes {Search: input})");
+    return this.api.webZipCodes(s);
   }
 
   /** Web pickup family (m.alza.cz checkout; live-mapped 2026-09-08, rows W11–W14).
