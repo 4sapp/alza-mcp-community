@@ -2,12 +2,22 @@ import { randomBytes, createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { Page } from "playwright";
 import { AppActionExecutor, type ExecuteAppActionOptions, type ServerAppAction } from "./app-action.js";
 
 export interface MobileApiOptions {
   baseUrl?: string;
   visitorId?: string;
   userId?: number;
+  /** Structural browser-page host (satisfied by AlzaBrowser). When wired, same-origin
+   * routes that hit the www/webapi bot wall (403 + challenge HTML) are retried via an
+   * in-page fetch, which is the transport the Alza app itself uses. */
+  browser?: BrowserPageHost;
+}
+
+/** Minimal structural view of AlzaBrowser — keeps playwright out of this module's runtime. */
+export interface BrowserPageHost {
+  withPage<T>(fn: (page: Page) => Promise<T>): Promise<T>;
 }
 
 export interface OAuthStart {
@@ -28,6 +38,7 @@ export class MobileApi {
   readonly baseUrl: string;
   readonly visitorId: string;
   readonly userId?: number;
+  private readonly browser?: BrowserPageHost;
   private accessToken?: string;
   private refreshToken?: string;
   private pendingOAuth?: OAuthStart;
@@ -40,6 +51,7 @@ export class MobileApi {
 
   constructor(opts: MobileApiOptions = {}) {
     this.baseUrl = (opts.baseUrl ?? process.env.ALZA_API_BASE_URL ?? "https://www.alza.cz").replace(/\/$/, "");
+    this.browser = opts.browser;
     const stored = this.readStoredTokens();
     const explicitVisitor = opts.visitorId ?? process.env.ALZA_VISITOR_ID;
     this.visitorId = explicitVisitor ?? stored?.visitor_id ?? randomUUID();
@@ -149,11 +161,69 @@ export class MobileApi {
     if (res.status === 401 && this.refreshToken && await this.refreshAccessToken()) {
       res = await fetch(url, { ...init, headers: this.mobileHeaders(init.headers as unknown as Headers | Record<string, string> | Array<[string, string]>) });
     }
-    const text = await res.text();
+    let text = await res.text();
+    if (this.isBotChallenge(res.status, text)) {
+      const viaBrowser = await this.fetchViaBrowser(url, init, headers);
+      if (viaBrowser) {
+        res = viaBrowser;
+        text = await res.text();
+      }
+    }
     let value: unknown;
     try { value = text ? JSON.parse(text) : null; } catch { value = text; }
     if (!res.ok) throw new Error(`Alza API ${init.method ?? "GET"} ${path} failed with HTTP ${res.status}: ${summarize(value)}`);
     return value as T;
+  }
+
+  /** The www/webapi bot wall answers plain HTTP clients with an HTML page whose `var getData`
+   * script computes a clearance token; the JSON API never speaks until that JS has run. */
+  private isBotChallenge(status: number, text: string): boolean {
+    return status === 403 && text.includes("var getData");
+  }
+
+  /** Retry a bot-challenged route through the browser transport (same-origin only):
+   * an in-page fetch with `credentials: "include"` picks up the context's clearance
+   * cookies; if the page is still cold, one navigation to the base origin clears the
+   * challenge, then the fetch is repeated. Cross-host URLs are left untouched. */
+  private async fetchViaBrowser(url: string, init: RequestInit, headers: Headers): Promise<Response | undefined> {
+    if (!this.browser || !this.sameOrigin(url)) return undefined;
+    const payload = {
+      url,
+      method: init.method ?? "GET",
+      headers: Object.fromEntries([...headers.entries()]),
+      body: init.body === undefined || init.body === null ? null : String(init.body),
+    };
+    return this.browser.withPage(async (page) => {
+      const run = () => page.evaluate<{ status: number; text: string }, typeof payload>(
+        async ({ url: u, method, headers: h, body }) => {
+          const r = await fetch(u, { method, headers: h, body: body ?? undefined, credentials: "include" });
+          return { status: r.status, text: await r.text() };
+        },
+        payload,
+      );
+      const clear = async () => {
+        await page.goto(this.baseUrl, { waitUntil: "domcontentloaded", timeout: 90_000 });
+        await page.waitForTimeout(3_000);
+      };
+      // A fresh page sits at about:blank where cross-origin fetches fail outright —
+      // navigate to the base origin first so the in-page fetch is same-origin.
+      if (page.url() === "about:blank") await clear();
+      let out = await run();
+      if (out.status === 403 && out.text.includes("var getData")) {
+        // The challenge page's JS had not finished computing its clearance token — retry once.
+        await clear();
+        out = await run();
+      }
+      return new Response(out.text, { status: out.status });
+    });
+  }
+
+  private sameOrigin(url: string): boolean {
+    try {
+      return new URL(url).origin === new URL(this.baseUrl).origin;
+    } catch {
+      return false;
+    }
   }
 
   async executeAppAction(action: ServerAppAction, options: ExecuteAppActionOptions = {}): Promise<unknown> {

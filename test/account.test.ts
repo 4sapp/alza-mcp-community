@@ -580,3 +580,85 @@ describe("P2 candidates implemented as typed tools (2026-09-09)", () => {
     } finally { restore(); }
   });
 });
+
+describe("mobile API bot-challenge browser fallback", () => {
+  // Shape of the www/webapi bot wall's answer to plain HTTP clients (captured 2026-09-10).
+  const CHALLENGE = '<!DOCTYPE html><html><head><title>Alza.cz</title></head><body><script>var getData = function () { var host = window.location.hostname.split(""); };</script></body></html>';
+  const challenge = () => new Response(CHALLENGE, { status: 403, headers: { "content-type": "text/html" } });
+
+  it("retries a same-origin bot-challenge 403 through the browser transport (navigate, refetch, succeed)", async () => {
+    const trace: string[] = [];
+    let pages = 0;
+    const fakePage = {
+      url: () => "about:blank",
+      evaluate: async () => {
+        pages += 1;
+        trace.push(`evaluate#${pages}`);
+        return pages === 1 ? { status: 403, text: CHALLENGE } : { status: 200, text: JSON.stringify({ err: 0, basket: { items: [] } }) };
+      },
+      goto: async (url: string) => { trace.push(`goto:${url}`); },
+      waitForTimeout: async () => { trace.push("wait"); },
+    };
+    const browser = { withPage: async (fn: (p: never) => Promise<unknown>) => fn(fakePage as never) };
+    const previous = globalThis.fetch;
+    globalThis.fetch = (async () => challenge()) as typeof fetch;
+    try {
+      const api = new MobileApi({ visitorId: "visitor-test", baseUrl: "https://www.alza.cz", browser: browser as never });
+      const value = await api.request<{ err: number; basket: { items: string[] } }>("/services/restservice.svc/v3/basketInfo");
+      expect(value).toEqual({ err: 0, basket: { items: [] } });
+      // cold page → navigate to the base origin, fetch (still challenged), clear once more, refetch
+      expect(trace).toEqual(["goto:https://www.alza.cz", "wait", "evaluate#1", "goto:https://www.alza.cz", "wait", "evaluate#2"]);
+    } finally { globalThis.fetch = previous; }
+  });
+
+  it("surfaces the 403 error when the browser retry is still challenged", async () => {
+    const fakePage = {
+      url: () => "about:blank",
+      evaluate: async () => ({ status: 403, text: CHALLENGE }),
+      goto: async () => {},
+      waitForTimeout: async () => {},
+    };
+    const browser = { withPage: async (fn: (p: never) => Promise<unknown>) => fn(fakePage as never) };
+    const previous = globalThis.fetch;
+    globalThis.fetch = (async () => challenge()) as typeof fetch;
+    try {
+      const api = new MobileApi({ visitorId: "visitor-test", baseUrl: "https://www.alza.cz", browser: browser as never });
+      await expect(api.request("/services/restservice.svc/v3/basketInfo")).rejects.toThrow(/HTTP 403/);
+    } finally { globalThis.fetch = previous; }
+  });
+
+  it("leaves cross-host routes and non-challenge 403s to the plain transport", async () => {
+    const closedBrowser = () => {
+      let opened = 0;
+      return {
+        browser: { withPage: async () => { opened += 1; throw new Error("must not open a page"); } } as never,
+        count: () => opened,
+      };
+    };
+    const previous = globalThis.fetch;
+    globalThis.fetch = (async () => challenge()) as typeof fetch;
+    try {
+      // cross-host absolute URL: the same-origin guard keeps the browser closed
+      const first = closedBrowser();
+      const api = new MobileApi({ visitorId: "visitor-test", baseUrl: "https://www.alza.cz", browser: first.browser });
+      await expect(api.request("https://chatbotapi.alza.cz/api/visitors/v/v1/navigation?country=CZ")).rejects.toThrow(/HTTP 403/);
+      expect(first.count()).toBe(0);
+
+      // JSON-shaped 403 (a real API denial, not the bot wall): no browser engagement
+      globalThis.fetch = (async () => new Response(JSON.stringify({ err: 1, message: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } })) as typeof fetch;
+      const second = closedBrowser();
+      const api2 = new MobileApi({ visitorId: "visitor-test", baseUrl: "https://www.alza.cz", browser: second.browser });
+      await expect(api2.request("/services/restservice.svc/v3/basketInfo")).rejects.toThrow(/HTTP 403/);
+      expect(second.count()).toBe(0);
+    } finally { globalThis.fetch = previous; }
+  });
+
+  it("preserves the plain-transport 403 when no browser is wired", async () => {
+    const previous = globalThis.fetch;
+    globalThis.fetch = (async () => challenge()) as typeof fetch;
+    try {
+      const api = new MobileApi({ visitorId: "visitor-test", baseUrl: "https://www.alza.cz" });
+      await expect(api.request("/services/restservice.svc/v3/basketInfo")).rejects.toThrow(/HTTP 403/);
+    } finally { globalThis.fetch = previous; }
+  });
+});

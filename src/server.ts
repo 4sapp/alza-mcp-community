@@ -36,7 +36,9 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
   const catalog = new Catalog(browser);
   const reviews = new Reviews(browser, catalog);
   const pickup = new Pickup(browser.locale);
-  const mobileAccount = new MobileAccount(new MobileApi({ baseUrl: opts.baseUrl }));
+  // The browser transport backs the catalog AND the account stack's bot-challenge fallback
+  // (same-origin /services/restservice.svc routes are JS-challenge-gated for plain fetch).
+  const mobileAccount = new MobileAccount(new MobileApi({ baseUrl: opts.baseUrl, browser }));
   const deps = { catalog, reviews, pickup, mobileAccount };
 
   const server = new McpServer(

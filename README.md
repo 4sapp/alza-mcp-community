@@ -170,6 +170,23 @@ All optional — `alza-mcp` works out of the box.
 
 ---
 
+## Pi agent integration
+
+Register the local build in pi's global MCP config (`~/.pi/agent/mcp.json`):
+
+```json
+{
+  "alza": {
+    "command": "node",
+    "args": ["/home/dev/Development/alza-mcp/dist/index.js"]
+  }
+}
+```
+
+Run `/reload` (or `mcp connect alza` — the gateway respawns the stdio process, so a freshly built `dist/` takes effect without `/reload`). The gateway exposes the 41 tools under the `alza_` prefix (`alza_search_products`, `alza_get_product`, `alza_cart`, …). Auth auto-loads from `~/.alza-mcp/tokens.json`. Live pi-integration verification (search/filter/detail through the gateway, authenticated add-to-cart, bogus-coupon round-trip → server-side `err:1` envelope): [docs/live-evidence/pi-integration-2026-09-10.md](docs/live-evidence/pi-integration-2026-09-10.md).
+
+---
+
 ## How it works
 
 Alza has no public consumer API. This project uses the Android app's documented-by-source REST surface where permitted. Alza may return HTTP 403 to non-app transports; the client reports that response and does not bypass bot protection.
