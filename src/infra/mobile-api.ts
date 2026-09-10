@@ -240,9 +240,13 @@ export class MobileApi {
     return this.request("/api/catalog/v1/homePage/getUrlInfo", { method: "POST", body: JSON.stringify({ url }) });
   }
 
+  // Live correction (2026-09-10, rows C13/C14): the mainNavigation family is served by
+  // webapi.alza.cz and requires the country query field (www 404s at the router; a bare
+  // webapi GET → 400 "The Country field is required.").
   async userNavigation(userId: string, eshopUrl?: string): Promise<unknown> {
-    const query = eshopUrl ? `?eshopUrl=${encodeURIComponent(eshopUrl)}` : "";
-    return this.request(`/api/users/${encodeURIComponent(userId)}/mainNavigation${query}`);
+    const query = new URLSearchParams({ country: "CZ" });
+    if (eshopUrl) query.set("eshopUrl", eshopUrl);
+    return this.request(`https://webapi.alza.cz/api/users/${encodeURIComponent(userId)}/mainNavigation?${query}`);
   }
 
   async catalogUserNavigation(): Promise<unknown> {
@@ -256,8 +260,12 @@ export class MobileApi {
     return this.request(`/api/users/${encodeURIComponent(userId)}/v1/quickOrder/summary/commodities/${commodityId}${query.size ? `?${query}` : ""}`);
   }
 
-  async userReview(userId: string, commodityId: number): Promise<unknown> {
-    return this.request(`/api/users/${encodeURIComponent(userId)}/commodities/${commodityId}/review`);
+  // Live correction (2026-09-10, row R1): the APK's flag-shaped `/api/users/{flag}/commodities/{flag}/review`
+  // is SPA-404 on www and policy-403 on webapi; the app actually reads reviews from server-provided
+  // hrefs (webapi.alza.cz/api/catalog/commodities/{id}/reviews — live-verified 200, includes the
+  // user's own review with a templated userReviewActions form when one exists).
+  async commodityReviews(commodityId: number): Promise<unknown> {
+    return this.request(`https://webapi.alza.cz/api/catalog/commodities/${commodityId}/reviews?country=CZ&limit=5`);
   }
 
   async discussionPosts(commodityId: number, pageStart = 0, options: { parentId?: number; showOnlyWithoutAnswer?: boolean; orderBy?: number } = {}): Promise<unknown> {
@@ -278,14 +286,16 @@ export class MobileApi {
   async setCountry(payload: { countryId: number }): Promise<unknown> { return this.request("/services/restservice.svc/v1/setCountry", { method: "POST", body: JSON.stringify(payload) }); }
   async setIsic(payload: { isic: string }): Promise<unknown> { return this.request("/services/restservice.svc/v1/setIsic", { method: "POST", body: JSON.stringify(payload) }); }
   async addGift(payload: { rangeIdsGiftCodes: Array<{ priceRangeId: number; giftCodes: string[] }> }): Promise<unknown> { return this.request("/services/restservice.svc/v2/addGift", { method: "POST", body: JSON.stringify(payload) }); }
-  async addOrderService(service: string, enabled: boolean, selected: boolean): Promise<unknown> { return this.request(`/services/restservice.svc/v1/addOrderService/${encodeURIComponent(service)}/${enabled ? 1 : 0}/${selected ? 1 : 0}`); }
+  // Live correction (2026-09-10, row O9): the first path segment binds to orderItemId (Int32) per server ModelState.
+  async addOrderService(orderItemId: string | number, enabled: boolean, selected: boolean): Promise<unknown> { return this.request(`/services/restservice.svc/v1/addOrderService/${orderItemId}/${enabled ? 1 : 0}/${selected ? 1 : 0}`); }
   async setWatchdog(payload: { commodityId: number; email: string; isTrackingStock: boolean; price?: number }): Promise<unknown> { return this.request("/api/watchdog/v1", { method: "POST", body: JSON.stringify(payload) }); }
   async sendFeedback(payload: { text: string; email?: string; info: string }): Promise<unknown> { return this.request("/services/restservice.svc/v1/feedback", { method: "POST", body: JSON.stringify(payload) }); }
 
   async orderHelpdeskQuestions(): Promise<unknown> { return this.request("/api/orders/v1/helpdesk/questions"); }
 
   async visitorNavigation(): Promise<unknown> {
-    return this.request(`/api/visitors/${encodeURIComponent(this.visitorId)}/mainNavigation`);
+    // Live correction (2026-09-10, row C13): webapi host + required country query field.
+    return this.request(`https://webapi.alza.cz/api/visitors/${encodeURIComponent(this.visitorId)}/mainNavigation?country=CZ`);
   }
 
   async branches(latitude: number, longitude: number): Promise<unknown> {
@@ -341,7 +351,8 @@ export class MobileApi {
     return this.request(`/services/restservice.svc/v1/unlockbasket?country=${encodeURIComponent(country)}`);
   }
   async addCoupon(coupon: string): Promise<unknown> { return this.request(`/services/restservice.svc/v1/addcoupon/${encodeURIComponent(coupon)}`); }
-  async deleteCoupon(coupon: string): Promise<unknown> { return this.request(`/services/restservice.svc/v1/delcoupon/${encodeURIComponent(coupon)}`); }
+  // Live correction (2026-09-10, row B7): delcoupon binds couponId (Int32) — addcoupon takes the code string, delcoupon takes the id.
+  async deleteCoupon(couponId: string | number): Promise<unknown> { return this.request(`/services/restservice.svc/v1/delcoupon/${couponId}`); }
 
 
   async cart(): Promise<unknown> { return this.request("/services/restservice.svc/v10/gridOrder1"); }

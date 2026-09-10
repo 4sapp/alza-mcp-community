@@ -293,6 +293,20 @@ describe("typed user-management, payment, and order tools", () => {
       await account.mutateList("basket_unlock", unlock.confirmationToken, {});
       // live correction 2026-09-09: GET + required Country query field
       expect(calls.at(-1)?.url).toContain("/services/restservice.svc/v1/unlockbasket?country=CZ");
+      // live corrections 2026-09-10 (rows R1/B7/O9): server-provided routes + Int32 bindings
+      await account.read("user_review", { commodity_id: 5303618 });
+      expect(calls.at(-1)?.url).toBe("https://webapi.alza.cz/api/catalog/commodities/5303618/reviews?country=CZ&limit=5");
+      await account.read("user_navigation", { user_id: 100000001, eshop_url: "www.alza.cz" });
+      expect(calls.at(-1)?.url).toBe("https://webapi.alza.cz/api/users/100000001/mainNavigation?country=CZ&eshopUrl=www.alza.cz");
+      await account.read("visitor_navigation", {});
+      expect(calls.at(-1)?.url).toBe("https://webapi.alza.cz/api/visitors/visitor-test/mainNavigation?country=CZ");
+      const rm = account.prepareMutation("coupon_remove");
+      await account.mutateList("coupon_remove", rm.confirmationToken, { couponId: 123 });
+      expect(calls.at(-1)?.url).toContain("/services/restservice.svc/v1/delcoupon/123");
+      await expect(account.mutateList("coupon_remove", account.prepareMutation("coupon_remove").confirmationToken, { couponId: "SAVE10" })).rejects.toThrow(/couponId/);
+      const svc = account.prepareMutation("add_order_service");
+      await account.mutateList("add_order_service", svc.confirmationToken, { orderItemId: 456, enabled: true, selected: false });
+      expect(calls.at(-1)?.url).toContain("/services/restservice.svc/v1/addOrderService/456/1/0");
       const typedOnly = account.prepareMutation("register");
       await expect(account.mutateList("register", typedOnly.confirmationToken, { email: "a@b.cz", phone: "+4201", pwd: "secret123" })).rejects.toThrow(/not a whitelisted low-risk mutation/);
     } finally { restore(); }

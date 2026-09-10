@@ -133,14 +133,14 @@ function validateListPayload(action: string, payload: Record<string, unknown>): 
     create: ["name"], rename: ["id", "name"], delete: ["id"],
     add: ["productId", "commodityListType"], remove: ["id", "productId"], move: ["id", "productId", "targetId"],
     set_country: ["countryId"], set_isic: ["isic"],
-    add_gift: ["rangeIdsGiftCodes"], set_watchdog: ["commodityId", "email", "isTrackingStock"], send_feedback: ["text", "info"], add_order_service: ["service", "enabled", "selected"],
+    add_gift: ["rangeIdsGiftCodes"], set_watchdog: ["commodityId", "email", "isTrackingStock"], send_feedback: ["text", "info"], add_order_service: ["orderItemId", "enabled", "selected"], // orderItemId: live correction 2026-09-10 (server ModelState binds Int32)
     submit_discussion: ["commodityId", "msg", "userEmail", "anonymous", "notifications"], rate_discussion: ["postId", "rating"],
-    coupon_add: ["coupon"], coupon_remove: ["coupon"], basket_update: ["basket_id"], basket_unlock: [],
+    coupon_add: ["coupon"], coupon_remove: ["couponId"], basket_update: ["basket_id"], basket_unlock: [], // couponId: live correction 2026-09-10 (delcoupon binds Int32)
   };
   for (const field of required[action] ?? []) {
     if (!(field in payload) || payload[field] === null || payload[field] === "") throw new Error(`Missing required ${action} payload field: ${field}`);
   }
-  for (const field of ["id", "productId", "commodityListType", "targetId"]) {
+  for (const field of ["id", "productId", "commodityListType", "targetId", "orderItemId", "couponId"]) {
     if (field in payload && (typeof payload[field] !== "number" || !Number.isInteger(payload[field]))) throw new Error(`${field} must be an integer`);
   }
   if (("name" in payload) && typeof payload.name !== "string") throw new Error("name must be a string");
@@ -163,7 +163,7 @@ export class MobileAccount {
       case "legacy_product": return this.api.legacyProduct(Number(args.product_id), { pgrik: args.pgrik ? String(args.pgrik) : undefined, ucik: args.ucik ? String(args.ucik) : undefined, country: args.country ? String(args.country) : undefined, electronicContentOnly: args.electronic_content_only === undefined ? undefined : Boolean(args.electronic_content_only) });
       case "router_product": return this.api.routerProduct(Number(args.product_id), { pgrik: args.pgrik ? String(args.pgrik) : undefined, ucik: args.ucik ? String(args.ucik) : undefined, country: args.country ? String(args.country) : undefined, electronicContentOnly: args.electronic_content_only === undefined ? undefined : Boolean(args.electronic_content_only) });
       case "quick_order_summary": return this.api.quickOrderSummary(String(args.user_id ?? ""), Number(args.commodity_id), { pgrik: args.pgrik ? String(args.pgrik) : undefined, ucik: args.ucik ? String(args.ucik) : undefined });
-      case "user_review": return this.api.userReview(String(args.user_id ?? ""), Number(args.commodity_id));
+      case "user_review": return this.api.commodityReviews(Number(args.commodity_id));
       case "discussion_posts": return this.api.discussionPosts(Number(args.commodity_id), Number(args.page_start ?? 0), { parentId: args.parent_id === undefined ? undefined : Number(args.parent_id), showOnlyWithoutAnswer: args.show_only_without_answer === undefined ? undefined : Boolean(args.show_only_without_answer), orderBy: args.order_by === undefined ? undefined : Number(args.order_by) });
       case "premium_trial": return this.api.premiumTrial(String(args.user_id ?? ""));
       case "validate_login_name": return this.api.validateLoginName(String(args.email ?? ""));
@@ -618,13 +618,13 @@ export class MobileAccount {
       : action === "set_country" ? await this.api.setCountry(payload as { countryId: number })
       : action === "set_isic" ? await this.api.setIsic(payload as { isic: string })
       : action === "add_gift" ? await this.api.addGift(payload as { rangeIdsGiftCodes: Array<{ priceRangeId: number; giftCodes: string[] }> })
-      : action === "add_order_service" ? await this.api.addOrderService(String(payload.service), Boolean(payload.enabled), Boolean(payload.selected))
+      : action === "add_order_service" ? await this.api.addOrderService(String(payload.orderItemId), Boolean(payload.enabled), Boolean(payload.selected))
       : action === "set_watchdog" ? await this.api.setWatchdog(payload as { commodityId: number; email: string; isTrackingStock: boolean; price?: number })
       : action === "send_feedback" ? await this.api.sendFeedback(payload as { text: string; email?: string; info: string })
       : action === "submit_discussion" ? await this.api.submitDiscussionPost(payload as { commodityId: number; msg: string; userEmail: string; anonymous: boolean; notifications: boolean; parentPostId?: number })
       : action === "rate_discussion" ? await this.api.rateDiscussionPost(Number(payload.postId), Boolean(payload.rating))
       : action === "coupon_add" ? await this.api.addCoupon(String(payload.coupon))
-      : action === "coupon_remove" ? await this.api.deleteCoupon(String(payload.coupon))
+      : action === "coupon_remove" ? await this.api.deleteCoupon(String(payload.couponId))
       : action === "basket_update" ? await this.api.updateBasket(Number(payload.basket_id), Boolean(payload.flag), Boolean(payload.is_delayed_payment ?? false))
       : action === "basket_unlock" ? await this.api.unlockBasket()
       : (() => { throw new Error(`Unsupported list mutation: ${action}`); })();
