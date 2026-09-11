@@ -2,9 +2,9 @@ import { randomBytes } from "node:crypto";
 import type { MobileApi, OAuthStart } from "../infra/mobile-api.js";
 import type { AppActionFilePart, AppActionValue, ServerAppAction } from "../infra/app-action.js";
 
-/** Every guarded mutation accepted by `alza_prepare_mutation` (and the typed tools). */
+/** Every guarded mutation accepted by `prepare_mutation` (and the typed tools). */
 export const MUTATION_ACTIONS = [
-  // low-risk whitelisted writes (executed via alza_mutate_list)
+  // low-risk whitelisted writes (executed via mutate_list)
   "create", "rename", "delete", "add", "remove", "move", "set_country", "set_isic",
   "add_gift", "add_order_service", "set_watchdog", "send_feedback", "submit_discussion", "rate_discussion",
   "coupon_add", "coupon_remove", "basket_update", "basket_unlock",
@@ -243,7 +243,7 @@ export class MobileAccount {
 
   private assertMutationToken(action: string, token: string): void {
     if (!this.pendingMutation || this.pendingMutation.action !== action || this.pendingMutation.token !== token) {
-      throw new Error(`Invalid or expired ${action} confirmation token; call alza_prepare_mutation again.`);
+      throw new Error(`Invalid or expired ${action} confirmation token; call prepare_mutation again.`);
     }
   }
 
@@ -344,13 +344,13 @@ export class MobileAccount {
   }
 
   async webCart(basketId: number): Promise<unknown> {
-    if (!Number.isInteger(basketId) || basketId < 1) throw new Error("basket_id must be a positive integer (from alza_web_add_to_cart)");
+    if (!Number.isInteger(basketId) || basketId < 1) throw new Error("basket_id must be a positive integer (from web_add_to_cart)");
     return this.api.webCart(basketId);
   }
 
   /** Chatbot family (W18, P2 implemented 2026-09-09). Session-scoped,
    * visitor-keyed (no account state) — the send is a conversational write,
-   * token-free like alza_web_add_to_cart. */
+   * token-free like web_add_to_cart. */
   async chatNavigation(country?: string): Promise<unknown> {
     const c = country === undefined ? "CZ" : String(country);
     if (!/^[A-Za-z]{2}$/.test(c)) throw new Error("country must be a 2-letter code (e.g. CZ)");
@@ -606,7 +606,7 @@ export class MobileAccount {
   }
 
   async mutateList(action: string, token: string, payload: Record<string, unknown>): Promise<unknown> {
-    if (!this.pendingMutation || this.pendingMutation.action !== action || this.pendingMutation.token !== token) throw new Error("Invalid or expired mutation confirmation token; call alza_prepare_mutation again.");
+    if (!this.pendingMutation || this.pendingMutation.action !== action || this.pendingMutation.token !== token) throw new Error("Invalid or expired mutation confirmation token; call prepare_mutation again.");
     if (!WHITELISTED_MUTATIONS.has(action)) throw new Error(`Mutation ${action} is not a whitelisted low-risk mutation; use the matching typed tool instead.`);
     validateListPayload(action, payload);
     const result = action === "create" ? await this.api.createCommodityList(payload)
@@ -653,7 +653,7 @@ export class MobileAccount {
   }
 
   async submitOrder(token: string, deliveryPayment: Record<string, unknown>, userInfo: Record<string, unknown>, completeOrder: Record<string, unknown>): Promise<unknown> {
-    if (!this.pending || this.pending.confirmationToken !== token) throw new Error("Invalid or expired confirmation token; call alza_checkout_preview again.");
+    if (!this.pending || this.pending.confirmationToken !== token) throw new Error("Invalid or expired confirmation token; call checkout_preview again.");
     const selected = await this.api.sendOrder2(deliveryPayment);
     const user = await this.api.sendOrder3(userInfo);
     const approved = await this.api.approveOrder4();

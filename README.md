@@ -91,49 +91,49 @@ Account and checkout tools:
 
 | Tool | Purpose |
 |---|---|
-| **`alza_auth_start`** | Creates a mobile-API OAuth PKCE authorization URL |
-| **`alza_auth_exchange`** | Exchanges the returned authorization code for mobile-API tokens |
-| **`alza_auth_discovery`** | Reads live OIDC metadata from `identity.alza.cz` |
-| **`alza_mobile_read`** | Reads fixed APK-confirmed catalog, navigation, account, order-history, list, branch, alternative-product, basket, cost-estimate, web after-payment-dialog, web zip-code (WCF `GetZipCodes` twin), and chatbot-navigation capabilities |
-| **`alza_prepare_mutation`** | Creates a one-time token for a fixed, source-confirmed mutation without sending a request |
-| **`alza_mutate_list`** | Executes a validated APK-confirmed low-risk mutation (lists, coupons, basket, country/ISIC, gift, watchdog, feedback, discussion) with that token |
-| **`alza_account_status`** | Checks whether a mobile API access token is loaded |
-| **`alza_cart`** | Reads the current cart and total |
-| **`alza_add_to_cart`** | Adds a product by Alza code |
-| **`alza_delivery_options`** | Reads delivery + AlzaBox/pickup options from the APK `getDeliveryPaymentGroups` endpoint |
-| **`alza_select_pickup_point`** | POSTs the APK `DeliveryPaymentAssociation` payload (taken from the current delivery response) to `getDeliveryAssociations` |
-| **`alza_checkout_preview`** | Previews checkout and returns a one-time confirmation token |
-| **`alza_place_order`** | Runs the mobile API order sequence only when supplied the preview token and required API payloads |
-| **`alza_web_pickup_places`** | Reads the live web pickup family (AlzaBox/branches/24-7 availability, place list, place detail) for web-checkout delivery selection (read-only) |
-| **`alza_web_add_to_cart`** | Adds a product to the live web HATEOAS basket (`basket/v1/items`, visitor-keyed) and returns the extracted basket id |
-| **`alza_web_cart`** | Reads the live web checkout cart state + item list for a basket id from `alza_web_add_to_cart` (read-only) |
-| **`alza_chat_navigation`** | Reads the live chatbot HATEOAS navigation (`chatbotapi.alza.cz`, server-provided chat actions; read-only) |
-| **`alza_chat_send`** | Opens/continues a chatbot session with page context (session-scoped, visitor-keyed; returns `{configuration, showChat}`) |
+| **`auth_start`** | Creates a mobile-API OAuth PKCE authorization URL |
+| **`auth_exchange`** | Exchanges the returned authorization code for mobile-API tokens |
+| **`auth_discovery`** | Reads live OIDC metadata from `identity.alza.cz` |
+| **`mobile_read`** | Reads fixed APK-confirmed catalog, navigation, account, order-history, list, branch, alternative-product, basket, cost-estimate, web after-payment-dialog, web zip-code (WCF `GetZipCodes` twin), and chatbot-navigation capabilities |
+| **`prepare_mutation`** | Creates a one-time token for a fixed, source-confirmed mutation without sending a request |
+| **`mutate_list`** | Executes a validated APK-confirmed low-risk mutation (lists, coupons, basket, country/ISIC, gift, watchdog, feedback, discussion) with that token |
+| **`account_status`** | Checks whether a mobile API access token is loaded |
+| **`cart`** | Reads the current cart and total |
+| **`add_to_cart`** | Adds a product by Alza code |
+| **`delivery_options`** | Reads delivery + AlzaBox/pickup options from the APK `getDeliveryPaymentGroups` endpoint |
+| **`select_pickup_point`** | POSTs the APK `DeliveryPaymentAssociation` payload (taken from the current delivery response) to `getDeliveryAssociations` |
+| **`checkout_preview`** | Previews checkout and returns a one-time confirmation token |
+| **`place_order`** | Runs the mobile API order sequence only when supplied the preview token and required API payloads |
+| **`web_pickup_places`** | Reads the live web pickup family (AlzaBox/branches/24-7 availability, place list, place detail) for web-checkout delivery selection (read-only) |
+| **`web_add_to_cart`** | Adds a product to the live web HATEOAS basket (`basket/v1/items`, visitor-keyed) and returns the extracted basket id |
+| **`web_cart`** | Reads the live web checkout cart state + item list for a basket id from `web_add_to_cart` (read-only) |
+| **`chat_navigation`** | Reads the live chatbot HATEOAS navigation (`chatbotapi.alza.cz`, server-provided chat actions; read-only) |
+| **`chat_send`** | Opens/continues a chatbot session with page context (session-scoped, visitor-keyed; returns `{configuration, showChat}`) |
 
 User-management, payments, orders, and post-purchase tools:
 
 | Tool | Purpose |
 |---|---|
-| **`alza_profile`** | Reads the authenticated profile + address book (APK `getUserData`) |
-| **`alza_contacts`** | Reads the account contact list |
-| **`alza_register`** | Registers a new Alza account (credential-bearing, one-time token) |
-| **`alza_address_upsert`** | Creates/edits a delivery address through the server-provided address form |
-| **`alza_address_delete`** | Deletes a delivery address via its per-address action |
-| **`alza_address_search`** | Follows the server-provided address-search action (read-only) |
-| **`alza_payment_methods`** | Lists payment methods from the APK delivery-payment-group endpoint |
-| **`alza_after_order_payments`** | Lists after-order payment options for an order part |
-| **`alza_pay_after_order`** | Executes an after-order payment (APK `AfterOrderRequestBody`, one-time token) |
-| **`alza_web_place_order`** | Places an order through the live-verified legacy web WCF pipeline (SaveOrder2→3, 113-gate retry, CheckOrder4, SendOrder4; one-time token) — the working submission path while mobile `sendOrder3` 500s |
-| **`alza_web_pay_after_order`** | Executes a web after-order payment through the live-verified WCF `CreateAfterPayment` (one-time token) |
-| **`alza_order`** | Reads a user order (+ optional part detail, milestones, invoice refs) |
-| **`alza_review_submit`** | Submits a product review through the server-provided review form |
-| **`alza_complaint_claims`** | Lists warranty claims via the server-provided claims action |
-| **`alza_subscription_overview`** | Reads AlzaSubscription overview via the server-provided subscription action |
-| **`alza_subscription_activate`** | Activates AlzaSubscription (one-time token) |
-| **`alza_subscription_update_installment`** | Changes the installment plan (one-time token) |
-| **`alza_upload_attachment`** | Uploads image attachments via the multipart server-provided action (one-time token) |
+| **`profile`** | Reads the authenticated profile + address book (APK `getUserData`) |
+| **`contacts`** | Reads the account contact list |
+| **`register`** | Registers a new Alza account (credential-bearing, one-time token) |
+| **`address_upsert`** | Creates/edits a delivery address through the server-provided address form |
+| **`address_delete`** | Deletes a delivery address via its per-address action |
+| **`address_search`** | Follows the server-provided address-search action (read-only) |
+| **`payment_methods`** | Lists payment methods from the APK delivery-payment-group endpoint |
+| **`after_order_payments`** | Lists after-order payment options for an order part |
+| **`pay_after_order`** | Executes an after-order payment (APK `AfterOrderRequestBody`, one-time token) |
+| **`web_place_order`** | Places an order through the live-verified legacy web WCF pipeline (SaveOrder2→3, 113-gate retry, CheckOrder4, SendOrder4; one-time token) — the working submission path while mobile `sendOrder3` 500s |
+| **`web_pay_after_order`** | Executes a web after-order payment through the live-verified WCF `CreateAfterPayment` (one-time token) |
+| **`order`** | Reads a user order (+ optional part detail, milestones, invoice refs) |
+| **`review_submit`** | Submits a product review through the server-provided review form |
+| **`complaint_claims`** | Lists warranty claims via the server-provided claims action |
+| **`subscription_overview`** | Reads AlzaSubscription overview via the server-provided subscription action |
+| **`subscription_activate`** | Activates AlzaSubscription (one-time token) |
+| **`subscription_update_installment`** | Changes the installment plan (one-time token) |
+| **`upload_attachment`** | Uploads image attachments via the multipart server-provided action (one-time token) |
 
-Every high-impact mutation runs only with a one-time token from `alza_prepare_mutation`; the full route inventory, exposure decisions, and verification labels live in [docs/mobile-endpoint-coverage.md](docs/mobile-endpoint-coverage.md).
+Every high-impact mutation runs only with a one-time token from `prepare_mutation`; the full route inventory, exposure decisions, and verification labels live in [docs/mobile-endpoint-coverage.md](docs/mobile-endpoint-coverage.md).
 
 The MCP never receives or stores the Alza password. OAuth authorization happens outside the MCP; the MCP only exchanges the returned code through the mobile API. No interactive Alza form or browser automation is used by account, cart, delivery, or order tools.
 
@@ -144,7 +144,7 @@ Mobile API environment variables:
 | `ALZA_API_BASE_URL` | Mobile API base URL, default `https://www.alza.cz` |
 | `ALZA_VISITOR_ID` | Optional anonymous visitor UUID; otherwise generated per process |
 | `ALZA_OAUTH_AUTHORITY` | OAuth authority, default `https://identity.alza.cz` |
-| `ALZA_OAUTH_CLIENT_SECRET` | The `alza_Android` OAuth client is confidential — token requests need its APK-embedded secret (default: the source-verified value; set `""` to omit it for public clients). Used by `alza_auth_exchange` and token refresh |
+| `ALZA_OAUTH_CLIENT_SECRET` | The `alza_Android` OAuth client is confidential — token requests need its APK-embedded secret (default: the source-verified value; set `""` to omit it for public clients). Used by `auth_exchange` and token refresh |
 | `ALZA_CLIENT_SECRET` | Same secret for the PKCE exchange scripts (`scripts/e2e-order-payment.browser.mjs exchange`, `scripts/alza-auth-exchange.mjs`) |
 | `ALZA_TOKEN_FILE` | JSON token store written by `scripts/alza-auth-login*` / `scripts/alza_auth_login.py` (default `~/.alza-mcp/tokens.json`; set `none` to disable auto-load) |
 
@@ -183,7 +183,7 @@ Register the local build in pi's global MCP config (`~/.pi/agent/mcp.json`):
 }
 ```
 
-Run `/reload` (or `mcp connect alza` — the gateway respawns the stdio process, so a freshly built `dist/` takes effect without `/reload`). The gateway exposes the 41 tools under the `alza_` prefix (`alza_search_products`, `alza_get_product`, `alza_cart`, …). Auth auto-loads from `~/.alza-mcp/tokens.json`. Live pi-integration verification (search/filter/detail through the gateway, authenticated add-to-cart, bogus-coupon round-trip → server-side `err:1` envelope): [docs/live-evidence/pi-integration-2026-09-10.md](docs/live-evidence/pi-integration-2026-09-10.md).
+Run `/reload` (or `mcp connect alza` — the gateway respawns the stdio process, so a freshly built `dist/` takes effect without `/reload`). The gateway exposes the 41 tools under the `alza_` prefix (`alza_search_products`, `alza_get_product`, `cart`, …). Auth auto-loads from `~/.alza-mcp/tokens.json`. Live pi-integration verification (search/filter/detail through the gateway, authenticated add-to-cart, bogus-coupon round-trip → server-side `err:1` envelope): [docs/live-evidence/pi-integration-2026-09-10.md](docs/live-evidence/pi-integration-2026-09-10.md).
 
 ---
 
@@ -286,10 +286,10 @@ Cloudflare's Bot Management runs a JavaScript challenge that only a real browser
 
 ### How are login and ordering protected?
 
-1. Credentials are entered by the user in a visible or attached browser; they are never MCP tool arguments. The only credential-bearing tool (`alza_register`) submits the APK `Register` DTO and requires an explicit one-time token.
-2. `alza_checkout_preview` creates a one-time confirmation token after the cart and delivery choice are reviewed.
-3. `alza_place_order` refuses arbitrary tokens and is the only tool that attempts final submission.
-4. After-order payments (`alza_pay_after_order`) and every other high-impact mutation require a one-time token from `alza_prepare_mutation`; MFA and 3-D Secure remain user-controlled browser interactions.
+1. Credentials are entered by the user in a visible or attached browser; they are never MCP tool arguments. The only credential-bearing tool (`register`) submits the APK `Register` DTO and requires an explicit one-time token.
+2. `checkout_preview` creates a one-time confirmation token after the cart and delivery choice are reviewed.
+3. `place_order` refuses arbitrary tokens and is the only tool that attempts final submission.
+4. After-order payments (`pay_after_order`) and every other high-impact mutation require a one-time token from `prepare_mutation`; MFA and 3-D Secure remain user-controlled browser interactions.
 
 ### Can I avoid the Chromium download?
 

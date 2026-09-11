@@ -26,7 +26,7 @@ const inputSchema = {
     .array(z.enum(["alzabox", "branch"]))
     .optional()
     .describe(
-      "Restrict to specific pickup-point types. 'alzabox' = self-service parcel locker (24/7). 'branch' = brick-and-mortar AlzaShop with staff. Default: both."
+      "Restrict to specific pickup-point types. 'branch' = brick-and-mortar AlzaShop with staff (currently the only type that returns results). 'alzabox' = self-service parcel locker — accepted, but AlzaBox discovery is not yet implemented so it returns nothing. Default: both."
     ),
 };
 
@@ -40,7 +40,10 @@ export function createFindPickupPointsTool(deps: ToolDeps): RegisterableTool {
         {
           title: "Find Alza showrooms",
           description:
-            "Find Alza brick-and-mortar showrooms (AlzaShop) near a postal code. Use this when a user wants to know where they can collect a delivery, browse products in person, or get on-site advice. Note: AlzaBox parcel-locker discovery is planned for v0.2 — v0.1 returns staffed AlzaShop locations only.",
+            "Find Alza brick-and-mortar showrooms (AlzaShop) near a Czech/Slovak postal code: name, address, distance, and opening hours. " +
+            "Use when the user wants to browse in person, get on-site advice, or find where an AlzaShop branch is. " +
+            "Note: `types` accepts `alzabox`, but AlzaBox locker discovery is not yet implemented — only `branch` results are returned. For AlzaBox parcel shops in a checkout flow use `web_pickup_places` instead. " +
+            "Read-only. Example: `find_pickup_points({postal_code: '110 00', radius_km: 10})`",
           inputSchema,
           annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
         },

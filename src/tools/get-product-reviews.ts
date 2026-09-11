@@ -24,9 +24,12 @@ export function createGetProductReviewsTool(deps: ToolDeps): RegisterableTool {
       server.registerTool(
         name,
         {
-          title: "Get product reviews (aggregate only in v0.1)",
+          title: "Get product reviews",
           description:
-            "Fetch the aggregate rating and total review count for a product (e.g. ★ 4.8 across 1284 reviews). NOTE: v0.1 returns aggregate values only — individual review bodies are loaded dynamically on Alza's reviews tab and are not yet scraped (planned for v0.2). The `reviews` array will be empty.",
+            "Fetch reviews for a single product by its Alza code: the aggregate rating and review count plus up to `limit` individual reviews (author, date, rating, body) scraped from the product's reviews section. " +
+            "Use after `get_product` when the user wants real-world feedback before deciding. " +
+            "If the reviews section is not rendered on the page you receive the aggregate only (empty `reviews` array) — in that case rely on the rating/count. " +
+            "Do not use for the aggregate rating alone when you already have it from `search_products`/`get_product`. Read-only.",
           inputSchema,
           annotations: { readOnlyHint: true, idempotentHint: true },
         },

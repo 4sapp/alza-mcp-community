@@ -1,4 +1,5 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { ZodError } from "zod";
 import { Catalog } from "./domain/catalog.js";
 import { MobileAccount } from "./domain/mobile-account.js";
 import { Pickup } from "./domain/pickup.js";
@@ -50,13 +51,12 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
         prompts: {},
       },
       instructions:
-        "Alza.cz catalog and user-controlled shopping assistant. " +
-        "Unofficial — not affiliated with or endorsed by Alza.cz a.s. " +
-        "Use search_products to find items, get_product for full detail, " +
-        "get_product_reviews for ratings, find_pickup_points for nearby AlzaShop locations. " +
-        "Account, checkout, profile, and payment tools use the Alza mobile REST API with OAuth PKCE; credentials are never collected by the MCP. " +
-        "Order submission requires a checkout preview token and explicit user confirmation. " +
-        "High-impact mutations (payment, registration, address, review, subscription, attachment) require a one-time token from alza_prepare_mutation.",
+        "Alza.cz catalog and shopping assistant. Unofficial — not affiliated with or endorsed by Alza.cz a.s. " +
+        "Catalog: `search_products` (keyword + filters) → `get_product` (detail) → `get_product_reviews` (reviews); `list_categories` for category ids; `find_pickup_points` for AlzaShop showrooms near a postal code. " +
+        "Account & checkout (OAuth token auto-loads from ~/.alza-mcp/tokens.json; check `account_status`): `cart`, `add_to_cart`, `delivery_options`, `select_pickup_point`, `checkout_preview` → `place_order` (mobile API), or the legacy web WCF path `web_add_to_cart` → `web_cart` → `web_pickup_places` → `web_place_order`. " +
+        "Order submission currently works via the legacy web WCF path (`web_place_order`); the mobile `place_order` (sendOrder3) returns HTTP 500 (docs/gap-analysis.md G1/G5). " +
+        "Credentials are never collected by the MCP. High-impact mutations (payment, registration, address, review, subscription, attachment, order) require a one-time token from `prepare_mutation` — confirm with the user before calling them. " +
+        "`mobile_read` is the raw read-only escape hatch for mobile API operations without a dedicated tool.",
     }
   );
 
@@ -110,6 +110,13 @@ function friendlyError(err: unknown): string {
   if (err instanceof NotFoundError) return err.message;
   if (err instanceof UpstreamError) {
     return `Alza upstream error (HTTP ${err.status}). ${err.message}`;
+  }
+  if (err instanceof ZodError) {
+    const issues = err.issues
+      .slice(0, 5)
+      .map((i) => `${i.path.length ? i.path.join(".") + ": " : ""}${i.message}`)
+      .join("; ");
+    return `Invalid arguments — ${issues}`;
   }
   if (err instanceof Error) {
     if (err.message.includes("Timeout") || err.message.includes("timeout")) {
