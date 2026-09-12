@@ -125,6 +125,7 @@ export class Catalog {
         .map((c) => this.normalizeCard(c))
         .filter((p): p is Product => p !== null)
         .filter((p) => filterByPrice(p, opts))
+        .sort((a, b) => compareForSort(a, b, opts.sort))
         .slice(0, limit);
 
       // Cache code → URL for fast getProduct.
@@ -269,6 +270,11 @@ export class Catalog {
     const url = new URL("/search.htm", this.browser.locale.baseUrl);
     url.searchParams.set("exps", opts.query);
     if (opts.sort) {
+      // NOTE: Alza's /search.htm currently ignores the `o=` sort parameter
+      // (verified 2026-09-12: o=0/2/3 all return identical relevance order;
+      // the site's sort control is client-side JS). We keep the parameter as
+      // documentation of intent and rely on `compareForSort` below, which
+      // sorts the fetched page client-side — that is the actual guarantee.
       const sortMap: Record<SortOrder, string> = {
         relevance: "0",
         "price-asc": "2",
@@ -315,6 +321,24 @@ interface ProductPageData {
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
+}
+
+/**
+ * Client-side sort for search results. Alza's search page serves results in
+ * relevance order regardless of the `o=` parameter, so price/rating orders
+ * are applied here, to the fetched page only (not the whole catalog).
+ * Products without a price sort last for price orders; missing ratings
+ * sort last for rating order.
+ */
+export function compareForSort(a: Product, b: Product, sort?: SortOrder): number {
+  if (sort === "price-asc" || sort === "price-desc") {
+    if (a.price === undefined && b.price === undefined) return 0;
+    if (a.price === undefined) return 1; // unknown price sorts last
+    if (b.price === undefined) return -1;
+    return sort === "price-asc" ? a.price - b.price : b.price - a.price;
+  }
+  if (sort === "rating") return (b.rating ?? 0) - (a.rating ?? 0);
+  return 0;
 }
 
 function filterByPrice(p: Product, opts: SearchOptions): boolean {

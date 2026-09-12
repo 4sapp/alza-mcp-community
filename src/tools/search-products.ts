@@ -20,7 +20,9 @@ const inputSchema = {
   sort: z
     .enum(["relevance", "price-asc", "price-desc", "rating", "newest"])
     .optional()
-    .describe("Sort order. Default 'relevance'."),
+    .describe(
+      "Sort order, default 'relevance'. Price (asc/desc) and rating sorts are applied to the fetched result page (up to ~20 items per page), not the whole catalog — Alza's search page ignores server-side sort parameters. For the cheapest match overall, use a larger `limit` or combine with `min_price`/`max_price`."
+    ),
   min_price: z.number().min(0).optional().describe("Minimum price in the locale's currency."),
   max_price: z.number().min(0).optional().describe("Maximum price in the locale's currency."),
   in_stock: z
@@ -46,7 +48,7 @@ export function createSearchProductsTool(deps: ToolDeps): RegisterableTool {
         {
           title: "Search Alza products",
           description:
-            "Search the Alza.cz catalog by keyword. Use this for product discovery — finding what's available, comparing options, or starting research. Returns a list with product code, name, price, availability, and rating. To get full details for one product, follow up with `get_product`.",
+            "Search the Alza.cz catalog by keyword. Use this for product discovery — finding what's available, comparing options, or starting research. Returns a list with product code, name, price, availability, and rating. To get full details for one product, follow up with `get_product`. Sorting: price-asc / price-desc / rating are applied to the fetched result page (up to ~20 items), not the whole catalog — Alza's search page ignores server-side sort parameters; for the absolute cheapest match, widen `limit` or use `min_price`/`max_price`. Read-only.",
           inputSchema,
           annotations: {
             readOnlyHint: true,
