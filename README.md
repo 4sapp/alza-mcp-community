@@ -183,7 +183,7 @@ Register the local build in pi's global MCP config (`~/.pi/agent/mcp.json`):
 }
 ```
 
-Run `/reload` (or `mcp connect alza` — the gateway respawns the stdio process, so a freshly built `dist/` takes effect without `/reload`). The gateway exposes the 41 tools under the `alza_` prefix (`alza_search_products`, `alza_get_product`, `cart`, …). Auth auto-loads from `~/.alza-mcp/tokens.json`. Live pi-integration verification (search/filter/detail through the gateway, authenticated add-to-cart, bogus-coupon round-trip → server-side `err:1` envelope): [docs/live-evidence/pi-integration-2026-09-10.md](docs/live-evidence/pi-integration-2026-09-10.md).
+Run `/reload` (or `mcp connect alza` — the gateway respawns the stdio process, so a freshly built `dist/` takes effect without `/reload`). The gateway exposes the 41 tools under the `alza_` prefix (`alza_search_products`, `alza_get_product`, `alza_cart`, …). Auth auto-loads from `~/.alza-mcp/tokens.json`. Live pi-integration verification (search/filter/detail through the gateway, authenticated add-to-cart, bogus-coupon round-trip → server-side `err:1` envelope): [docs/live-evidence/pi-integration-2026-09-10.md](docs/live-evidence/pi-integration-2026-09-10.md).
 
 ---
 

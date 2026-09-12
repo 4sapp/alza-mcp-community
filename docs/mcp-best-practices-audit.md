@@ -51,6 +51,7 @@ Output: **md** = markdown text + structured · **raw** = raw upstream JSON (unbo
 | `alza_place_order` | M, but states prerequisites + token | **u** (4 payloads) | ~R ~I | raw |
 | `alza_web_pickup_places` | **A+** (fields returned, read-only, follow-up tool) | d (partial) | R I | raw |
 | `alza_web_add_to_cart` | **A+** (visitor-keyed basket, follow-up, mutating note) | d | ~R ~I | raw |
+| `alza_web_cart` | A-ish (HATEOAS cart state + item fields listed, cross-ref to `alza_web_add_to_cart`, read-only) | d | R I | raw |
 | `alza_chat_navigation` | A-ish (row W18, read-only) | d | R I | raw |
 | `alza_chat_send` | A-ish (page_type codes with dated capture) | d (partial) | ~R ~I | raw |
 
