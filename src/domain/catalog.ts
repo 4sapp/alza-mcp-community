@@ -28,6 +28,13 @@ interface RawCard {
   priceText: string | null;
   ratingText: string | null;
   reviewCountText: string | null;
+  /**
+   * Purchasable right now, per the card's CTA (verified 2026-09-12):
+   * true = "Do košíku" / "Vybrat variantu" button, false = "Hlídat" (watch)
+   * button, null = no CTA found (undetermined). Alza search cards carry no
+   * explicit stock attribute.
+   */
+  inStock: boolean | null;
 }
 
 const CARD_EXTRACTOR = `(function() {
@@ -43,6 +50,14 @@ const CARD_EXTRACTOR = `(function() {
     var sample = (card.textContent || '').trim().replace(/\\s+/g, ' ');
     var ratingMatch = sample.match(/(\\d[,.]\\d)\\s*\\d+×/);
     var reviewMatch = sample.match(/(\\d+)×/);
+    // Stock signal = the purchase CTA (verified 2026-09-12): "Do košíku" /
+    // "Vybrat variantu" = purchasable now, a standalone "Hlídat" button = not
+    // purchasable. The "Hlídat dostupnost nebo cenu" watch link appears on
+    // every card, so only exact CTA texts are trusted.
+    var inStock = null;
+    var ctas = Array.from(card.querySelectorAll('a, button')).map(function(e) { return (e.textContent || '').replace(/\\u00a0/g, ' ').trim(); });
+    if (ctas.some(function(t) { return /Do košíku|Vybrat variantu/.test(t); })) inStock = true;
+    else if (ctas.some(function(t) { return t === 'Hlídat'; })) inStock = false;
     return {
       code: card.getAttribute('data-code'),
       id: card.getAttribute('data-id'),
@@ -52,7 +67,8 @@ const CARD_EXTRACTOR = `(function() {
       image: attr('img', 'src') || attr('img', 'data-src'),
       priceText: txt('.price'),
       ratingText: ratingMatch ? ratingMatch[1] : null,
-      reviewCountText: reviewMatch ? reviewMatch[1] : null
+      reviewCountText: reviewMatch ? reviewMatch[1] : null,
+      inStock: inStock
     };
   });
 })()`;
@@ -103,45 +119,76 @@ export class Catalog {
     const page = Math.max(1, opts.page ?? 1);
     const cacheKey = JSON.stringify({ ...opts, limit, page });
 
+    // Alza's search page ignores server-side sort (verified 2026-09-12) and
+    // cards carry no explicit stock attribute, so for price/rating orders we
+    // gather candidates from up to sortSweepPages(limit) pages and sort
+    // client-side (compareForSort); `in_stock` is enforced from each card's
+    // purchase CTA (see RawCard.inStock). An explicit page > 1 keeps the
+    // single-page behaviour.
+    const sweeping =
+      page === 1 &&
+      (opts.sort === "price-asc" || opts.sort === "price-desc" || opts.sort === "rating");
+    const maxPages = sweeping ? sortSweepPages(limit) : 1;
+
     return this.searchCache.memoize(cacheKey, async () => {
-      const url = this.buildSearchUrl(opts, page);
-      log.debug("catalog.searchProducts", { url });
-
-      const cards = await this.browser.withPage(async (p) => {
-        const res = await p.goto(url, { waitUntil: "commit", timeout: 30_000 });
-        await p.waitForLoadState("load", { timeout: 30_000 }).catch(() => {});
-        await p
-          .waitForSelector(".browsingitem", { timeout: 15_000 })
-          .catch(() => null);
-        if (res && res.status() >= 400) {
-          // Some "no results" pages are legit 404 — degrade gracefully.
-          return [] as RawCard[];
+      const candidates: Product[] = [];
+      const seen = new Set<string>();
+      let pagesFetched = 0;
+      for (let pageNum = page; pageNum < page + maxPages; pageNum++) {
+        const cards = await this.fetchSearchPage(opts, pageNum);
+        pagesFetched++;
+        const organic = cards
+          .filter((c) => !c.sponsored)
+          .map((c) => this.normalizeCard(c))
+          .filter((p): p is Product => p !== null);
+        for (const p of organic) {
+          if (seen.has(p.code)) continue;
+          seen.add(p.code);
+          candidates.push(p);
+          this.productUrlCache.set(p.code, p.url);
         }
-        return (await p.evaluate(CARD_EXTRACTOR)) as RawCard[];
-      });
+        // Ran past the end of the results (empty/short page) — no point more.
+        if (!sweeping || organic.length === 0) break;
+      }
 
-      const products = cards
-        .filter((c) => !c.sponsored)
-        .map((c) => this.normalizeCard(c))
-        .filter((p): p is Product => p !== null)
+      const products = candidates
         .filter((p) => filterByPrice(p, opts))
+        .filter((p) => passesInStock(p, opts.inStock))
         .sort((a, b) => compareForSort(a, b, opts.sort))
         .slice(0, limit);
 
-      // Cache code → URL for fast getProduct.
-      for (const c of cards) {
-        if (c.code && c.url) {
-          this.productUrlCache.set(c.code, this.absUrl(c.url));
-        }
-      }
+      log.debug("catalog.searchProducts", {
+        query: opts.query,
+        pages: pagesFetched,
+        candidates: candidates.length,
+        returned: products.length,
+      });
 
       return {
         query: opts.query,
         total: products.length,
         page,
         pageSize: limit,
+        candidatesScanned: sweeping ? candidates.length : undefined,
         products,
       };
+    });
+  }
+
+  private async fetchSearchPage(opts: SearchOptions, pageNum: number): Promise<RawCard[]> {
+    const url = this.buildSearchUrl(opts, pageNum);
+    log.debug("catalog.fetchSearchPage", { url });
+    return this.browser.withPage(async (p) => {
+      const res = await p.goto(url, { waitUntil: "commit", timeout: 30_000 });
+      await p.waitForLoadState("load", { timeout: 30_000 }).catch(() => {});
+      await p
+        .waitForSelector(".browsingitem", { timeout: 15_000 })
+        .catch(() => null);
+      if (res && res.status() >= 400) {
+        // Some "no results" pages are legit 404 — degrade gracefully.
+        return [] as RawCard[];
+      }
+      return (await p.evaluate(CARD_EXTRACTOR)) as RawCard[];
     });
   }
 
@@ -299,7 +346,8 @@ export class Catalog {
       image: c.image ?? undefined,
       price: parsePrice(c.priceText),
       currency: this.browser.locale.currency,
-      availability: undefined,
+      availability:
+        c.inStock === null ? undefined : c.inStock ? "in stock" : "not purchasable now",
       rating: c.ratingText ? Number(c.ratingText.replace(",", ".")) : undefined,
     };
   }
@@ -324,11 +372,32 @@ function clamp(n: number, min: number, max: number): number {
 }
 
 /**
+ * How many result pages to gather before a client-side price/rating sort.
+ * Alza serves ~24 cards per page (verified 2026-09-12). Two pages (~48
+ * candidates) is the floor so the sort has real material; three pages (~72)
+ * covers the largest limit. Bounded for latency: each page is one full
+ * browser navigation.
+ */
+export function sortSweepPages(limit: number): number {
+  return Math.min(3, Math.max(2, Math.ceil(limit / 24)));
+}
+
+/**
+ * In-stock filter from the card's purchase CTA. `inStock: true` keeps only
+ * products confirmed purchasable now; undetermined stock is excluded (the
+ * flag is an assertion). Without the flag nothing is filtered.
+ */
+export function passesInStock(p: Product, inStock?: boolean): boolean {
+  if (!inStock) return true;
+  return p.availability === "in stock";
+}
+
+/**
  * Client-side sort for search results. Alza's search page serves results in
  * relevance order regardless of the `o=` parameter, so price/rating orders
- * are applied here, to the fetched page only (not the whole catalog).
- * Products without a price sort last for price orders; missing ratings
- * sort last for rating order.
+ * are applied here — to the swept candidate pool for price/rating orders
+ * (see sortSweepPages), never to the whole catalog. Products without a
+ * price sort last for price orders; missing ratings sort last for rating order.
  */
 export function compareForSort(a: Product, b: Product, sort?: SortOrder): number {
   if (sort === "price-asc" || sort === "price-desc") {

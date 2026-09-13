@@ -31,6 +31,12 @@ export interface SearchResult {
   page: number;
   pageSize: number;
   products: Product[];
+  /**
+   * Set when a client-side sort (price/rating) swept multiple pages: how
+   * many candidates were scanned before sorting + slicing. Absent for
+   * single-page (relevance/newest or explicit page) searches.
+   */
+  candidatesScanned?: number;
 }
 
 export interface Category {

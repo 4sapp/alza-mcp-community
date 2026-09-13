@@ -48,7 +48,7 @@ export function createSearchProductsTool(deps: ToolDeps): RegisterableTool {
         {
           title: "Search Alza products",
           description:
-            "Search the Alza.cz catalog by keyword. Use this for product discovery — finding what's available, comparing options, or starting research. Returns a list with product code, name, price, availability, and rating. To get full details for one product, follow up with `get_product`. Sorting: price-asc / price-desc / rating are applied to the fetched result page (up to ~20 items), not the whole catalog — Alza's search page ignores server-side sort parameters; for the absolute cheapest match, widen `limit` or use `min_price`/`max_price`. Read-only.",
+            "Search the Alza.cz catalog by keyword. Use this for product discovery — finding what's available, comparing options, or starting research. Returns a list with product code, name, price, stock (from the card's purchase CTA), and rating. To get full details for one product, follow up with `get_product`. Sorting: Alza's search page ignores server-side sort, so price-asc / price-desc / rating scan up to ~72 top-ranked candidates (3 pages) and sort them client-side — `candidatesScanned` reports how many were scanned; for an absolute price floor also pass `max_price`. `in_stock: true` keeps only products with a live purchase CTA. Read-only.",
           inputSchema,
           annotations: {
             readOnlyHint: true,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareForSort } from "../src/domain/catalog.js";
+import { compareForSort, passesInStock, sortSweepPages } from "../src/domain/catalog.js";
 import type { Product } from "../src/domain/types.js";
 
 const p = (over: Partial<Product>): Product => ({
@@ -53,5 +53,30 @@ describe("compareForSort", () => {
         }
       }
     }
+  });
+});
+
+describe("sortSweepPages", () => {
+  it("floors at 2 pages, caps at 3, scales with limit", () => {
+    expect(sortSweepPages(1)).toBe(2);
+    expect(sortSweepPages(5)).toBe(2);
+    expect(sortSweepPages(24)).toBe(2);
+    expect(sortSweepPages(48)).toBe(2);
+    expect(sortSweepPages(49)).toBe(3);
+    expect(sortSweepPages(50)).toBe(3);
+  });
+});
+
+describe("passesInStock", () => {
+  it("keeps everything when the flag is unset", () => {
+    expect(passesInStock(p({}), undefined)).toBe(true);
+    expect(passesInStock(p({}), false)).toBe(true);
+  });
+
+  it("keeps only confirmed in-stock products when in_stock=true", () => {
+    expect(passesInStock(p({ availability: "in stock" }), true)).toBe(true);
+    expect(passesInStock(p({ availability: "not purchasable now" }), true)).toBe(false);
+    // undetermined stock is excluded — the flag is an assertion
+    expect(passesInStock(p({}), true)).toBe(false);
   });
 });
