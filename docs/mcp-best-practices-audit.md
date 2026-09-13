@@ -27,6 +27,13 @@ Every finding is cited to a source; priorities P0 (fix first) → P3 (nice-to-ha
 
 ## Inventory (41 tools)
 
+> **Historical record — the as-found 2026-09-10 state, before the F-01…F-10
+> fixes.** The `alza_` names and “raw” output columns below describe that
+> snapshot; for the current surface see the wire capture in
+> [Re-audit 2026-09-13](#re-audit-2026-09-13-fresh-cycle). (One row was
+> inaccurate even against its own snapshot: `search_products` has carried
+> `{readOnlyHint, openWorldHint}` since v0.1.0 — no `idempotentHint`; see N-2.)
+
 Legend — Description: **A** = agent-facing (when-to-use/when-not, outcome) · **M** =
 endpoint-mechanics phrasing ("Read X endpoint / POST a Y payload") · **S** = stale
 (v0.1/v0.2 caveats that no longer match the implementation). Params: **d** = described,
@@ -271,10 +278,91 @@ criterion ("or the audit explicitly records 'none justified'").
 Unchanged: `search_products`, `get_product`, `get_product_reviews`,
 `find_pickup_points`, `list_categories`.
 
-## Follow-ups (out of scope for this goal, recorded)
+## Follow-ups (out of scope for the 2026-09-10 goal, recorded)
 
-- `outputSchema` per tool (F-06c) — disproportionate while envelopes are dynamic.
+- `outputSchema` per tool (F-06c) — disproportionate while envelopes are dynamic;
+  implemented in the 2026-09-13 cycle at envelope level (see re-audit N-1).
 - AlzaBox pickup discovery (pickup.ts "v0.2") — new API surface, separate goal.
 - `input_examples` (S5) — Claude-platform-specific field, not in the MCP tool
   definition; keep examples inside descriptions instead.
+- Agent-driven eval harness — implemented in the 2026-09-13 cycle (`npm run eval`).
+
+## Re-audit 2026-09-13 (fresh cycle)
+
+### Method
+
+- Sources S1–S5 re-fetched 2026-09-13 (unchanged); S6–S8 added (the 2026-07-28
+  spec revision, spec index, TS-SDK v2 docs) — see the Sources table.
+- Full `tools/list` captured over stdio against the built server
+  (`docs/live-evidence/tools-list-2026-09-13.json`): names, titles, descriptions,
+  inputSchemas and annotations as actually served on the wire.
+- All 41 tools, the server instructions, the `find-product` prompt and the
+  `alza://product/{code}` resource re-read against the refreshed sources.
+
+### F-01…F-10 regression (all re-checked individually)
+
+| Finding | Verdict | Evidence |
+|---|---|---|
+| F-01 naming split | **Fixed, still holding** | wire capture: all 41 names bare, no `alza_` prefix |
+| F-02 plumbing phrasing | **Fixed** in all 41 tool descriptions; residue: 2 stale "v0.2" JSDoc comments in `src/domain/pickup.ts` (→ N-3, comments only) | source read |
+| F-03 undocumented params | **Fixed, still holding** | wire capture: 0 undescribed properties across 41 tools |
+| F-04 `mobile_read` catch-all | **Fixed**: repositioned as read-only escape hatch, typed-tool preference list, named high-value operations | source read |
+| F-05 annotations | **Fixed** overall: `readOnlyHint` on 23 reads; `destructiveHint: true` only on the 8 genuinely destructive ops (place/web_place_order, register, address_delete, pay/web_pay_after_order, subscription_activate, subscription_update_installment); `mutate_list` D=false is correct — only the 18 whitelisted low-risk actions run through it; `account_status`/`prepare_mutation` O=false is correct (no network call); `checkout_preview` I=false is honest (mints a one-time token). Two nits → N-2 | wire capture matrix |
+| F-06 outputs | **Fixed** for the 5 high-volume tools (cart, add_to_cart, checkout_preview, profile, order): concise text + full envelope in `structuredContent`. F-06c outputSchema still open → N-1 (implemented this cycle, task-5) | source read |
+| F-07 stale package/README | **Fixed** | package.json:5, README "What it does" |
+| F-08 schema/behavior | **Fixed**: find_pickup_points states the AlzaBox caveat honestly; prepare_mutation enum covers all 29 MUTATION_ACTIONS (18 low + 11 high incl. web_place_order/web_after_order_payment) | source read |
+| F-09 empty inputSchema | **Fixed at the wire level**: sources pass `{}`, the SDK serializes `{$schema, "type":"object", "properties":{}}` — 0 empty schemas on the wire | wire capture |
+| F-10 deterministic order | **Fixed**: fixed array in `src/server.ts:73-77` | source read |
+
+Also re-verified the "Already good" list above is intact (token confirmation
+flow validates the action-bound single-use token on every call via
+`assertMutationToken`, mobile-account.ts:244; titles on all tools; Zod bounds;
+structuredContent + TextContent everywhere; instructions/prompt/resource
+reference the bare names — no stale `alza_` cross-references).
+
+### New findings (N-series)
+
+- **N-1 · P1 · No per-tool outputSchema** (resolution: implemented this cycle).
+  The 2026-07-28 spec (S6) allows outputSchema → any JSON Schema 2020-12 schema
+  and structuredContent → any JSON value; the TS SDK 1.29 `registerTool` accepts
+  `outputSchema` and validates each call's `structuredContent` against it.
+  Resolution: envelope-level `outputSchema` on every tool describing the stable
+  `{err?, msg?, data}` shape — per-operation data shapes stay dynamic (recorded
+  justification, same reasoning as the 2026-09-10 F-06c note). Status:
+  **source-confirmed + live-verified** after task-5.
+- **N-2 · P3 · Catalog annotation nits** (resolution: implemented this cycle).
+  `search_products` lacks `idempotentHint`; `get_product`, `get_product_reviews`
+  and `list_categories` lack `openWorldHint`. The 2026-09-10 inventory recorded
+  search_products as "R I O" — inaccurate; corrected by this audit. Fix:
+  harmonize all 5 catalog tools to R+I+O. Status: **source-confirmed + live-verified**.
+- **N-3 · P3 · Stale "v0.2" JSDoc comments** in `src/domain/pickup.ts` (2 sites).
+  v0.3.0 shipped without AlzaBox discovery; the comments still read "planned
+  for v0.2". Comments only, no behavior. Resolution: reworded.
+  Status: **source-confirmed**.
+- **N-4 · P3 · 2026-07-28 spec deltas not applicable to this build** (recorded
+  justification, no code change):
+  - `icons` / `x-mcp-header` — HTTP-transport features; this server is stdio
+    (and the SDK 1.29 registerTool has no icons param). The spec itself says a
+    stdio server MAY ignore x-mcp-header.
+  - `InputRequiredResult` multi-round-trip — our confirmation flow already
+    achieves the same safety with a single token round-trip (prepare_mutation →
+    typed mutation); restructuring to input-required results is SDK-dependent.
+  - tools/list caching — SDK-managed; the gateway/pack decides. No change.
+  - `$ref` resolution in schemas — our schemas are flat/inlined (Zod → JSON
+    Schema via zod-to-json-schema); no `$ref` emitted, so nothing to resolve.
+  - SEP-2106 (outputSchema/structuredContent broadening) — satisfied by N-1.
+  - Stateful-tools auth guidance (validate caller auth against the handle on
+    every call) — satisfied: the action-bound token is re-validated on every
+    mutation (`assertMutationToken`), tokens auto-load from ~/.alza-mcp/tokens.json.
+  Status: **source-confirmed**; re-evaluate on any HTTP transport or SDK upgrade.
+
+### 2026-09-13 cycle outcome summary
+
+- 0 P0/P1 regressions; F-01…F-10 all still holding (F-09 verified at wire
+  level this cycle).
+- New findings N-1…N-4 all resolved within this cycle (N-4 by recorded
+  justification).
+- Follow-ups delivered: per-tool envelope-level outputSchema (N-1), eval
+  harness (`npm run eval`, `docs/live-evidence/eval-2026-09-13.json`),
+  catalog annotation harmonization (N-2), N-3 rewording.
 - Evaluation harness (S4) — agent-driven tool-use evals, separate goal.
