@@ -52,6 +52,7 @@ export function createSearchProductsTool(deps: ToolDeps): RegisterableTool {
           inputSchema,
           annotations: {
             readOnlyHint: true,
+            idempotentHint: true,
             openWorldHint: true,
           },
         },

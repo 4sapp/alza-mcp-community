@@ -6,9 +6,11 @@ import type { Locale } from "../infra/locale.js";
 import type { PickupPoint } from "./types.js";
 
 /**
- * AlzaBox locker discovery is planned for v0.2 (DOM-scrape of
- * https://www.alza.cz/alzabox.htm). v0.1 returns AlzaShop showrooms
- * from the curated branch dataset only.
+ * AlzaBox locker discovery is not implemented in this release — a DOM-scrape
+ * of https://www.alza.cz/alzabox.htm is recorded as a separate follow-up goal
+ * (docs/mcp-best-practices-audit.md N-series; find_pickup_points documents the
+ * caveat in its description). This module returns AlzaShop showrooms from the
+ * curated branch dataset only.
  */
 export interface FindPickupOptions {
   postalCode: string;
@@ -35,7 +37,7 @@ export class Pickup {
         .map((b) => seedToPoint(b, distanceKm(center, { lat: b.latitude, lng: b.longitude })));
       results.push(...branches);
     }
-    // AlzaBox lockers — v0.2.
+    // AlzaBox lockers — not implemented in this release (see module JSDoc).
 
     results.sort((a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
     return results.slice(0, limit);

@@ -26,7 +26,7 @@ export function createGetProductTool(deps: ToolDeps): RegisterableTool {
             "For reviews use `get_product_reviews`; for the complete spec sheet (parameterGroups) use `mobile_read` with operation=`router_product` and product_id = the numeric `d########` id from the product URL. " +
             "Sourced from the product page's JSON-LD schema, so values are accurate and stable. Read-only.",
           inputSchema,
-          annotations: { readOnlyHint: true, idempotentHint: true },
+          annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
         },
         async (args) =>
           errorWrap(name, async () => {

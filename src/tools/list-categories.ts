@@ -24,7 +24,7 @@ export function createListCategoriesTool(deps: ToolDeps): RegisterableTool {
           description:
             "Browse the Alza category tree one level at a time. Useful for narrowing a product search — find the right category id, then pass it to `search_products` as `category_id`. Without arguments, returns top-level categories.",
           inputSchema,
-          annotations: { readOnlyHint: true, idempotentHint: true },
+          annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
         },
         async (args) =>
           errorWrap(name, async () => {
