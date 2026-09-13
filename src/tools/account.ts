@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import type { MobileAccount } from "../domain/mobile-account.js";
 import type { RegisterableTool, ToolDeps, ToolResult } from "./types.js";
 import { formatAddToCart, formatCart, formatCheckoutPreview, withConciseText } from "./account-format.js";
@@ -60,6 +61,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             "Read-only; no credentials are ever sent.",
           inputSchema: {},
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["auth_discovery"],
         },
         async () => wrap("auth_discovery", async () => result(await apiAccount(deps).authDiscovery())),
       );
@@ -80,6 +82,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             "Do not call it repeatedly for one sign-in — each call supersedes the previous state.",
           inputSchema: {},
           annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["auth_start"],
         },
         async () => wrap("auth_start", async () => result(await apiAccount(deps).authStart())),
       );
@@ -103,6 +106,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             state: z.string().min(1).describe("State value returned by `auth_start`; must match the pending PKCE session exactly."),
           },
           annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["auth_exchange"],
         },
         async (args) => wrap("auth_exchange", async () => result(await apiAccount(deps).authExchange(args.code, args.state))),
       );
@@ -118,7 +122,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           description:
             "Read-only escape hatch for Alza mobile API operations that have no dedicated tool. " +
             "Prefer the typed tool when one exists — `cart` (operation `basket_info`), `profile` (`user_data`), `contacts` (`contacts`), `search_products` (`search`), `list_categories` (`category`), `order` (`user_order`) — and use `mobile_read` for the rest. " +
-            "High-value operations: `router_product` {product_id} returns the full product envelope including the `parameterGroups` spec sheet (product_id is the numeric `d########` id from the product URL, e.g. 13078770 from https://www.alza.cz/...-d13078770.htm); `legacy_product` {product_id, ucik, pgrik, country} is the same with the server-required UCÍK/PGŘÍK values (copy them from a `router_product` response); also `alternatives` {product_id}, `ean_lookup`, `facets`, `hierarchical_filter`, `commodity_list(s)`, `cost_estimate`, `delivery_countries`, `web_after_payment_dialog` {order_id}, `order_part`/`order2_info` {order_id, ...}, `order_helpdesk_questions`, `user_review`, `discussion_posts`, `premium_trial`, `validate_login_name`, `validate_isic`, `o3_info`, `quick_order_summary`, `home_categories`, `zip_codes`/`web_zip_codes`, `branches`, `visitor_navigation`/`user_navigation`/`catalog_user_navigation`, `anonymous_orders`/`anonymous_order`, `url_info`. " +
+            "High-value operations: `router_product` {product_id} returns the full product envelope including the `parameterGroups` spec sheet (product_id is the numeric `d########` id from the product URL, e.g. 13078770 from https://www.alza.cz/...-d13078770.htm); `legacy_product` {product_id, ucik, pgrik, country} is the same with the server-required UCÍK/PGŘÍK values (copy them from a `router_product` response); also `alternatives` {product_id}, `ean_lookup`, `facets`, `hierarchical_filter`, `commodity_list(s)`, `cost_estimate`, `delivery_countries`, `web_after_payment_dialog` {order_id}, `order_part`/`order2_info` {order_id, ...}, `order_helpdesk_questions`, `user_review`, `discussion_posts`, `premium_trial`, `validate_login_name`, `validate_isic`, `o3_info`, `quick_order_summary`, `home_categories` (requires the server-side pgri/ui query values — copy them from an upstream `self` href in a navigation response, e.g. `?pgri=p__…&ui=u__…`), `zip_codes`/`web_zip_codes`, `branches`, `visitor_navigation`/`user_navigation`/`catalog_user_navigation`, `anonymous_orders`/`anonymous_order`, `url_info`. " +
             "This tool never accepts arbitrary URLs or credentials, and never mutates state. " +
             "Account-scoped operations " + AUTH_PREREQ + " Returns the raw upstream envelope (`err`/`msg`/`data`); `err:1` with a `msg` is an Alza-side validation (e.g. unknown product id).",
           inputSchema: {
@@ -126,6 +130,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             args: jsonObject.optional().describe("Operation-specific arguments as a JSON object, e.g. router_product: {product_id: 13078770}; web_after_payment_dialog: {order_id: \"...\"}. Omit for operations that take none."),
           },
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["mobile_read"],
         },
         async (args) => wrap("mobile_read", async () => result(await apiAccount(deps).read(args.operation, args.args ?? {}))),
       );
@@ -147,6 +152,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             action: z.enum([...LOW_RISK_ACTIONS, ...HIGH_IMPACT_ACTIONS]).describe("Which mutation you are about to perform; the token will only be accepted by that action's tool."),
           },
           annotations: { readOnlyHint: true, idempotentHint: false, destructiveHint: false, openWorldHint: false },
+          outputSchema: OUTPUT_SCHEMAS["prepare_mutation"],
         },
         async (args) => wrap("prepare_mutation", async () => result(apiAccount(deps).prepareMutation(args.action))),
       );
@@ -171,6 +177,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             payload: jsonObject.describe("Mutation payload matching the mobile DTO for `action`, e.g. coupon_add: {coupon: \"CODE\"}; coupon_remove: {couponId: 123}; basket_update: {basket_id: 1, flag: true}."),
           },
           annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["mutate_list"],
         },
         async (args) => wrap("mutate_list", async () => result(await apiAccount(deps).mutateList(args.action, args.confirmation_token, args.payload))),
       );
@@ -190,6 +197,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             "Read-only; no network call.",
           inputSchema: {},
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
+          outputSchema: OUTPUT_SCHEMAS["account_status"],
         },
         async () => wrap("account_status", async () => result(apiAccount(deps).status())),
       );
@@ -209,6 +217,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             AUTH_PREREQ + " Read-only. The response envelope is large (item lines + order summary); the `basket_cnt`, `pricePay`, and `items` fields are the signal.",
           inputSchema: {},
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["cart"],
         },
         async () => wrap("cart", async () => withConciseText(await apiAccount(deps).cart(), formatCart)),
       );
@@ -232,6 +241,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             quantity: z.number().int().min(1).max(99).default(1).describe("How many units to add. Default 1, max 99."),
           },
           annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["add_to_cart"],
         },
         async (args) => wrap("add_to_cart", async () => withConciseText(await apiAccount(deps).addToCart(args.code, args.quantity), formatAddToCart)),
       );
@@ -254,6 +264,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             selected_delivery_option_id: z.number().int().optional().describe("Delivery option id from a prior response to anchor the group listing on a chosen delivery method. Omit for the default listing."),
           },
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["delivery_options"],
         },
         async (args) => wrap("delivery_options", async () => result(await apiAccount(deps).deliveryOptions(args.selected_delivery_option_id))),
       );
@@ -276,6 +287,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             association: jsonObject.describe("The DeliveryPaymentAssociation object copied from the `delivery_options` response for the chosen pickup point."),
           },
           annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["select_pickup_point"],
         },
         async (args) => wrap("select_pickup_point", async () => result(await apiAccount(deps).selectAlzaBox(args.association))),
       );
@@ -298,6 +310,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             selected_delivery_option_id: z.number().int().optional().describe("Delivery option id from `delivery_options` to preview that specific delivery method. Omit for the server default."),
           },
           annotations: { readOnlyHint: true, idempotentHint: false, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["checkout_preview"],
         },
         async (args) => wrap("checkout_preview", async () => withConciseText(await apiAccount(deps).previewOrder(args.selected_delivery_option_id), formatCheckoutPreview)),
       );
@@ -323,6 +336,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             complete_order: jsonObject.describe("SendCompleteOrder object copied from the checkout response."),
           },
           annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: true, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["place_order"],
         },
         async (args) => wrap("place_order", async () => result(await apiAccount(deps).submitOrder(args.confirmation_token, args.delivery_payment, args.user_info, args.complete_order))),
       );
@@ -352,6 +366,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             place_id: z.number().int().positive().optional().describe("Fetch the detail for a single place (the call the web UI fires on place selection)."),
           },
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["web_pickup_places"],
         },
         async (args) => wrap("web_pickup_places", async () => result(await apiAccount(deps).webPickupPlaces(args))),
       );
@@ -375,6 +390,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             count: z.number().int().min(1).max(99).default(1).describe("How many units to add. Default 1, max 99."),
           },
           annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["web_add_to_cart"],
         },
         async (args) => wrap("web_add_to_cart", async () => result(await apiAccount(deps).webAddToCart({ commodity_id: args.commodity_id, count: args.count }))),
       );
@@ -396,6 +412,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             country: z.string().length(2).optional().describe("2-letter country code, e.g. 'CZ'. Defaults to CZ."),
           },
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["chat_navigation"],
         },
         async (args) => wrap("chat_navigation", async () => result(await apiAccount(deps).chatNavigation(args.country))),
       );
@@ -428,6 +445,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             seo_prefix: z.string().max(128).optional().describe("SEO prefix from the product page URL, if known."),
           },
           annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["chat_send"],
         },
         async (args) => wrap("chat_send", async () => result(await apiAccount(deps).chatSend(args as unknown as Record<string, unknown>))),
       );
@@ -449,6 +467,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             basket_id: z.number().int().positive().describe("Basket id returned by `web_add_to_cart` (the current web basket)."),
           },
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["web_cart"],
         },
         async (args) => wrap("web_cart", async () => result(await apiAccount(deps).webCart(args.basket_id))),
       );

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import { formatSearchResult } from "./format.js";
 import type { RegisterableTool, ToolDeps } from "./types.js";
 
@@ -50,6 +51,7 @@ export function createSearchProductsTool(deps: ToolDeps): RegisterableTool {
           description:
             "Search the Alza.cz catalog by keyword. Use this for product discovery — finding what's available, comparing options, or starting research. Returns a list with product code, name, price, stock (from the card's purchase CTA), and rating. To get full details for one product, follow up with `get_product`. Sorting: Alza's search page ignores server-side sort, so price-asc / price-desc / rating scan up to ~72 top-ranked candidates (3 pages) and sort them client-side — `candidatesScanned` reports how many were scanned; for an absolute price floor also pass `max_price`. `in_stock: true` keeps only products with a live purchase CTA. Read-only.",
           inputSchema,
+          outputSchema: OUTPUT_SCHEMAS["search_products"],
           annotations: {
             readOnlyHint: true,
             idempotentHint: true,

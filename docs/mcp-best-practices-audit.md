@@ -326,9 +326,14 @@ reference the bare names — no stale `alza_` cross-references).
   The 2026-07-28 spec (S6) allows outputSchema → any JSON Schema 2020-12 schema
   and structuredContent → any JSON value; the TS SDK 1.29 `registerTool` accepts
   `outputSchema` and validates each call's `structuredContent` against it.
-  Resolution: envelope-level `outputSchema` on every tool describing the stable
-  `{err?, msg?, data}` shape — per-operation data shapes stay dynamic (recorded
-  justification, same reasoning as the 2026-09-10 F-06c note). Status:
+  Resolution: envelope-level `outputSchema` on the raw tools describing the
+  stable `{err?, msg?, data}` shape (with `additionalProperties: true` for the
+  operation-specific top-level keys the envelopes carry, e.g. `basket`), and
+  typed schemas where the shape is fixed — `auth_discovery` (raw OIDC discovery
+  document), `auth_start`, `prepare_mutation`, `account_status`,
+  `checkout_preview`, `web_pickup_places`, and the 5 catalog tools. Per-operation
+  data shapes stay dynamic (recorded justification, same reasoning as the
+  2026-09-10 F-06c note). Status:
   **source-confirmed + live-verified** after task-5.
 - **N-2 · P3 · Catalog annotation nits** (resolution: implemented this cycle).
   `search_products` lacks `idempotentHint`; `get_product`, `get_product_reviews`
@@ -366,3 +371,35 @@ reference the bare names — no stale `alza_` cross-references).
   harness (`npm run eval`, `docs/live-evidence/eval-2026-09-13.json`),
   catalog annotation harmonization (N-2), N-3 rewording.
 - Evaluation harness (S4) — agent-driven tool-use evals, separate goal.
+
+### Eval harness (implemented this cycle) — scripts/eval.ts, `npm run eval`
+
+- In-memory-transport harness (same registration path as stdio): 6 scenarios
+  (registration-surface, catalog-read, auth-discovery, account-status,
+  account-read, input-validation-error-quality); per-check `observed` values
+  recorded; result file `docs/live-evidence/eval-2026-09-13.json` (6/6 passed,
+  generated 2026-09-13). Non-mutating by construction — no cart/order
+  mutations are executed by the harness.
+- The in-memory Client (SDK 1.29) sends `LATEST_PROTOCOL_VERSION`
+  **2025-11-25** and the harness handshake negotiated it — a post-2025-06-18
+  revision the SDK ships. pi's gateway negotiates 2025-06-18, so S1 stays the
+  wire-level normative reference for what pi sees; the eval harness's own
+  negotiation is recorded in its evidence file.
+- Environment observations (2026-09-13, recorded for future evals):
+  - Unauthenticated mobile-API reads are **blocked from this host** with
+    `HTTP 403` + an HTML body (`o3_info`, `delivery_countries`, `zip_codes`,
+    `search` all reproduced it via direct fetch); authenticated calls with the
+    loaded token pass (`user_data` err 0). The identity discovery endpoint
+    (`identity.alza.cz/.well-known/openid-configuration`) is also 403-blocked
+    from this host, so the harness treats a blocked upstream as a recorded
+    graceful-error check instead of a failure.
+  - `home_categories` requires the server-side `pgri`/`ui` query values —
+    HTTP 400 (`null` body) without them (observed with a valid token);
+    200 with `?pgri=p__…&ui=u__…` (docs/live-evidence/gap-fix-probe-
+    2026-09-09.json). Documented in the `mobile_read` description this cycle.
+  - Catalog reads (browser-scrape path) and the authenticated account stack
+    (token path) are live-verified by the harness on 2026-09-13.
+- Harness notes: the SDK 1.29 `Client` exposes no protocolVersion getter — the
+  negotiated version is captured via `transport.setProtocolVersion` after
+  initialize. Each call opens a fresh linked pair (SDK `Client` is single-use
+  across reconnects).

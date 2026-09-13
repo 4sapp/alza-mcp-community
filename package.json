@@ -23,6 +23,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "validate:api": "tsx scripts/validate-api.ts",
+    "eval": "tsx scripts/eval.ts",
     "pentest:app-action": "tsx scripts/pentest-app-action.ts",
     "pentest:app-action:python": "python3 scripts/pentest-app-action.py",
     "live:endpoint-matrix": "python3 scripts/live-endpoint-matrix.py",

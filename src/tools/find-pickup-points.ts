@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import { formatPickupPoints } from "./format.js";
 import type { RegisterableTool, ToolDeps } from "./types.js";
 
@@ -45,6 +46,7 @@ export function createFindPickupPointsTool(deps: ToolDeps): RegisterableTool {
             "Note: `types` accepts `alzabox`, but AlzaBox locker discovery is not yet implemented — only `branch` results are returned. For AlzaBox parcel shops in a checkout flow use `web_pickup_places` instead. " +
             "Read-only. Example: `find_pickup_points({postal_code: '110 00', radius_km: 10})`",
           inputSchema,
+          outputSchema: OUTPUT_SCHEMAS["find_pickup_points"],
           annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
         },
         async (args) =>

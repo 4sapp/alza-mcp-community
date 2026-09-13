@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import { formatReviews } from "./format.js";
 import type { RegisterableTool, ToolDeps } from "./types.js";
 
@@ -31,6 +32,7 @@ export function createGetProductReviewsTool(deps: ToolDeps): RegisterableTool {
             "If the reviews section is not rendered on the page you receive the aggregate only (empty `reviews` array) — in that case rely on the rating/count. " +
             "Do not use for the aggregate rating alone when you already have it from `search_products`/`get_product`. Read-only.",
           inputSchema,
+          outputSchema: OUTPUT_SCHEMAS["get_product_reviews"],
           annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
         },
         async (args) =>

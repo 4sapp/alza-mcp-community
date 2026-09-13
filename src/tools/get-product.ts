@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import { formatProduct } from "./format.js";
 import type { RegisterableTool, ToolDeps } from "./types.js";
 
@@ -26,6 +27,7 @@ export function createGetProductTool(deps: ToolDeps): RegisterableTool {
             "For reviews use `get_product_reviews`; for the complete spec sheet (parameterGroups) use `mobile_read` with operation=`router_product` and product_id = the numeric `d########` id from the product URL. " +
             "Sourced from the product page's JSON-LD schema, so values are accurate and stable. Read-only.",
           inputSchema,
+          outputSchema: OUTPUT_SCHEMAS["get_product"],
           annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
         },
         async (args) =>

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import type { MobileAccount } from "../domain/mobile-account.js";
 import type { RegisterableTool, ToolDeps, ToolResult } from "./types.js";
 import { formatOrder, formatProfile, withConciseText } from "./account-format.js";
@@ -51,6 +52,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
             " Read-only. Honest caveat: with a stale or missing token the API may still answer HTTP 200 with an anonymous shape (`user_id: -1`, null email) — treat `user_id` as the binding signal, and refresh the token via `auth_start`/`auth_exchange` if it is -1.",
           inputSchema: {},
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["profile"],
         },
         async () => wrap("profile", async () => withConciseText(await apiAccount(deps).profile(), formatProfile)),
       );
@@ -70,6 +72,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
             AUTH_PREREQ + " Read-only.",
           inputSchema: {},
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["contacts"],
         },
         async () => wrap("contacts", async () => result(await apiAccount(deps).contacts())),
       );
@@ -95,6 +98,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
             confirmation_token: confirmationToken,
           },
           annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: true, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["register"],
         },
         async (args) => wrap("register", async () => result(await apiAccount(deps).register({ email: args.email, phone: args.phone, pwd: args.pwd, code: args.code }, args.confirmation_token))),
       );
@@ -133,6 +137,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
                 ctx.addIssue({ code: z.ZodIssueCode.custom, message: "address_id is required when kind=edit", path: ["address_id"] });
             }),
           annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["address_upsert"],
         },
         async (args) => wrap("address_upsert", async () => result(await apiAccount(deps).addressUpsert(args.kind, args.action, { name: args.name, street: args.street, city: args.city, zip_code: args.zip_code, firm: args.firm, phone: args.phone, email: args.email, note: args.note, address_type: args.address_type, address_id: args.address_id }, args.confirmation_token))),
       );
@@ -156,6 +161,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
             confirmation_token: confirmationToken,
           },
           annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: true, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["address_delete"],
         },
         async (args) => wrap("address_delete", async () => result(await apiAccount(deps).addressDelete(args.action, { address_id: args.address_id }, args.confirmation_token))),
       );
@@ -178,6 +184,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
             query: z.string().min(1).max(50).describe("Zip or city query, e.g. '110 00' or 'Brno'."),
           },
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["address_search"],
         },
         async (args) => wrap("address_search", async () => result(await apiAccount(deps).addressSearch(args.action, args.query))),
       );
@@ -199,6 +206,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
             selected_delivery_option_id: z.number().int().positive().optional().describe("Delivery option id from `delivery_options` to list the payments valid for that delivery. Omit for the default set."),
           },
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["payment_methods"],
         },
         async (args) => wrap("payment_methods", async () => result(await apiAccount(deps).paymentMethods(args.selected_delivery_option_id))),
       );
@@ -221,6 +229,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
             part_id: z.string().min(1).max(64).describe("The order part id to pay (from `order`)."),
           },
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["after_order_payments"],
         },
         async (args) => wrap("after_order_payments", async () => result(await apiAccount(deps).afterOrderPayments(args.order_id, args.part_id))),
       );
@@ -247,6 +256,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
             confirmation_token: confirmationToken,
           },
           annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: true, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["pay_after_order"],
         },
         async (args) => wrap("pay_after_order", async () => result(await apiAccount(deps).payAfterOrder({ order_id: args.order_id, invoice_number: args.invoice_number, payment_id: args.payment_id, card_id: args.card_id, device_fingerprint: args.device_fingerprint }, args.confirmation_token))),
       );
@@ -271,6 +281,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
             initial_created: z.boolean().default(false).describe("Include the initial-creation view of the order. Default false."),
           },
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["order"],
         },
         async (args) => wrap("order", async () => withConciseText(await apiAccount(deps).order(args.order_id, args.part_id, args.user_flag, args.initial_created), formatOrder)),
       );
@@ -296,6 +307,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
             confirmation_token: confirmationToken,
           },
           annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["review_submit"],
         },
         async (args) => wrap("review_submit", async () => result(await apiAccount(deps).reviewSubmit(args.action, { rating: args.rating, text: args.text, values: args.values }, args.confirmation_token))),
       );
@@ -316,6 +328,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
             action: appAction,
           },
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["complaint_claims"],
         },
         async (args) => wrap("complaint_claims", async () => result(await apiAccount(deps).complaintClaims(args.action))),
       );
@@ -336,6 +349,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
             action: appAction,
           },
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["subscription_overview"],
         },
         async (args) => wrap("subscription_overview", async () => result(await apiAccount(deps).subscriptionOverview(args.action))),
       );
@@ -359,6 +373,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
             confirmation_token: confirmationToken,
           },
           annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: true, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["subscription_activate"],
         },
         async (args) => wrap("subscription_activate", async () => result(await apiAccount(deps).subscriptionActivate(args.action, { values: args.values }, args.confirmation_token))),
       );
@@ -382,6 +397,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
             confirmation_token: confirmationToken,
           },
           annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: true, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["subscription_update_installment"],
         },
         async (args) => wrap("subscription_update_installment", async () => result(await apiAccount(deps).subscriptionUpdateInstallment(args.action, { values: args.values }, args.confirmation_token))),
       );
@@ -421,6 +437,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
             confirmation_token: confirmationToken,
           },
           annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: true, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["web_place_order"],
         },
         async (args) => wrap("web_place_order", async () => result(await apiAccount(deps).webPlaceOrder({ delivery_id: args.delivery_id, delivery_group_id: args.delivery_group_id, parcel_shop_id: args.parcel_shop_id, payment_id: args.payment_id, name: args.name, street: args.street, city: args.city, zip_code: args.zip_code, phone: args.phone, email: args.email, register_user: args.register_user, login: args.login, country_id: args.country_id, quotation: args.quotation, internal_description: args.internal_description, user_consents: args.user_consents, basket_consents: args.basket_consents }, args.confirmation_token))),
       );
@@ -447,6 +464,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
             confirmation_token: confirmationToken,
           },
           annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: true, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["web_pay_after_order"],
         },
         async (args) => wrap("web_pay_after_order", async () => result(await apiAccount(deps).webAfterOrderPayment({ order_id: args.order_id, payment_id: args.payment_id, order_hash: args.order_hash, invoice_id: args.invoice_id, price: args.price }, args.confirmation_token))),
       );
@@ -482,6 +500,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
             confirmation_token: confirmationToken,
           },
           annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["upload_attachment"],
         },
         async (args) => wrap("upload_attachment", async () => result(await apiAccount(deps).uploadAttachment(args.action, { files: args.files, values: args.values }, args.confirmation_token))),
       );
