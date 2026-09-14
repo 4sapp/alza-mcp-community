@@ -15,11 +15,13 @@ export function formatProductLine(p: Product): string {
 }
 
 export function formatSearchResult(res: SearchResult): string {
+  const scanned =
+    res.candidatesScanned !== undefined ? ` (scanned ${res.candidatesScanned} candidates)` : "";
   if (res.products.length === 0) {
-    return `No products found for **"${res.query}"**.`;
+    return `No products found for **"${res.query}"**${scanned}.`;
   }
   const lines: string[] = [
-    `Found ${res.total} results for **"${res.query}"** (showing ${res.products.length}):`,
+    `Top ${res.products.length} result(s) for **"${res.query}"**${scanned}:`,
     "",
     ...res.products.map(formatProductLine),
   ];

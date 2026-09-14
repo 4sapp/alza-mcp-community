@@ -32,9 +32,10 @@ export interface SearchResult {
   pageSize: number;
   products: Product[];
   /**
-   * Set when a client-side sort (price/rating) swept multiple pages: how
-   * many candidates were scanned before sorting + slicing. Absent for
-   * single-page (relevance/newest or explicit page) searches.
+   * How many candidate cards were scanned before filtering/sorting (one
+   * page ≈ 24 for relevance/newest or explicit page; up to 3 pages ≈ 72
+   * for a client-side price/rating sort). Useful context for "why only N
+   * results" — the scan is bounded, not the whole catalog.
    */
   candidatesScanned?: number;
 }

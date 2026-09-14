@@ -169,7 +169,7 @@ export class Catalog {
         total: products.length,
         page,
         pageSize: limit,
-        candidatesScanned: sweeping ? candidates.length : undefined,
+        candidatesScanned: candidates.length,
         products,
       };
     });
@@ -181,14 +181,23 @@ export class Catalog {
     return this.browser.withPage(async (p) => {
       const res = await p.goto(url, { waitUntil: "commit", timeout: 30_000 });
       await p.waitForLoadState("load", { timeout: 30_000 }).catch(() => {});
-      await p
-        .waitForSelector(".browsingitem", { timeout: 15_000 })
-        .catch(() => null);
       if (res && res.status() >= 400) {
         // Some "no results" pages are legit 404 — degrade gracefully.
         return [] as RawCard[];
       }
-      return (await p.evaluate(CARD_EXTRACTOR)) as RawCard[];
+      // Render-race guard (observed 2026-09-12): the first navigation after a
+      // cold browser launch can finish "load" with the result grid still
+      // unrendered, and the selector wait can expire with zero cards —
+      // reporting "No products found" for a query that does have results.
+      // Retry the extraction a bounded number of times before accepting an
+      // empty grid (a genuinely empty result costs ~30 s extra; a false
+      // empty is much worse).
+      for (let attempt = 0; ; attempt++) {
+        await p.waitForSelector(".browsingitem", { timeout: 10_000 }).catch(() => null);
+        const cards = (await p.evaluate(CARD_EXTRACTOR)) as RawCard[];
+        if (cards.length > 0 || attempt >= 2) return cards;
+        await p.waitForTimeout(2_000);
+      }
     });
   }
 

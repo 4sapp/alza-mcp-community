@@ -22,7 +22,7 @@ The repo version jumped from 0.1.2 (npm-published) straight to 0.3.0; npm still 
 - **Descriptions rewritten agent-facing** (what/when/when-not/prerequisites/side effects per tool), stale v0.1/v0.2 caveats removed.
 - **Annotations completed and harmonized**: readOnly/destructive/modifier hints on all 41 tools; destructive=true on exactly the 8 high-impact calls; 18 mutating tools correctly marked `readOnly: false`.
 - **Concise text channel + bounded raw envelopes**: raw tools return the upstream JSON in `structuredContent` with a short human-readable text block; cart/checkout/order responses are summarized.
-- **Catalog search**: price/rating sorting applied client-side to the fetched page (Alza honors no sort server-side) with an honest description; `in_stock` filter.
+- **Catalog search**: price/rating sorting applied client-side to the fetched page (Alza honors no sort server-side) with an honest description; `in_stock` filter. `candidatesScanned` is now always present (how many cards were scanned before filtering/sorting, echoed in the response and the concise text), and the card extraction retries a bounded 3 times after a cold-browser launch so a slow render doesn't report a false "No products found".
 
 ### Fixed
 
