@@ -22,14 +22,16 @@ const inputSchema = {
     .enum(["relevance", "price-asc", "price-desc", "rating", "newest"])
     .optional()
     .describe(
-      "Sort order, default 'relevance'. Price (asc/desc) and rating sorts are applied to the fetched result page (up to ~20 items per page), not the whole catalog — Alza's search page ignores server-side sort parameters. For the cheapest match overall, use a larger `limit` or combine with `min_price`/`max_price`."
+      "Sort order, default 'relevance'. Alza's search page ignores server-side sort parameters, so price (asc/desc) and rating sorts gather candidates from up to 3 result pages (~72 items — the top of Alza's relevance ranking) and sort them client-side; the response's `candidatesScanned` says how many candidates were scanned. 'newest' is best-effort (Alza's newest-sort is client-side JS, so it returns relevance order). For an absolute price floor, also pass `max_price` and/or narrow `category_id`."
     ),
   min_price: z.number().min(0).optional().describe("Minimum price in the locale's currency."),
   max_price: z.number().min(0).optional().describe("Maximum price in the locale's currency."),
   in_stock: z
     .boolean()
     .optional()
-    .describe("If true, only return products that are available right now."),
+    .describe(
+      "If true, keep only products purchasable right now (card shows a 'Do košíku'/'Vybrat variantu' purchase CTA; cards with a 'Hlídat' watch button are excluded). Derived from the search card's CTA — for real delivery dates use `get_product`."
+    ),
   category_id: z
     .number()
     .int()
@@ -77,6 +79,7 @@ export function createSearchProductsTool(deps: ToolDeps): RegisterableTool {
                 total: result.total,
                 page: result.page,
                 pageSize: result.pageSize,
+                candidatesScanned: result.candidatesScanned,
                 products: result.products,
               },
             };
