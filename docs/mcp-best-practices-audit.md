@@ -424,3 +424,23 @@ reference the bare names — no stale `alza_` cross-references).
   two attempts of run-2 were cut at 420 s/720 s AFTER both MCP calls had
   already succeeded (isError false); only the final answer was truncated.
   Recorded so future runs budget accordingly.
+
+### Search-quality follow-up (2026-09-14) — docs/live-evidence/search-quality-2026-09-14.json
+
+Folded in and committed the same day the headless verification surfaced it:
+- price/rating sorts sweep up to 3 REAL result pages by following Alza's
+  rendered pagination anchors (`search.htm?pg=N` is ignored server-side; the
+  rendered `-pN.htm` links serve distinct products), dedup by code, sort
+  client-side; `candidatesScanned` reports the scanned count (68 candidates
+  for limit 50, live).
+- `in_stock` derives from the card's purchase CTA (nbsp-normalized; the
+  ubiquitous 'Hlídat dostupnost nebo cenu' link must not count).
+- explicit `page` follows rendered pagination; pages beyond the rendered set
+  return no results instead of repeating page 1; the sweep always scans from
+  page 1.
+- cold-start render race: bounded 3-attempt extraction retry so a slow first
+  render doesn't report a false "No products found".
+Live matrix of 5 probe cases and the gate (102/102, typecheck, build,
+diff-check) are recorded in the evidence file. The tool-level contract
+(schema shape, annotations, outputSchema) is unchanged by this batch — only
+behavioral honesty and descriptions moved.
