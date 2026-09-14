@@ -73,6 +73,32 @@ const CARD_EXTRACTOR = `(function() {
   });
 })()`;
 
+/**
+ * Pagination links for a free-text search. Alza renders page-number anchors
+ * that point at category-style pages (e.g. /notebooky/18842920-p2.htm);
+ * the `pg=` query parameter on search.htm is IGNORED (verified 2026-09-14:
+ * pg=2/3 repeat page 1 exactly, with or without `o=`). We therefore follow
+ * the rendered links. Returns {} when the search has no pagination.
+ */
+const PAGE_URLS_EXTRACTOR = `(function() {
+  var anchors = Array.from(document.querySelectorAll('a[href*=".htm"]'));
+  var out = {};
+  for (var i = 0; i < anchors.length; i++) {
+    var text = (anchors[i].textContent || '').replace(/\\s+/g, ' ').trim();
+    var href = anchors[i].getAttribute('href') || '';
+    var m = href.match(/-p(\\d{1,3})\\.htm$/);
+    if (!m) continue;
+    var n = parseInt(m[1], 10);
+    if (n < 2 || n > 50) continue;
+    if (!/^\\d+$/.test(text) || parseInt(text, 10) !== n) continue;
+    out[String(n)] = href;
+  }
+  if (Object.keys(out).length === 0) return out;
+  // derive page 1 from the -pN pattern: ".../18842920-p2.htm" -> ".../18842920.htm"
+  out["1"] = Object.values(out)[0].replace(/-p\\d+\\.htm$/, '.htm');
+  return out;
+})()`;
+
 const PRODUCT_PAGE_EXTRACTOR = `(function() {
   var lds = Array.from(document.querySelectorAll('script[type="application/ld+json"]')).map(function(s) {
     try { return JSON.parse(s.textContent || '{}'); } catch (e) { return null; }
@@ -134,9 +160,23 @@ export class Catalog {
       const candidates: Product[] = [];
       const seen = new Set<string>();
       let pagesFetched = 0;
-      for (let pageNum = page; pageNum < page + maxPages; pageNum++) {
-        const cards = await this.fetchSearchPage(opts, pageNum);
+      // Pagination links resolved from the rendered page-number anchors (see
+      // PAGE_URLS_EXTRACTOR); search.htm?pg=N is ignored by Alza.
+      let pageLinks: Record<string, string> = {};
+      for (let n = 1; n < page + maxPages; n++) {
+        if (n < page) continue; // explicit page: skip earlier pages
+        let target = pageLinks[String(n)];
+        if (!target && n > 1) {
+          // Resolve links via the first page (one navigation), then continue.
+          const first = await this.fetchSearchPage(opts);
+          pagesFetched++;
+          pageLinks = { ...pageLinks, ...first.pageUrls };
+          target = pageLinks[String(n)];
+          if (!target) break; // Alza rendered no such page — be honest, don't guess
+        }
+        const { cards, pageUrls } = await this.fetchSearchPage(opts, target);
         pagesFetched++;
+        pageLinks = { ...pageLinks, ...pageUrls };
         const organic = cards
           .filter((c) => !c.sponsored)
           .map((c) => this.normalizeCard(c))
@@ -175,15 +215,18 @@ export class Catalog {
     });
   }
 
-  private async fetchSearchPage(opts: SearchOptions, pageNum: number): Promise<RawCard[]> {
-    const url = this.buildSearchUrl(opts, pageNum);
+  private async fetchSearchPage(
+    opts: SearchOptions,
+    explicitUrl?: string
+  ): Promise<{ cards: RawCard[]; pageUrls: Record<string, string> }> {
+    const url = explicitUrl ? this.absUrl(explicitUrl) : this.buildSearchUrl(opts, 1);
     log.debug("catalog.fetchSearchPage", { url });
     return this.browser.withPage(async (p) => {
       const res = await p.goto(url, { waitUntil: "commit", timeout: 30_000 });
       await p.waitForLoadState("load", { timeout: 30_000 }).catch(() => {});
       if (res && res.status() >= 400) {
         // Some "no results" pages are legit 404 — degrade gracefully.
-        return [] as RawCard[];
+        return { cards: [] as RawCard[], pageUrls: {} };
       }
       // Render-race guard (observed 2026-09-12): the first navigation after a
       // cold browser launch can finish "load" with the result grid still
@@ -192,12 +235,22 @@ export class Catalog {
       // Retry the extraction a bounded number of times before accepting an
       // empty grid (a genuinely empty result costs ~30 s extra; a false
       // empty is much worse).
+      let cards = [] as RawCard[];
       for (let attempt = 0; ; attempt++) {
         await p.waitForSelector(".browsingitem", { timeout: 10_000 }).catch(() => null);
-        const cards = (await p.evaluate(CARD_EXTRACTOR)) as RawCard[];
-        if (cards.length > 0 || attempt >= 2) return cards;
+        cards = (await p.evaluate(CARD_EXTRACTOR)) as RawCard[];
+        log.debug("catalog.fetchSearchPage.cards", {
+          url,
+          attempt,
+          cards: cards.length,
+          sponsored: cards.filter((c) => c.sponsored).length,
+          incomplete: cards.filter((c) => !c.code || !c.name || !c.url).length,
+        });
+        if (cards.length > 0 || attempt >= 2) break;
         await p.waitForTimeout(2_000);
       }
+      const pageUrls = (await p.evaluate(PAGE_URLS_EXTRACTOR)) as Record<string, string>;
+      return { cards, pageUrls };
     });
   }
 

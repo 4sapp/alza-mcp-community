@@ -17,7 +17,9 @@ const inputSchema = {
     .int()
     .min(1)
     .optional()
-    .describe("1-indexed page number for paginating beyond `limit` results."),
+    .describe(
+      "1-indexed result page (follows Alza's rendered pagination). Only pages Alza actually renders are reachable — a page beyond the rendered set returns no results rather than repeating page 1. Paginating this way does not change which page the sweep scans (sorting still scans from page 1)."
+    ),
   sort: z
     .enum(["relevance", "price-asc", "price-desc", "rating", "newest"])
     .optional()
