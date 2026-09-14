@@ -371,6 +371,7 @@ reference the bare names — no stale `alza_` cross-references).
   harness (`npm run eval`, `docs/live-evidence/eval-2026-09-13.json`),
   catalog annotation harmonization (N-2), N-3 rewording.
 - Evaluation harness (S4) — agent-driven tool-use evals, separate goal.
+- End-to-end pi-level verification (task-6): 3 headless `pi --mode json --print` runs, all PASS — catalog search (with the price-asc sort observable at the pi level), authenticated account stack (`account_status` authenticated=true + `cart` 0 items), and the two-step mutation token flow (`prepare_mutation` address_delete, token minted, no delete executed). Evidence: `docs/live-evidence/headless-pi-2026-09-13.json`.
 
 ### Eval harness (implemented this cycle) — scripts/eval.ts, `npm run eval`
 
@@ -403,3 +404,23 @@ reference the bare names — no stale `alza_` cross-references).
   negotiated version is captured via `transport.setProtocolVersion` after
   initialize. Each call opens a fresh linked pair (SDK `Client` is single-use
   across reconnects).
+
+### Headless pi verification (task-6, 2026-09-13) — docs/live-evidence/headless-pi-2026-09-13.json
+
+- 3 scripted headless pi runs (`pi --mode json --print --no-session --thinking minimal`),
+  all exit 0 and PASS; full tool chains, result excerpts and final answers are
+  recorded in the evidence file.
+- run-1 catalog search: pi surfaced `alza_search_products` via its meta-tool
+  search, called it with `{query:"kabel hdmi", sort:"price-asc", in_stock:true,
+  max_price:300, limit:5}`; the result came back price-ascending (99, 109, …) —
+  the client-side sort fix (5ec2527) is observable at the pi level.
+- run-2 authenticated account stack: `alza_account_status` → authenticated
+  true, then `alza_cart` → 0 items, total 0 CZK (honest empty-cart report).
+  The token-verified path works through pi's stdio transport.
+- run-3 mutation token flow: `alza_prepare_mutation {action:"address_delete"}`
+  → one-time token bound to the action; no delete executed. The two-step
+  design survived the agent round-trip unchanged.
+- Environment note: model generation on the local proxy is slow at times —
+  two attempts of run-2 were cut at 420 s/720 s AFTER both MCP calls had
+  already succeeded (isError false); only the final answer was truncated.
+  Recorded so future runs budget accordingly.

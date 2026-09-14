@@ -4,7 +4,31 @@ All notable changes to this project will be documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] — 2026-09-13
+
+The repo version jumped from 0.1.2 (npm-published) straight to 0.3.0; npm still serves 0.1.2 — publishing is not part of this change. This entry documents everything on `main` since 0.1.2, grouped by theme.
+
+### Added
+
+- **Full practical Alza API surface** (36 account tools over 5 catalog tools — 41 total): anonymous + authenticated account stack — auth PKCE sign-in, mobile reads via a 38-operation `alza_mobile_read` whitelist, typed high-impact mutations (cart, delivery/pickup, checkout preview + place order, profile/addresses, payments, orders, review submit, complaints, subscriptions, attachment upload), and the legacy web WCF checkout/order/payment family. Two-step mutation design: mutating tools return a one-time confirmation token bound to exactly one action; the actual call goes out only on a follow-up `mutate_list`/typed mutation with that token.
+- **Per-tool outputSchema** (41 tools): loose envelope schema (`err`/`msg`/`data`) on the raw tools; typed schemas on `auth_discovery` (OIDC document), `auth_start`, `prepare_mutation`, `account_status`, `checkout_preview`, `web_pickup_places`, and all 5 catalog tools. SDK validates each call's `structuredContent` against the published schema.
+- **Agent-driven eval harness** (`npm run eval`): 6 non-mutating scenarios over the in-memory transport (registration surface, catalog read, auth discovery, account status, account read, input-validation error quality); per-check observed values land in `docs/live-evidence/eval-<date>.json`.
+- **pi gateway integration**: pi exposes the 41 tools under the `alza_` prefix; verified in-session and headlessly (3 scripted `pi -p` runs, `docs/live-evidence/headless-pi-2026-09-13.json`).
+- MCP best-practices audit trail: `docs/mcp-best-practices-audit.md` (F-01…F-10 fixes, 2026-09-13 re-audit regression table, N-1…N-4).
+
+### Changed
+
+- **Naming convention unified to bare tool names** (36 tools dropped the redundant `alza_` server-name prefix).
+- **Descriptions rewritten agent-facing** (what/when/when-not/prerequisites/side effects per tool), stale v0.1/v0.2 caveats removed.
+- **Annotations completed and harmonized**: readOnly/destructive/modifier hints on all 41 tools; destructive=true on exactly the 8 high-impact calls; 18 mutating tools correctly marked `readOnly: false`.
+- **Concise text channel + bounded raw envelopes**: raw tools return the upstream JSON in `structuredContent` with a short human-readable text block; cart/checkout/order responses are summarized.
+- **Catalog search**: price/rating sorting applied client-side to the fetched page (Alza honors no sort server-side) with an honest description; `in_stock` filter.
+
+### Fixed
+
+- Browser memory leak and idle shutdown (carried over from 0.1.1 fixes, kept in 0.3.0).
+- `find_pickup_points` no longer documents a non-existent AlzaBox surface; stale v0.2 pickup comments removed.
+- Deterministic tool registration order (catalog → account → advanced) and wire-level annotation-contract tests.
 
 ## [0.1.2] — 2026-05-11
 
