@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-14T15:23:13.218Z",
+  "generatedAt": "2026-09-14T19:10:06.107Z",
   "package": "alza-mcp",
   "serverVersion": "0.3.0",
   "protocolVersion": "2025-11-25",
@@ -58,7 +58,7 @@
       "name": "catalog-read",
       "live": true,
       "status": "passed",
-      "durationMs": 17402,
+      "durationMs": 16654,
       "checks": [
         {
           "check": "isError false",
@@ -131,7 +131,7 @@
       "name": "auth-discovery",
       "live": true,
       "status": "passed",
-      "durationMs": 68,
+      "durationMs": 96,
       "checks": [
         {
           "check": "blocked upstream → graceful error result mentioning HTTP",
@@ -172,7 +172,7 @@
       "name": "account-read",
       "live": true,
       "status": "passed",
-      "durationMs": 3840,
+      "durationMs": 4443,
       "checks": [
         {
           "check": "authenticated user_data isError false",
