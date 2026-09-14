@@ -35,7 +35,8 @@
     "test/format.test.ts": "honest header + empty-result scan context"
   },
   "live_matrix_2026_09_14": {
-    "capture": "tmp/matrix2.json (probe section m2)",
+    "capture": "docs/live-evidence/search-quality-matrix-2026-09-14.json (probe section 'matrix')",
+    "headless_rerun": {"log": "/tmp/pi-headless3.log (2026-09-14)", "exit_code": 0, "result": "PASS — cheapest product correct (Force Strong 139 CZK / SPTfor0202), sorted, runner-up reported"},
     "cases": [
       {"args": {"query": "čistič na kolo", "sort": "price-asc", "in_stock": true, "max_price": 300, "limit": 5}, "result": "Top 5, scanned 24 candidates, 139→189 CZK ascending, all 'in stock' (cold-start first call)"},
       {"args": {"query": "notebook", "sort": "price-asc", "limit": 50}, "result": "Top 50, scanned 68 candidates (3 real pages), cheapest first 8 888 CZK"},
