@@ -213,3 +213,106 @@ Not actionable (unchanged): AT3 (vision API — no static route), the P2 table
 Gate: `npm test` 63/63, `npm run typecheck`, `npm run build`, `git diff --check`
 green (2026-09-09). Live records: `docs/live-evidence/gap-fix-probe-2026-09-09.json`,
 `docs/live-evidence/gap-fix-probe3-2026-09-09.json`.
+
+## Blocker matrix (2026-09-16) — full blocked/unresolved classification
+
+Goal contract (goal mu3orcal-hqvsbi): close **every** `blocked`/`unresolved` row in
+`docs/mobile-endpoint-coverage.md` (main tables + dynamic-action registry). Each row
+below gets exactly one class — the resolution path this goal commits to:
+
+- **fix-attempt** — deep probe/fix work runs (operational blockers get byte-level
+  replication of the latest released APK's exact request before anything is called
+  server-side). Terminal state: *fixed* (typed implementation + unit tests + live
+  evidence) or *server-side-conclusive* (fresh dated re-test evidence + the per-run
+  re-test cadence kept, row stays `unresolved`).
+- **typed-wrapper-candidate** — a typed tool / `alza_mobile_read` op within the MCP
+  security boundary (static route, explicit input validation, one-time token on
+  high-impact mutations, origin validation). Terminal state: implemented +
+  live-verified, or an explicit dated rationale for staying blocked recorded on the row.
+- **policy-blocked** — stays blocked with recorded rationale (external-origin hand-off,
+  credential/irreversible boundary, no static route, server-driven no-op). The row is
+  documented, never silently omitted.
+- **server-side-suspect** — the blocker looks like Alza's server; probed deeply first,
+  then the terminal state per `fix-attempt`.
+
+| Row(s) | Operation / action | Class | Task | Notes |
+|---|---|---|---|---|
+| O3 (G5) | mobile `sendOrder3` HTTP 500 — blocks typed `alza_place_order` step 2 (and O5) | fix-attempt (server-side-suspect) | task-2 | **terminal: server-side-conclusive (2026-09-16, `docs/live-evidence/g5-g6-or11-retest-2026-09-16.md`)** — byte-level app request from APK 2026.17.0 replayed live: the 500 reproduced across UA versions 2026.15/456 + 2026.17/459 + future 2026.18/460 + the MCP control UA; body shapes full/guest/empty/email/`dEmail`; fresh-basket pipeline state (getUserData → basket/add → sendOrder1 → v13 groups → sendOrder2 all 200 err:0, resolved delivery group); registered + guest; and **both hosts `www.alza.cz` and `m.alza.cz`** (the APK host-resolution chain `h31.d()` → `uek.g()` → `u5j` join proves the app's production-mobile API host is **m.alza.cz** — new documented fact, row O3 updated). UA-independent, body-shape-independent, host-independent, auth-independent, pipeline-state-independent → row stays `unresolved`, per-run re-test cadence kept |
+| PA2/PA3 (G6) | mobile after-order options + execution `err:1` on WCF-created orders | fix-attempt (server-side-suspect) | task-3 | **terminal: server-side-conclusive (2026-09-16, `docs/live-evidence/g5-g6-or11-retest-2026-09-16.md`)** — re-tested against cancelled order 1058423434 with the exact app UA 2026.17/459: `err:1` persists across UA variants (app UA vs control), auth variants (Bearer/no-Bearer), paymentIds 103/144 and order states (cancelled → messages “Objednávka se zadaným ID neexistuje” (PA2) / “Objednávka nebyla nalezena” (PA3); the still-open 2026-09-08 run had “Faktura se zadaným ID neexistuje” / “Aktualizujte prosím aplikace”). **Not an app-version gate**; `v3`/`v5` (PA2) and `v5` (PA3) bumps → HTTP 404 (the APK string pool carries exactly `v2`/`v4`). PA3 fired only under the PA2-err:1 safety gate — no charge possible. Rows stay `live-verified` with the documented limitation |
+| OR11 (2026-09-15 anomaly) | order cancellation — 2026-09-15 re-test got `null` responses + “Zpracováváme změny” (2026-09-06 runs were 202 Accepted) | fix-attempt | task-4 | **terminal: resolved (2026-09-16, `docs/live-evidence/or11-cancel-retest-2026-09-16.json` + `or11-cancel-followup-2026-09-16.json`)** — the “null” was **202 Accepted with an empty body** (async cancellation accepted); the cancellation had taken effect (the order re-read showed “Objednávka byla zrušena”, phase 4, unlocked); re-issuing the PUT is idempotent-safe (re-submits, re-enters “Zpracováváme změny”, resolves back to cancelled). No implementation change needed — row OR11's 202-accepted semantics stand; the authenticated `GET /api/v1/orders/{id}` detail route 404s on the WCF port-1002 service (the anonymous read is the working detail route) |
+| A17 | GDPR data export link (read) | typed-wrapper-candidate | task-5 | **terminal: fixed (2026-09-22, `docs/live-evidence/task5-a17-or6-or10-k2-2026-09-22.md`)** — typed `gdpr_info` read (personalDetails 200 with `gdprInfoAction`+`deleteAccountAction`; gdprDialog 200, `emailInfo` = E2E login email) + `gdpr_export` low-risk mutation (POST `gdprInformation` → **202 Accepted**); unit tests in `test/task5-actions.test.ts`; row now `live-verified` |
+| OR6 | order search (read) | typed-wrapper-candidate | task-5 | **terminal: fixed (2026-09-22, same record)** — typed `order_search`: `POST /api/users/{userId}/v1/orders/search/results?country=CZ` with `{searchTerm, productFilterType:0}` (form-urlencoded per the APK form; `searchTerm` required — 400 without) → 200 with `orders[]` + invoice `documents[]`; row now `live-verified` |
+| OR10 | invoice/document download (read, origin-validated) | typed-wrapper-candidate | task-5 | **terminal: fixed (2026-09-22, same record)** — typed `order_document`: follows `Document.self.href` (HTTPS-only, Alza-host allowlist incl. `pdf.alza.cz`, max 8 MiB, non-allowlisted redirects blocked); live invoice → 200 `%PDF-1.7` 332,276 bytes; row now `live-verified` |
+| K2 | claim/complaint detail (read) | typed-wrapper-candidate | task-5 | **terminal: fixed (2026-09-22, same record)** — typed `claim_detail` (per-claim `detailAction` via the AppAction executor, same pattern as K1; unit-tested). Dated deferral on live execution: E2E account 100000001 has zero claims (`warrantyClaims/active`+`/archive` → 200 empty, 2026-09-22) so no claim exists to detail; row `source-confirmed` with the rationale on it |
+| K3 | complaint guide (return flow) | typed-wrapper-candidate (deferred) | task-5/6 boundary at execution | multi-step server-form flow, same executor pattern as K1/K4; **not named in the confirmed task list** — raise with the user before adding |
+| PA4 | Box2Box payment order-detail action (read-ish detail) | typed-wrapper-candidate (conditional) | task-5 | **dated rationale (2026-09-22)**: reachable only on Box2Box order models; the standing E2E account holds no Box2Box orders (order inventory: 1056808137 AlzaBox, 1058423434 WCF) — reachability unverifiable without a Box2Box purchase; stays `blocked` (documented in the dynamic-action registry) until a Box2Box order exists |
+| A14 | change password (credential mutation) | typed-wrapper-candidate | task-6 | **terminal: typed + live-verified-to-step-up (2026-09-23)** — `change_password` (one-time token; new ≥ 8 chars, confirm match, ≠ old) over static route `POST /v2/account/password {oldPassword, password1, password2}`; live on a **disposable** account: the commit sits behind Alza's SMS step-up (`second-factor/requests` → 200 `TwoFactorAuthSms`; wrong code → 400 `InvalidUnlockCode`); final code entry environment-blocked (re-test target) — `docs/live-evidence/task6-a14-a18-disposable-2026-09-23.md` |
+| A15 | two-factor setup | typed-wrapper-candidate | task-6 | **terminal: typed + live-verified-to-step-up (2026-09-23)** — `two_factor_set` (boolean, JSON-Patch `path:/2faEnabled`); reversible (enable→disable); same SMS step-up gate; record as above |
+| A16 | phone number update | typed-wrapper-candidate | task-6 | **terminal: typed + live-verified-to-step-up (2026-09-23)** — `phone_change` (JSON-Patch `path:/phone`) + bonus `email_change` (`path:/email`); exact 401 `identityTwoFactorAuthentication` gate reproduced live; record as above |
+| A18 | delete account (irreversible) | typed-wrapper-candidate (guarded) | task-6 | **terminal: typed + live-verified-to-step-up (2026-09-23)** — `delete_account` (`DELETE /v1/account {acknowledgeAndDelete:true}`, `destructiveHint`, disposable-only policy); gate reproduced on disposable 100000002; 5 orphaned disposable accounts from the run are the gate's direct consequence; standing E2E account 100000001 never touched; record as above |
+| R6 | product rating action | typed-wrapper-candidate | task-6 | **terminal: subsumed (rationale, 2026-09-24)** — `ratingAction` is the same WriteReview form family as R2; the typed `review_submit` already carries `rating` 1–5 + `text` (one-time token); row → `source-confirmed` (subsumed) |
+| OR7 | order archive | typed-wrapper-candidate | task-6 | **terminal: fixed (2026-09-24)** — the `archiveOrders` navigation section is a **static read** (`GET /v1/orders/archive?hideCancelledOrders={bool}&productFilterType=0`, default include-cancelled per the APK form); typed `order_archive` (read, no token, optional limit 1–100); live 200 (both toggle variants, empty `value[]` + paging) on disposable 100000002; row → `live-verified` — `docs/live-evidence/task6b-remaining-candidates-2026-09-24.md` |
+| OR8 | order data update / recalculation (high-impact) | typed-wrapper-candidate | task-6 | **terminal: blocked (dated rationale, 2026-09-24)** — `updateOrderDataAction`/`recalculationAction` absent from both standing orders (full action scan 2026-09-22: only claim-guide/careBox/chatbot); need a pending-order state, unreachable here (G5 blocks order creation); executor pattern would carry them; re-test target recorded |
+| OR9 | cancel drop order (AlzaBox) (high-impact) | typed-wrapper-candidate | task-6 | **terminal: blocked (dated rationale, 2026-09-24)** — AlzaBox order 1056808137 is one-off/completed, no `cancelDropOrder` action; no active AlzaBox subscription (subscriptions 404) and none creatable without a payment-capable state; re-test target recorded |
+| S5 | limit-exceeded repayment (charges card) | typed-wrapper-candidate | task-6 | **terminal: blocked (dated rationale, 2026-09-24)** — needs a **failed-installment** state; the standing account holds no subscription at all (subscriptions 404, 2026-09-22) → no installment, no failed installment; state unreachable; re-test target recorded |
+| PA7 + registry `addToCartAction`/`commodityCodesCarouselAction` | quick-order payment (creates + pays) | typed-wrapper-candidate | task-6 | **terminal: blocked (dated rationale, 2026-09-24)** — `SubmitQuickOrder` needs a **stored payment method** (immediate charge); the standing E2E account and the 2026-09-24 disposable account hold none (PA1 = option groups only; no stored-card read route); the action is not offered without one; re-test target recorded |
+| P7/P8/D6 | delivery variants/time-frames + personal-delivery scheduling forms | typed-wrapper-candidate | task-6 | **terminal: blocked (dated rationale, 2026-09-24)** — per-basket forms only on `canPickDeliveryTime=true` deliveries; live basket scan (64 delivery variants, disposable 100000002): **0** qualify (`showCourierTimeIntervalPicker` is a UI rule, not a form surface); static read already typed (`alza_delivery_options`); re-test target recorded |
+| PA5 | Klarna hand-off | policy-blocked | — | leaves Alza origin (security boundary); rationale already on the row |
+| PA6 | Google Pay | policy-blocked | — | external provider charge; rationale already on the row |
+| PA11 | bank-app payment channel | policy-blocked | — | client-side UX over the same PA2/PA3/PA9 `paymentId` flow; no API surface |
+| AT3 | vision (barcode/EAN product scan) | typed-wrapper-candidate (static route found on re-scan) | task-7 | **terminal: fixed (2026-09-24)** — APK 2026.17.0 re-scan: static route `POST /services/restservice.svc/v1/getProductByEANlist` in the dex string pool (request `ProductByEanRequest {eanList}`, response `ProductDetailEanResponse {data}`; packages `cz.alza.base.{api,lib,android}.vision`); typed `product_by_ean` (read, 1–20 barcodes); live probe: unknown EANs → 200 `err:1 "No products found."` (standard envelope; route up, DTO bound); positive `err:0` pending a stocked EAN (re-test target) — `docs/live-evidence/at3-vision-rescan-2026-09-24.md` |
+| (registry) `UnavailableBasketProductsAction` / `UnavailableBasketAccessoriesAction` / `CheckVouchersUnusedBalanceInBasketAction` | LeaveOrder1 result follow-ups | policy-blocked | — | conditional server-provided follow-ups in specific basket states; no static route; typed web chain covers the mainline flow |
+| (registry) `bankIdAuthApiAction` (CheckOrder4 response) | bank-identity hand-off | policy-blocked | — | external bank-origin hand-off |
+| (registry) `GiveSharedLimitConsentAction` (SendOrder4 response) / `PaymentAction` (WCF envelope field) | server-driven hand-offs inside the typed chain's own responses | policy-blocked | — | conditional hand-offs; typed chain exposes the mainline pipeline |
+| (registry) `alzaPlusActionBannerAction` | D1/OrderInfo banner action | policy-blocked | — | live scan: null across the real-basket run (documented-only) |
+| (registry) `afterSelectAction` / `afterDeselectAction` (+ `paymentAfterSelectAction`/`paymentAfterDeselectAction`) | D1 select/deselect follow-ups | policy-blocked | — | 0 non-null across 59 deliveries + 14 payments (2026-09-09 scan); no surface warranted |
+
+Registry dedup: `changePasswordAction`/`passwordAction`/`twoFactorAction`/`phoneNumberAction`/
+`gdprInfoAction`/`deleteAccountAction`/`deleteUserAccountAction` = A14–A18;
+`searchOrdersAction`/`archiveOrdersAction`/`updateOrderDataAction`/`recalculationAction`/
+`cancelDropOrder`/`downloadAction` = OR6–OR10; `limitExceededRepaymentAction` = S5;
+`v3/payment/getOrderDetailAction`/`KlarnaSession`/`GooglePayRequest`/`SubmitQuickOrder` =
+PA4/PA5/PA6/PA7; `DeliveryVariantsActions`/`DeliveryTimeItemsWithForm`/`DeliveryHoursActions`/
+personal-delivery actions = P7/P8/D6 — each classified once via its main row above.
+
+Adjacent (not a blocked row, noted to avoid silent omission): B9 watchdog's persistent
+creation is reversible only through the dynamic `WatchdogsParams.deleteAction` form
+(row stays `source-confirmed`); if the user wants the delete wrapped, it folds into
+task-6 the same way as OR9.
+
+Classification counts: 21 main-table `blocked` rows + 2 `unresolved` rows (O3, AT3) +
+the 2 G6 rows (PA2/PA3, labeled `live-verified` with a documented limitation) + the
+OR11 anomaly + 6 registry-only entries = 32 entries, all classified; zero unclassified.
+**Post task-5 (2026-09-22): 4 of the 21 main-table `blocked` rows closed** — A17/OR6/OR10 →
+`live-verified` (typed `gdpr_info`+`gdpr_export`, `order_search`, `order_document`;
+`docs/live-evidence/task5-a17-or6-or10-k2-2026-09-22.md`) and K2 → `source-confirmed`
+(typed `claim_detail`; dated rationale: zero claims on the E2E account).
+**Post task-6 (2026-09-23/24): 8 more rows closed** —
+- A14/A15/A16/A18 → `live-verified` (typed `change_password`/`two_factor_set`/`phone_change`/
+  `email_change`/`delete_account`; exact routes + DTOs + the SMS step-up chain live-verified on a
+  disposable account; final 4-digit code entry environment-blocked — re-test target;
+  `docs/live-evidence/task6-a14-a18-disposable-2026-09-23.md`)
+- R6 → `source-confirmed` (subsumed by the typed `review_submit` rating flow, rationale 2026-09-24)
+- OR7 → `live-verified` (typed `order_archive`; static read route, live 2026-09-24)
+- AT3 → `live-verified` (typed `product_by_ean`; static route found on the 2026-09-24 APK
+  re-scan; live envelope verified; `docs/live-evidence/at3-vision-rescan-2026-09-24.md`)
+Remaining main-table `blocked` rows: **11** (P7, P8, K3, S5, D6, PA4, PA5, PA6, PA7, OR8, OR9)
+— every one now carries an explicit dated rationale (2026-09-22/24) on the row + here:
+- **policy-blocked** (external hand-offs, unchanged): PA5 (Klarna), PA6 (Google Pay)
+- **reachability-gated, dated rationale + re-test target (2026-09-24)**: P7/P8/D6 (0 of 64
+  live basket deliveries expose a time-frame form), S5 (no subscription → no failed
+  installment), PA7 (no stored payment method), OR8 (neither action on the standing
+  orders; pending-order state unreachable behind G5), OR9 (no active AlzaBox drop
+  subscription); PA4 keeps its 2026-09-22 Box2Box rationale; K3 stays deferred (not
+  named in the confirmed task list)
+
+Operational note (2026-09-24): the standing E2E token is 401-gated on the www
+`/api/users/{id}/v1/*` user services (token-age re-auth window; 1secmail inbox
+sinkholed from this egress) — authenticated OR1/K1/OR6/OR7 reads on the standing
+account need a fresh E2E login; the disposable account 100000002 is the working
+authenticated identity for this batch (side finding in
+`docs/live-evidence/task6b-remaining-candidates-2026-09-24.md`).
+
+Security boundary applied throughout (unchanged from the 2026-09-08 goal): typed +
+validated + one-time-token flows only; no new transports; external-origin hand-offs
+stay blocked; origin validation on any download-style wrapper.

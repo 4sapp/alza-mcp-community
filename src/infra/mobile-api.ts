@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Page } from "playwright";
-import { AppActionExecutor, type ExecuteAppActionOptions, type ServerAppAction } from "./app-action.js";
+import { AppActionExecutor, type ExecuteAppActionOptions, type FetchLike, type ServerAppAction } from "./app-action.js";
+import { log } from "./logger.js";
 
 export interface MobileApiOptions {
   baseUrl?: string;
@@ -13,6 +14,32 @@ export interface MobileApiOptions {
    * routes that hit the www/webapi bot wall (403 + challenge HTML) are retried via an
    * in-page fetch, which is the transport the Alza app itself uses. */
   browser?: BrowserPageHost;
+  /**
+   * Chrome-fingerprint HTTP transport (scripts/cf-transport.py via
+   * ImpersonateTransport). Tried FIRST for every request: it carries a
+   * Chrome-like TLS/HTTP2/header fingerprint, which Alza's Cloudflare edge
+   * accepts (verified 2026-09-15), so most routes no longer need a browser.
+   * On failure the existing chain (plain fetch → browser fallback) applies.
+   */
+  httpFetch?: HttpFetch;
+  /**
+   * fetch-shaped implementation for the server-provided AppAction executor
+   * (same CF sidecar as `httpFetch`, so action execution shares the
+   * fingerprint). Falls back to global fetch when absent.
+   */
+  fetchImpl?: FetchLike;
+}
+
+/** fetch-shaped transport (the sidecar adapter satisfies this). */
+export interface HttpFetch {
+  (url: string, init: { method?: string; headers?: Record<string, string>; body?: string | null }): Promise<{
+    status: number;
+    text(): Promise<string>;
+    /** Binary-safe body (the CF sidecar adapter provides this). */
+    arrayBuffer?(): Promise<ArrayBuffer>;
+    /** Response header lookup (case-insensitive name). */
+    header?(name: string): string | null;
+  }>;
 }
 
 /** Minimal structural view of AlzaBrowser — keeps playwright out of this module's runtime. */
@@ -35,10 +62,16 @@ interface OidcDiscovery {
 }
 
 export class MobileApi {
+  /** Alza host family allowed for server-provided document downloads (OR10).
+   * Live invoices serve from `pdf.alza.cz`; the API hosts are www/m/webapi/api. */
+  static readonly DOCUMENT_HOSTS = new Set(["alza.cz", "www.alza.cz", "m.alza.cz", "webapi.alza.cz", "api.alza.cz", "pdf.alza.cz"]);
+
   readonly baseUrl: string;
   readonly visitorId: string;
   readonly userId?: number;
   private readonly browser?: BrowserPageHost;
+  private readonly httpFetch?: HttpFetch;
+  private readonly fetchImpl?: FetchLike;
   private accessToken?: string;
   private refreshToken?: string;
   private pendingOAuth?: OAuthStart;
@@ -52,6 +85,8 @@ export class MobileApi {
   constructor(opts: MobileApiOptions = {}) {
     this.baseUrl = (opts.baseUrl ?? process.env.ALZA_API_BASE_URL ?? "https://www.alza.cz").replace(/\/$/, "");
     this.browser = opts.browser;
+    this.httpFetch = opts.httpFetch;
+    this.fetchImpl = opts.fetchImpl;
     const stored = this.readStoredTokens();
     const explicitVisitor = opts.visitorId ?? process.env.ALZA_VISITOR_ID;
     this.visitorId = explicitVisitor ?? stored?.visitor_id ?? randomUUID();
@@ -154,25 +189,66 @@ export class MobileApi {
   }
 
   async request<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
-    const headers = this.mobileHeaders(init.headers as unknown as Headers | Record<string, string> | Array<[string, string]>);
     // Absolute URLs (cross-host families like chatbotapi.alza.cz, row W18) bypass the base.
     const url = /^https?:\/\//.test(path) ? path : `${this.baseUrl}${path}`;
-    let res = await fetch(url, { ...init, headers });
-    if (res.status === 401 && this.refreshToken && await this.refreshAccessToken()) {
-      res = await fetch(url, { ...init, headers: this.mobileHeaders(init.headers as unknown as Headers | Record<string, string> | Array<[string, string]>) });
+    const method = init.method ?? "GET";
+    const body = init.body == null ? null : String(init.body);
+    const freshHeaders = () => Object.fromEntries(this.mobileHeaders(init.headers as unknown as Headers).entries());
+
+    const raw = await this.performRequest(url, method, body, init, freshHeaders);
+    let value: unknown;
+    try { value = raw.text ? JSON.parse(raw.text) : null; } catch { value = raw.text; }
+    if (raw.status < 200 || raw.status >= 300) {
+      throw new Error(`Alza API ${method} ${path} failed with HTTP ${raw.status}: ${summarize(value)}`);
     }
-    let text = await res.text();
-    if (this.isBotChallenge(res.status, text)) {
-      const viaBrowser = await this.fetchViaBrowser(url, init, headers);
-      if (viaBrowser) {
-        res = viaBrowser;
-        text = await res.text();
+    return value as T;
+  }
+
+  /** Transport order: Chrome-fingerprint sidecar (bypasses the Cloudflare bot
+   * wall, no browser needed) → plain fetch → in-page browser fetch (last
+   * resort; the wall's JS has already run in that context). A 401 triggers a
+   * token refresh + retry within the same transport. */
+  private async performRequest(
+    url: string,
+    method: string,
+    body: string | null,
+    init: RequestInit,
+    freshHeaders: () => Record<string, string>,
+  ): Promise<RawHttp> {
+    const doOnce = async (kind: "cf" | "plain", h: Record<string, string>): Promise<{ status: number; text: string }> => {
+      if (kind === "cf" && this.httpFetch) {
+        const r = await this.httpFetch(url, { method, headers: h, body });
+        return { status: r.status, text: await r.text() };
+      }
+      const r = await fetch(url, { method, headers: h, body });
+      return { status: r.status, text: await r.text() };
+    };
+
+    const withRefresh = async (kind: "cf" | "plain") => {
+      let raw = await doOnce(kind, freshHeaders());
+      if (raw.status === 401 && this.refreshToken && (await this.refreshAccessToken())) {
+        raw = await doOnce(kind, freshHeaders());
+      }
+      return raw;
+    };
+
+    if (this.httpFetch) {
+      try {
+        const raw = await withRefresh("cf");
+        // Bot-wall despite the fingerprint, or a real API answer: only the
+        // wall deserves the browser retry (same semantics as before).
+        if (!this.isBotChallenge(raw.status, raw.text)) return { ...raw, via: "cf" };
+      } catch (err) {
+        log.warn("mobile-api: cf transport failed, falling back", { url, error: String(err) });
       }
     }
-    let value: unknown;
-    try { value = text ? JSON.parse(text) : null; } catch { value = text; }
-    if (!res.ok) throw new Error(`Alza API ${init.method ?? "GET"} ${path} failed with HTTP ${res.status}: ${summarize(value)}`);
-    return value as T;
+
+    const plain = await withRefresh("plain");
+    if (this.isBotChallenge(plain.status, plain.text)) {
+      const viaBrowser = await this.fetchViaBrowser(url, init, new Headers(freshHeaders()));
+      if (viaBrowser) return { status: viaBrowser.status, text: await viaBrowser.text(), via: "browser" };
+    }
+    return { ...plain, via: "plain" };
   }
 
   /** The www/webapi bot wall answers plain HTTP clients with an HTML page whose `var getData`
@@ -227,7 +303,7 @@ export class MobileApi {
   }
 
   async executeAppAction(action: ServerAppAction, options: ExecuteAppActionOptions = {}): Promise<unknown> {
-    const executor = new AppActionExecutor({ baseUrl: this.baseUrl, visitorId: this.visitorId, userId: this.userId, authorizationToken: this.accessToken });
+    const executor = new AppActionExecutor({ baseUrl: this.baseUrl, visitorId: this.visitorId, userId: this.userId, authorizationToken: this.accessToken, fetchImpl: this.fetchImpl });
     return executor.execute(action, options);
   }
 
@@ -513,6 +589,200 @@ export class MobileApi {
     return this.request(`https://chatbotapi.alza.cz/api/visitors/${this.visitorId}/v1/chat?country=${encodeURIComponent(payload.country)}`, { method: "POST", body: JSON.stringify(payload) });
   }
 
+  /** OR6 (2026-09-22): order search. The `orders` navigation carries the search
+   * form (`userOrdersSearch`): `POST /api/users/{userId}/v1/orders/search/results?country=CZ`
+   * with `{searchTerm, productFilterType:0}`. `searchTerm` is a required bound field
+   * (400 without — live 2026-09-22); both form-urlencoded and JSON bodies returned
+   * 200 with `orders[]` + `commodities[]` (each order carrying `documents[]`), so the
+   * implementation sends form-urlencoded to match the APK form. Live-verified 2026-09-22.
+   * `productFilterType` is a hidden form field with the fixed value 0. */
+  async orderSearch(userId: string, searchTerm: string): Promise<unknown> {
+    const body = new URLSearchParams({ searchTerm, productFilterType: "0" }).toString();
+    return this.request(`/api/users/${encodeURIComponent(userId)}/v1/orders/search/results?country=CZ`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body,
+    });
+  }
+
+  /** AT3 (2026-09-24): vision/barcode product lookup. The APK 2026.17.0 string
+   * pool carries the static route `POST /services/restservice.svc/v1/getProductByEANlist`
+   * (request model `ProductByEanRequest {eanList: List<String>}`, response
+   * `ProductDetailEanResponse extends BaseResponse {data}` — the app's camera
+   * barcode-scan → product flow, `cz.alza.base.{api,lib,android}.vision`).
+   * Live probe 2026-09-24: unknown EAN → 200 `err:1` "No products found." (route
+   * up, DTO bound, standard envelope; docs/live-evidence/at3-vision-rescan-2026-09-24.md).
+   * Read-only. */
+  async productByEan(eans: string[]): Promise<unknown> {
+    return this.request("/services/restservice.svc/v1/getProductByEANlist", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ eanList: eans }),
+    });
+  }
+
+  /** OR7 (2026-09-24): order archive read. The orders navigation (`userOrders`)
+   * carries `archiveOrders` → `GET /api/users/{userId}/v1/orders/archive`
+   * with `hideCancelledOrders` (optional boolean; the APK form default is false,
+   * label "Skrýt zrušené" = hide cancelled) and the fixed `productFilterType=0`.
+   * Returns `{self, paging, value[]}` (same order shape as the search results).
+   * Live-verified 2026-09-24 on disposable account 100000002: 200 with empty
+   * `value[]` + `paging` for both `hideCancelledOrders` variants
+   * (`docs/live-evidence/task6b-remaining-candidates-2026-09-24.json`). */
+  async orderArchive(userId: string, hideCancelledOrders = false, limit?: number): Promise<unknown> {
+    const q = new URLSearchParams({ hideCancelledOrders: hideCancelledOrders ? "true" : "false", productFilterType: "0" });
+    if (limit !== undefined) q.set("limit", String(limit));
+    return this.request(`/api/users/${encodeURIComponent(userId)}/v1/orders/archive?${q.toString()}`);
+  }
+
+  /** A17 (2026-09-22): the "Osobní údaje" section — APK `PersonalGdprDetails`
+   * (`{title, gdprInfoAction, deleteAccountAction}`) served by webapi.
+   * Live-verified 2026-09-22 (200 with both actions; sibling probes 404 — the
+   * route is exactly `userAccount/personalDetails`). */
+  async userAccountPersonalDetails(userId: string): Promise<unknown> {
+    return this.request(`https://webapi.alza.cz/api/users/${encodeURIComponent(userId)}/v1/userAccount/personalDetails?country=CZ`);
+  }
+
+  /** A17 (2026-09-22): the GDPR export dialog — APK `AccountGdprDialog`
+   * (`{title, description, emailInfo, sendGdprInfoForm}`); `sendGdprInfoForm`
+   * points at `POST .../v1/userAccount/gdprInformation` (empty form values —
+   * the server sends the data to the account's own login email). Live-verified
+   * 2026-09-22 (200, emailInfo = the E2E login email). */
+  async gdprDialog(userId: string): Promise<unknown> {
+    return this.request(`https://webapi.alza.cz/api/users/${encodeURIComponent(userId)}/v1/userAccount/gdprDialog`);
+  }
+
+  /** A17 (2026-09-22): trigger the GDPR data export (sendGdprInfoForm target).
+   * Live-verified 2026-09-22: POST → 202 Accepted, empty body (the XML export
+   * is queued for the account's login email). Low-risk write — the data goes to
+   * the user's own address; still guarded by a one-time token. */
+  async gdprExport(userId: string): Promise<unknown> {
+    return this.request(`https://webapi.alza.cz/api/users/${encodeURIComponent(userId)}/v1/userAccount/gdprInformation`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "",
+    });
+  }
+
+  /** A14 (2026-09-22): change the account password. Live route (dialog probe,
+   * `userAccountChangePasswordDialog`): `POST /api/users/{id}/v2/account/password`
+   * with `{oldPassword, password1, password2}` (password1/2 = new + confirm).
+   * Side effect: logs the user out of every device. */
+  async changePassword(userId: string, oldPassword: string, newPassword: string): Promise<unknown> {
+    return this.request(`https://www.alza.cz/api/users/${encodeURIComponent(userId)}/v2/account/password`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ oldPassword, password1: newPassword, password2: newPassword }),
+    });
+  }
+
+  /** A15 (2026-09-22): enable/disable SMS two-factor. Live route (2fa info
+   * probe, `userAccount2FaInfo` changeAction): `PATCH /api/users/{id}/v1/account?country=CZ`
+   * with the JSON-Patch-shaped body `{op:"replace", path:"/2faEnabled", value:<bool>}`. */
+  async setTwoFactor(userId: string, enabled: boolean): Promise<unknown> {
+    return this.request(`https://www.alza.cz/api/users/${encodeURIComponent(userId)}/v1/account?country=CZ`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ op: "replace", path: "/2faEnabled", value: enabled }),
+    });
+  }
+
+  /** A16 (2026-09-22): change the contact phone number. Live route
+   * (`userAccountChangePhoneDialog` form): `PATCH /api/users/{id}/v1/account?country=CZ`
+   * with `{op:"replace", path:"/phone", value:<phone>}`. */
+  async changePhone(userId: string, phone: string): Promise<unknown> {
+    return this.request(`https://www.alza.cz/api/users/${encodeURIComponent(userId)}/v1/account?country=CZ`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ op: "replace", path: "/phone", value: phone }),
+    });
+  }
+
+  /** A16 bonus (2026-09-22): change the contact email. Live route
+   * (`userAccountChangeEmailDialog` form): `PATCH /api/users/{id}/v1/account?country=CZ`
+   * with `{op:"replace", path:"/email", value:<email>}`. */
+  async changeEmail(userId: string, email: string): Promise<unknown> {
+    return this.request(`https://www.alza.cz/api/users/${encodeURIComponent(userId)}/v1/account?country=CZ`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ op: "replace", path: "/email", value: email }),
+    });
+  }
+
+  /** A18 (2026-09-22): delete the account (irreversible). Live route
+   * (`personalDetails.deleteAccountAction` → `deleteValidations` →
+   * `deleteUserAccountAction`): `DELETE /api/users/{id}/v1/account?country=cz`
+   * with `{acknowledgeAndDelete:true}`. */
+  async deleteAccount(userId: string): Promise<unknown> {
+    return this.request(`https://www.alza.cz/api/users/${encodeURIComponent(userId)}/v1/account?country=cz`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ acknowledgeAndDelete: true }),
+    });
+  }
+
+  /** OR10 (2026-09-22): invoice/document download following a server-provided
+   * `self.href` (APK `Document`/`Attachment` models carry `self` descriptors;
+   * the app's PDF resolver accepts `.pdf`/`pdfdoc` URLs). The href is
+   * origin-validated against the Alza host family (live invoices serve from
+   * `pdf.alza.cz`, e.g. `https://pdf.alza.cz/Apps/pdfdoc.asp?d={orderId}P&x={hash}`
+   * — live-verified 2026-09-22: 200, `%PDF-1.7`, 332,276 bytes).
+   * Max 8 MiB; text-like bodies come back as UTF-8 text, binary as base64. */
+  async downloadDocument(href: string): Promise<{ href: string; contentType: string | null; byteLength: number; text: string | null; base64: string | null }> {
+    let u: URL;
+    try { u = new URL(href); } catch { throw new Error("document href must be an absolute URL"); }
+    if (u.protocol !== "https:") throw new Error("document href must use HTTPS");
+    if (!MobileApi.DOCUMENT_HOSTS.has(u.hostname)) {
+      throw new Error(`document host is not an allowed Alza origin: ${u.hostname} (allowed: ${[...MobileApi.DOCUMENT_HOSTS].join(", ")})`);
+    }
+    const MAX_BYTES = 8 * 1024 * 1024;
+    const headers: Record<string, string> = {
+      accept: "application/pdf, application/json, application/xml, text/plain, application/octet-stream",
+      "user-agent": "Alza/2026.17.0 (Android)",
+      "accept-language": "cs-CZ,cs;q=0.9,en;q=0.8",
+      "Balancer-Guid": this.visitorId,
+    };
+    if (this.accessToken) headers.authorization = `Bearer ${this.accessToken}`;
+
+    let status: number;
+    let contentType: string | null;
+    let buf: Buffer;
+    if (this.httpFetch) {
+      const r = await this.httpFetch(u.toString(), { method: "GET", headers });
+      status = r.status;
+      if (r.arrayBuffer) {
+        contentType = r.header?.("content-type") ?? null;
+        buf = Buffer.from(await r.arrayBuffer());
+      } else {
+        contentType = null;
+        buf = Buffer.from(await r.text(), "utf8");
+      }
+    } else {
+      const r = await fetch(u.toString(), { method: "GET", headers, redirect: "manual" });
+      status = r.status;
+      contentType = r.headers.get("content-type") ?? null;
+      buf = Buffer.from(await r.arrayBuffer());
+      if (status >= 300 && status < 400) {
+        const location = r.headers.get("location");
+        throw new Error(`document download redirected to a non-allowlisted location: ${location ?? "(unknown)"}`);
+      }
+    }
+    if (status < 200 || status >= 300) {
+      const snippet = buf.toString("utf8").replace(/\s+/g, " ").slice(0, 200);
+      throw new Error(`document download failed with HTTP ${status}${snippet ? `: ${snippet}` : ""}`);
+    }
+    if (buf.length > MAX_BYTES) throw new Error(`document exceeds the ${MAX_BYTES} byte download limit (got ${buf.length})`);
+    const ct = (contentType ?? "").toLowerCase();
+    const looksBinary =
+      (buf.length >= 2 && buf[0] === 0x25 && buf[1] === 0x50) || // %P… — PDF
+      (buf.length >= 2 && buf[0] === 0x89) || // PNG signature
+      (buf.length >= 2 && buf[0] === 0x50 && buf[1] === 0x4b) || // PK… — zip/office
+      (buf.length >= 4 && buf[0] === 0x47 && buf[1] === 0x49); // GI… — GIF
+    const isTextLike = ct.includes("json") || ct.includes("xml") || ct.includes("text") || (!ct && !looksBinary);
+    if (isTextLike) return { href: u.toString(), contentType, byteLength: buf.length, text: buf.toString("utf8"), base64: null };
+    return { href: u.toString(), contentType, byteLength: buf.length, text: null, base64: buf.toString("base64") };
+  }
+
   /** WCF GetZipCodes twin (D5 twin, live-verified 2026-09-09): the body field is
    * `Search` (PascalCase); the response Value is an HTML snippet of `zip-item`
    * divs (data-id/data-city/data-text); ErrorLevel 14 when nothing matches. */
@@ -561,6 +831,8 @@ export class MobileApi {
     return this.request("/api/orders/v7/orderfinished", { method: "POST", body: JSON.stringify(payload) });
   }
 }
+
+interface RawHttp { status: number; text: string; via: "cf" | "plain" | "browser"; }
 
 function summarize(value: unknown): string {
   if (typeof value === "string") return value.replace(/\s+/g, " ").slice(0, 300);

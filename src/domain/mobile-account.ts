@@ -13,12 +13,19 @@ export const MUTATION_ACTIONS = [
   "review_submit", "subscription_activate", "subscription_update_installment", "attachment_upload",
   // web checkout family (legacy WCF pipeline O11 + web pickup W11–W14, 2026-09-08)
   "web_place_order", "web_after_order_payment",
+  // GDPR data export (A17, 2026-09-22): POSTs the sendGdprInfoForm target —
+  // Alza queues the XML export to the account's own login email (202 Accepted).
+  "gdpr_export",
+  // account credential/identity mutations (A14–A18, 2026-09-22): static routes
+  // probed live; one-time token each; delete_account is irreversible.
+  "change_password", "two_factor_set", "phone_change", "email_change", "delete_account",
 ] as const;
 
 const WHITELISTED_MUTATIONS = new Set<string>([
   "create", "rename", "delete", "add", "remove", "move", "set_country", "set_isic",
   "add_gift", "add_order_service", "set_watchdog", "send_feedback", "submit_discussion", "rate_discussion",
   "coupon_add", "coupon_remove", "basket_update", "basket_unlock",
+  "gdpr_export",
 ]);
 
 const ADDRESS_TYPES = new Set(["HOME", "WORK", "OTHER"]);
@@ -29,6 +36,14 @@ function requireString(payload: Record<string, unknown>, field: string, max = 20
   const value = payload[field];
   if (typeof value !== "string" || value.length === 0 || value.length > max) throw new Error(`${field} must be a non-empty string (max ${max})`);
   return value;
+}
+/** Numeric Alza user id (1-16 digits) — the path segment of the userAccount/
+ * orders/warrantyClaims user routes. Taken from a prior MCP response (e.g. the
+ * `user_id` field of the `user_data` read) — never free-form. */
+function requireUserId(value: unknown): string {
+  const s = String(value ?? "").trim();
+  if (!/^\d{1,16}$/.test(s)) throw new Error("user_id must be the numeric Alza user id (take it from the user_data read, e.g. 100000001)");
+  return s;
 }
 function optionalString(payload: Record<string, unknown>, field: string, max = 200): string | undefined {
   if (!(field in payload) || payload[field] === null || payload[field] === undefined || payload[field] === "") return undefined;
@@ -135,7 +150,7 @@ function validateListPayload(action: string, payload: Record<string, unknown>): 
     set_country: ["countryId"], set_isic: ["isic"],
     add_gift: ["rangeIdsGiftCodes"], set_watchdog: ["commodityId", "email", "isTrackingStock"], send_feedback: ["text", "info"], add_order_service: ["orderItemId", "enabled", "selected"], // orderItemId: live correction 2026-09-10 (server ModelState binds Int32)
     submit_discussion: ["commodityId", "msg", "userEmail", "anonymous", "notifications"], rate_discussion: ["postId", "rating"],
-    coupon_add: ["coupon"], coupon_remove: ["couponId"], basket_update: ["basket_id"], basket_unlock: [], // couponId: live correction 2026-09-10 (delcoupon binds Int32)
+    coupon_add: ["coupon"], coupon_remove: ["couponId"], basket_update: ["basket_id"], basket_unlock: [], gdpr_export: ["user_id"], // couponId: live correction 2026-09-10 (delcoupon binds Int32)
   };
   for (const field of required[action] ?? []) {
     if (!(field in payload) || payload[field] === null || payload[field] === "") throw new Error(`Missing required ${action} payload field: ${field}`);
@@ -301,6 +316,156 @@ export class MobileAccount {
   async addressSearch(action: Record<string, unknown>, query: string): Promise<unknown> {
     if (typeof query !== "string" || query.length === 0 || query.length > 50) throw new Error("query must be a non-empty string (max 50)");
     return this.api.executeAppAction(this.actionFrom(action), { extraValues: [{ name: "search", value: query, kind: "text" }] });
+  }
+
+  /** OR6 (2026-09-22): order search — typed read over the server-provided
+   * search form (`POST .../v1/orders/search/results`, form-urlencoded). */
+  async orderSearch(searchTerm: string, userId?: string): Promise<unknown> {
+    const term = String(searchTerm ?? "").trim();
+    if (term.length === 0 || term.length > 64) throw new Error("search_term must be 1-64 characters (e.g. an order number like '1058 423 434')");
+    const uid = requireUserId(userId ?? this.api.userId);
+    return this.api.orderSearch(uid, term);
+  }
+
+  /** OR7 (2026-09-24): order archive read — typed read over the orders
+   * navigation's `archiveOrders` section (`GET .../v1/orders/archive`).
+   * Read-only (no token). `hide_cancelled_orders` mirrors the app's
+   * "Skrýt zrušené" toggle; the APK form default is `false` (include cancelled). */
+  async orderArchive(opts: { user_id?: string; hide_cancelled_orders?: boolean; limit?: number } = {}): Promise<unknown> {
+    const uid = requireUserId(opts.user_id ?? this.api.userId);
+    const hide = opts.hide_cancelled_orders ?? false;
+    if (typeof hide !== "boolean") throw new Error("hide_cancelled_orders must be a boolean");
+    let limit: number | undefined;
+    if (opts.limit !== undefined) {
+      limit = opts.limit;
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("limit must be an integer between 1 and 100");
+    }
+    return this.api.orderArchive(uid, hide, limit);
+  }
+
+  /** AT3 (2026-09-24): vision/barcode product lookup — typed read over the APK's
+   * static route `POST .../v1/getProductByEANlist` (`{eanList}`). Read-only. */
+  async productByEan(eans: unknown): Promise<unknown> {
+    if (!Array.isArray(eans) || eans.length === 0 || eans.length > 20) {
+      throw new Error("eans must be a non-empty array of at most 20 barcode values");
+    }
+    const list = eans.map((v, i) => {
+      const s = String(v ?? "").trim();
+      if (!/^\d{6,14}$/.test(s)) throw new Error(`eans[${i}] must be a 6-14 digit barcode (EAN-8/13/14)`);
+      return s;
+    });
+    return this.api.productByEan(list);
+  }
+
+  /** A17 (2026-09-22): GDPR section read — the "Osobní údaje" details
+   * (`gdprInfoAction` + `deleteAccountAction`) plus the export dialog
+   * (`AccountGdprDialog` with `emailInfo` + `sendGdprInfoForm`). Read-only. */
+  async gdprInfo(userId: string): Promise<unknown> {
+    const uid = requireUserId(userId);
+    const personalDetails = await this.api.userAccountPersonalDetails(uid);
+    const pd = (personalDetails ?? {}) as Record<string, unknown>;
+    const action = (pd.gdprInfoAction ?? {}) as Record<string, unknown>;
+    let gdprDialog: unknown = null;
+    try {
+      gdprDialog = await this.api.gdprDialog(uid);
+    } catch (err) {
+      // The dialog read is a follow-up; keep the primary section visible even
+      // if the dialog route is temporarily down (the action href is in personalDetails).
+      gdprDialog = { error: err instanceof Error ? err.message : String(err), gdprInfoAction: action };
+    }
+    return { personalDetails, gdprDialog };
+  }
+
+  /** A17 (2026-09-22): GDPR export trigger (low-risk mutation, one-time token).
+   * Sends the XML personal-data export to the account's own login email. */
+  async gdprExport(payload: Record<string, unknown>, token: string): Promise<unknown> {
+    this.assertMutationToken("gdpr_export", token);
+    const uid = requireUserId(payload.user_id);
+    const result = await this.api.gdprExport(uid);
+    this.pendingMutation = undefined;
+    return result ?? { accepted: true };
+  }
+
+  /** A14 (2026-09-22): change the account password (credential mutation, one-time
+   * token). Logs the user out of every device on success. */
+  async changePassword(payload: Record<string, unknown>, token: string): Promise<unknown> {
+    this.assertMutationToken("change_password", token);
+    const uid = requireUserId(payload.user_id);
+    const oldPassword = requireString(payload, "old_password", 64);
+    const newPassword = requireString(payload, "new_password", 64);
+    const confirm = requireString(payload, "new_password_confirm", 64);
+    if (newPassword.length < 8) throw new Error("new_password must be at least 8 characters");
+    if (newPassword !== confirm) throw new Error("new_password and new_password_confirm must match");
+    if (newPassword === oldPassword) throw new Error("new_password must differ from old_password");
+    const result = await this.api.changePassword(uid, oldPassword, newPassword);
+    this.pendingMutation = undefined;
+    return result ?? { changed: true };
+  }
+
+  /** A15 (2026-09-22): enable/disable SMS two-factor (one-time token). */
+  async twoFactorSet(payload: Record<string, unknown>, token: string): Promise<unknown> {
+    this.assertMutationToken("two_factor_set", token);
+    const uid = requireUserId(payload.user_id);
+    const enabled = payload.enabled;
+    if (typeof enabled !== "boolean") throw new Error("enabled must be a boolean (true to turn 2FA on, false to turn it off)");
+    const result = await this.api.setTwoFactor(uid, enabled);
+    this.pendingMutation = undefined;
+    return result ?? { enabled };
+  }
+
+  /** A16 (2026-09-22): change the contact phone number (one-time token).
+   * Accepts separators (`+420 777 123 456`); sends the compact international
+   * form (the account's stored shape, e.g. `+420601234567`). */
+  async phoneChange(payload: Record<string, unknown>, token: string): Promise<unknown> {
+    this.assertMutationToken("phone_change", token);
+    const uid = requireUserId(payload.user_id);
+    const phone = requireString(payload, "phone", 24).replace(/[\s-]/g, "");
+    if (!/^\+\d{1,3}\d{5,15}$/.test(phone)) throw new Error("phone must be an international number, e.g. '+420777123456' (separators allowed)");
+    const result = await this.api.changePhone(uid, phone);
+    this.pendingMutation = undefined;
+    return result ?? { phone };
+  }
+
+  /** A16 bonus (2026-09-22): change the contact email (one-time token). */
+  async emailChange(payload: Record<string, unknown>, token: string): Promise<unknown> {
+    this.assertMutationToken("email_change", token);
+    const uid = requireUserId(payload.user_id);
+    const email = requireString(payload, "email", 100);
+    if (!EMAIL_RE.test(email)) throw new Error("email must be a valid address");
+    const result = await this.api.changeEmail(uid, email);
+    this.pendingMutation = undefined;
+    return result ?? { email };
+  }
+
+  /** A18 (2026-09-22): delete the account (irreversible, one-time token). */
+  async deleteAccount(payload: Record<string, unknown>, token: string): Promise<unknown> {
+    this.assertMutationToken("delete_account", token);
+    const uid = requireUserId(payload.user_id);
+    const result = await this.api.deleteAccount(uid);
+    this.pendingMutation = undefined;
+    return result ?? { deleted: true };
+  }
+
+  /** K2 (2026-09-22): claim/complaint detail — executes the per-claim
+   * `detailAction` copied verbatim from the `complaint_claims` list response
+   * (same executor pattern as K1; read-only, no token). */
+  async claimDetail(action: Record<string, unknown>): Promise<unknown> {
+    return this.api.executeAppAction(this.actionFrom(action));
+  }
+
+  /** OR10 (2026-09-22): invoice/document download. `document` is the
+   * `Document`/`Attachment` object (`{name?, self: {href}}`) copied verbatim
+   * from a prior MCP response (order detail, order search results). The href
+   * is origin-validated to the Alza host family (live invoices: pdf.alza.cz). */
+  async orderDocument(document: Record<string, unknown>): Promise<unknown> {
+    const self = (document?.self ?? {}) as Record<string, unknown>;
+    const href = self.href;
+    if (typeof href !== "string" || href.length === 0) {
+      throw new Error("document.self.href is required (copy the Document object verbatim from a prior order/search response)");
+    }
+    const out = await this.api.downloadDocument(href);
+    const name = typeof document.name === "string" ? document.name : null;
+    return { name, ...out };
   }
 
   /** Payments family. */
@@ -627,6 +792,7 @@ export class MobileAccount {
       : action === "coupon_remove" ? await this.api.deleteCoupon(String(payload.couponId))
       : action === "basket_update" ? await this.api.updateBasket(Number(payload.basket_id), Boolean(payload.flag), Boolean(payload.is_delayed_payment ?? false))
       : action === "basket_unlock" ? await this.api.unlockBasket()
+      : action === "gdpr_export" ? await this.gdprExport(payload, token)
       : (() => { throw new Error(`Unsupported list mutation: ${action}`); })();
     this.pendingMutation = undefined;
     return result;

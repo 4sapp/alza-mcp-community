@@ -26,12 +26,15 @@ const LOW_RISK_ACTIONS = [
   "create", "rename", "delete", "add", "remove", "move", "set_country", "set_isic",
   "add_gift", "add_order_service", "set_watchdog", "send_feedback", "submit_discussion", "rate_discussion",
   "coupon_add", "coupon_remove", "basket_update", "basket_unlock",
+  "gdpr_export",
 ] as const;
 
 const HIGH_IMPACT_ACTIONS = [
   "after_order_payment", "register", "address_create", "address_edit", "address_delete",
   "review_submit", "subscription_activate", "subscription_update_installment", "attachment_upload",
   "web_place_order", "web_after_order_payment",
+  // account credential/identity mutations (A14–A18, 2026-09-22)
+  "change_password", "two_factor_set", "phone_change", "email_change", "delete_account",
 ] as const;
 
 const READ_OPERATIONS = [
@@ -167,7 +170,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           title: "Execute a whitelisted Alza mutation",
           description:
             "Execute one low-risk, APK-confirmed mutation using a one-time token from `prepare_mutation`. " +
-            "Use for shopping-list operations (`create`/`rename`/`delete`/`add`/`remove`/`move`), account settings (`set_country`, `set_isic`), `add_gift`, `add_order_service`, `set_watchdog`, `send_feedback`, `submit_discussion`, `rate_discussion`, coupons (`coupon_add` takes `{coupon: \"CODE\"}`; `coupon_remove` takes `{couponId: <int>}` — the id from a prior `cart` read), and basket flags (`basket_update` takes `{basket_id, flag?, is_delayed_payment?}`; `basket_unlock`). " +
+            "Use for shopping-list operations (`create`/`rename`/`delete`/`add`/`remove`/`move`), account settings (`set_country`, `set_isic`), `add_gift`, `add_order_service`, `set_watchdog`, `send_feedback`, `submit_discussion`, `rate_discussion`, coupons (`coupon_add` takes `{coupon: \"CODE\"}`; `coupon_remove` takes `{couponId: <int>}` — the id from a prior `cart` read), basket flags (`basket_update` takes `{basket_id, flag?, is_delayed_payment?}`; `basket_unlock`), and the GDPR data export (`gdpr_export` takes `{user_id}` — queues the XML personal-data export to the account's own login email, 202 Accepted; read `gdpr_info` first). " +
             "Do not use for high-impact mutations (order, payment, registration, address, review, subscription, attachment) — each has its own typed tool with its own token. " +
             "The `payload` fields must match the mobile DTO for the chosen action exactly. " +
             "Side effect: persists the change on the user's Alza account. Example: `mutate_list({action: \"coupon_add\", confirmation_token: \"...\", payload: {coupon: \"WELCOME10\"}})`.",

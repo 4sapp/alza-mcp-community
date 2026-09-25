@@ -36,6 +36,19 @@ export interface ServerAppAction {
   enabled?: boolean;
 }
 
+/** Minimal fetch contract: the global fetch satisfies it, and so does the
+ * Chrome-fingerprint sidecar adapter (CfResponseAdapter). */
+export interface FetchLikeResponse {
+  status: number;
+  ok: boolean;
+  headers: {
+    get(name: string): string | null;
+    getSetCookie?(): string[];
+  };
+  text(): Promise<string>;
+}
+export type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<FetchLikeResponse>;
+
 export interface AppActionExecutorOptions {
   baseUrl: string;
   visitorId: string;
@@ -43,7 +56,7 @@ export interface AppActionExecutorOptions {
   authorizationToken?: string;
   userAgent?: string;
   allowedPathPrefixes?: string[];
-  fetchImpl?: typeof fetch;
+  fetchImpl?: FetchLike;
 }
 
 export interface ExecuteAppActionOptions {
@@ -68,7 +81,7 @@ const MUTATING_METHODS = new Set<AppActionMethod>(["POST", "PUT", "PATCH", "DELE
 const BLOCKED_FIELD = /(?:^|_|-)(?:password|passwd|secret|token|authorization|cookie|refresh|access[_-]?token|card|cvv|cvc|iban|bic|payment|encrypted|client[_-]?secret)(?:$|_|-)/i;
 
 export class AppActionExecutor {
-  private readonly fetchImpl: typeof fetch;
+  private readonly fetchImpl: FetchLike;
   private readonly origin: string;
   private readonly pathPrefixes: string[];
   private readonly cookies = new Map<string, string>();
@@ -213,12 +226,12 @@ export class AppActionExecutor {
     return headers;
   }
 
-  private async requestWithCookies(target: string, init: RequestInit): Promise<Response> {
+  private async requestWithCookies(target: string, init: RequestInit): Promise<FetchLikeResponse> {
     const headers = new Headers(init.headers);
     const cookie = [...this.cookies.entries()].map(([name, value]) => `${name}=${value}`).join("; ");
     if (cookie) headers.set("cookie", cookie);
     const response = await this.fetchImpl(target, { ...init, headers });
-    const setCookies = (response.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.() ?? [];
+    const setCookies = (response.headers as { getSetCookie?: () => string[] }).getSetCookie?.() ?? [];
     for (const header of setCookies) {
       const first = header.split(";", 1)[0] ?? "";
       const separator = first.indexOf("=");

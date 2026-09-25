@@ -17,6 +17,7 @@ import { createSearchProductsTool } from "./tools/search-products.js";
 import { createAccountTools } from "./tools/account.js";
 import { createAdvancedTools } from "./tools/advanced.js";
 import { MobileApi } from "./infra/mobile-api.js";
+import { ImpersonateTransport, cfFetch } from "./infra/impersonate-transport.js";
 import type { ToolResult } from "./tools/types.js";
 
 const VERSION = "0.3.0";
@@ -37,9 +38,20 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
   const catalog = new Catalog(browser);
   const reviews = new Reviews(browser, catalog);
   const pickup = new Pickup(browser.locale);
+  // Chrome-fingerprint sidecar (curl_cffi) — tried FIRST for the account stack:
+  // it bypasses the Cloudflare bot wall without a browser (verified 2026-09-15).
+  // Optional by design: no interpreter with curl_cffi → the transport is dead
+  // and the existing chain (plain fetch → browser fallback) applies unchanged.
+  const cfTransport = new ImpersonateTransport();
   // The browser transport backs the catalog AND the account stack's bot-challenge fallback
   // (same-origin /services/restservice.svc routes are JS-challenge-gated for plain fetch).
-  const mobileAccount = new MobileAccount(new MobileApi({ baseUrl: opts.baseUrl, browser }));
+  const mobileApi = new MobileApi({
+    baseUrl: opts.baseUrl,
+    browser,
+    httpFetch: cfTransport.available ? cfFetch(cfTransport) : undefined,
+    fetchImpl: cfTransport.available ? cfFetch(cfTransport) : undefined,
+  });
+  const mobileAccount = new MobileAccount(mobileApi);
   const deps = { catalog, reviews, pickup, mobileAccount };
 
   const server = new McpServer(
@@ -102,7 +114,10 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
 
   return {
     server,
-    close: () => browser.close(),
+    close: () => {
+      cfTransport.close();
+      return browser.close();
+    },
   };
 }
 

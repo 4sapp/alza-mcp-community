@@ -93,7 +93,8 @@ describe("mobile API account", () => {
       expect(seen.url).toContain("/services/restservice.svc/v1/category/7?T=CATEGORY&P=2");
       await api.updateBasket(11, true, true);
       expect(seen.url).toContain("/services/restservice.svc/v2/updBasket/11/1?isDelayedPayment=true");
-      expect(seen.init?.body).toBeUndefined();
+      // A no-body GET may be represented as undefined or null (the CF transport normalises to null).
+      expect(seen.init?.body ?? undefined).toBeUndefined();
       await api.orderAddInfo();
       expect(seen.url).toContain("/services/restservice.svc/v2/getOrderAddInfo?isGiftsEnabled=true");
       await api.discussionPosts(12, 25, { showOnlyWithoutAnswer: true });

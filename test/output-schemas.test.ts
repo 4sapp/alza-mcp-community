@@ -24,9 +24,9 @@ async function clientAndServer() {
 }
 
 describe("per-tool outputSchema (N-1)", () => {
-  it("covers all 41 tools in the shared map", () => {
+  it("covers all 52 tools in the shared map", () => {
     const names = Object.keys(OUTPUT_SCHEMAS);
-    expect(names).toHaveLength(41);
+    expect(names).toHaveLength(52);
     for (const n of names) expect(OUTPUT_SCHEMAS[n]).toBeTruthy();
   });
 
@@ -34,7 +34,7 @@ describe("per-tool outputSchema (N-1)", () => {
     const { client, built } = await clientAndServer();
     try {
       const res = await client.listTools();
-      expect(res.tools).toHaveLength(41);
+      expect(res.tools).toHaveLength(52);
       for (const t of res.tools) {
         const os = t.outputSchema as Record<string, unknown> | undefined;
         expect(os, `missing outputSchema on ${t.name}`).toBeTruthy();

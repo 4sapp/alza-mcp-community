@@ -506,5 +506,269 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
       );
     },
   };
-  return [profile, contacts, register, addressUpsert, addressDelete, addressSearch, paymentMethods, afterOrderPayments, payAfterOrder, webPayAfterOrder, order, reviewSubmit, complaintClaims, subscriptionOverview, subscriptionActivate, subscriptionUpdateInstallment, uploadAttachment, webPlaceOrder];
+  const orderSearch: RegisterableTool = {
+    name: "order_search",
+    register(server, wrap) {
+      server.registerTool(
+        "order_search",
+        {
+          title: "Search the account's orders",
+          description:
+            "Search the authenticated user's Alza orders by term (row OR6 — the `userOrdersSearch` form from the orders navigation): order number/fragment or product term; returns matching `orders[]` (status, phase, price, created, and `documents[]` invoice refs) plus `commodities[]`. " +
+            "Use to find an order the user remembers partially (e.g. part of the order number) and to collect its invoice `documents[]` for `order_document`. " +
+            "Pass `user_id` — the numeric Alza user id from the `user_data`/`profile` read (`user_id` field). " +
+            AUTH_PREREQ + " Read-only.",
+          inputSchema: {
+            search_term: z.string().min(1).max(64).describe("Search term, e.g. an order number or part of one ('1058 423 434', '1058')."),
+            user_id: z.string().regex(/^\d{1,16}$/).describe("Numeric Alza user id (the `user_id` field of the `profile`/`user_data` response)."),
+          },
+          annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["order_search"],
+        },
+        async (args) => wrap("order_search", async () => result(await apiAccount(deps).orderSearch(args.search_term, args.user_id))),
+      );
+    },
+  };
+  const orderArchive: RegisterableTool = {
+    name: "order_archive",
+    register(server, wrap) {
+      server.registerTool(
+        "order_archive",
+        {
+          title: "Read the account's archived orders",
+          description:
+            "Read the authenticated user's archived orders (row OR7 — the `archiveOrders` section of the orders navigation): returns `{self, paging, value[]}` — the same order shape as `order_search` results (status, phase, price, created, invoice `documents[]` for `order_document`). " +
+            "`hide_cancelled_orders` mirrors the app's 'Skrýt zrušené' (hide cancelled) toggle: default `false` includes cancelled orders; `true` hides them. " +
+            "Pass `user_id` — the numeric Alza user id from the `user_data`/`profile` read (`user_id` field). " +
+            AUTH_PREREQ + " Read-only.",
+          inputSchema: {
+            user_id: z.string().regex(/^\d{1,16}$/).describe("Numeric Alza user id (the `user_id` field of the `profile`/`user_data` response)."),
+            hide_cancelled_orders: z.boolean().optional().describe("The app's 'Skrýt zrušené' (hide cancelled orders) toggle. Default false — cancelled orders are included."),
+            limit: z.number().int().min(1).max(100).optional().describe("Page size (server default 10). Use `paging.next` for the next page."),
+          },
+          annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["order_archive"],
+        },
+        async (args) => wrap("order_archive", async () => result(await apiAccount(deps).orderArchive({ user_id: args.user_id, hide_cancelled_orders: args.hide_cancelled_orders, limit: args.limit }))),
+      );
+    },
+  };
+  const productByEan: RegisterableTool = {
+    name: "product_by_ean",
+    register(server, wrap) {
+      server.registerTool(
+        "product_by_ean",
+        {
+          title: "Look up catalog products by barcode (EAN)",
+          description:
+            "Look up Alza catalog products by EAN/barcode (row AT3 — the app's camera barcode-scan API, APK `cz.alza.base.{api,lib,android}.vision`): `POST /services/restservice.svc/v1/getProductByEANlist` with `{eanList}`. " +
+            "Returns the matching product data on success, or `err:1` with `msg` (\"No products found.\") for codes not in the catalog. " +
+            "Accepts 1-20 barcodes (6-14 digits, EAN-8/13/14). No account required; read-only.",
+          inputSchema: {
+            eans: z
+              .array(z.string().regex(/^\d{6,14}$/).describe("A barcode, digits only (EAN-8/13/14)."))
+              .min(1)
+              .max(20)
+              .describe("One or more EAN barcodes to look up (up to 20)."),
+          },
+          annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["product_by_ean"],
+        },
+        async (args) => wrap("product_by_ean", async () => result(await apiAccount(deps).productByEan(args.eans))),
+      );
+    },
+  };
+  const gdprInfo: RegisterableTool = {
+    name: "gdpr_info",
+    register(server, wrap) {
+      server.registerTool(
+        "gdpr_info",
+        {
+          title: "Read the GDPR section and export dialog",
+          description:
+            "Read the account's GDPR section (row A17, APK `PersonalGdprDetails`): the `gdprInfoAction` (export request), the `deleteAccountAction`, and the export dialog (`AccountGdprDialog`: title, description, `emailInfo` with the login email the export is sent to, and the `sendGdprInfoForm`). " +
+            "Use before `prepare_mutation`/`mutate_list` with action `gdpr_export` to show the user where their data will be sent. " +
+            "Pass `user_id` — the numeric Alza user id from the `user_data`/`profile` read. " +
+            AUTH_PREREQ + " Read-only.",
+          inputSchema: {
+            user_id: z.string().regex(/^\d{1,16}$/).describe("Numeric Alza user id (the `user_id` field of the `profile`/`user_data` response)."),
+          },
+          annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["gdpr_info"],
+        },
+        async (args) => wrap("gdpr_info", async () => result(await apiAccount(deps).gdprInfo(args.user_id))),
+      );
+    },
+  };
+  const claimDetail: RegisterableTool = {
+    name: "claim_detail",
+    register(server, wrap) {
+      server.registerTool(
+        "claim_detail",
+        {
+          title: "Read a warranty claim detail",
+          description:
+            "Read the detail of a single warranty claim/complaint (row K2) by executing that claim's `detailAction`, copied verbatim from a `complaint_claims` list response. " +
+            "Use to show the full claim state, message banners, and complaint items for one claim. " +
+            "Pass the `action` object verbatim — never hand-craft it. Read-only (no token). " +
+            AUTH_PREREQ,
+          inputSchema: {
+            action: appAction,
+          },
+          annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["claim_detail"],
+        },
+        async (args) => wrap("claim_detail", async () => result(await apiAccount(deps).claimDetail(args.action))),
+      );
+    },
+  };
+  const orderDocument: RegisterableTool = {
+    name: "order_document",
+    register(server, wrap) {
+      server.registerTool(
+        "order_document",
+        {
+          title: "Download an order invoice/document",
+          description:
+            "Download an order invoice or document (row OR10) by following the server-provided `self.href` of a `Document`/`Attachment` object copied verbatim from a prior MCP response (e.g. the `documents[]` entries of `order_search` results or an order detail). " +
+            "The href is origin-validated to Alza's host family (invoices serve from `pdf.alza.cz`) — no arbitrary URLs. " +
+            "Returns the content as UTF-8 `text` (JSON/XML/text) or `base64` (PDF/binary), with `contentType` and `byteLength` (max 8 MiB). " +
+            "Read-only; no token required. " +
+            "Example: `order_document({document: {name: 'Faktura', self: {href: 'https://pdf.alza.cz/Apps/pdfdoc.asp?d=…'}}})`.",
+          inputSchema: {
+            document: z
+              .object({
+                name: z.string().max(200).optional().describe("Document name from the source response, if present."),
+                self: z.object({ href: z.string().min(10).max(800).describe("The document `self.href` copied verbatim (must be an https Alza origin)."), appLink: z.string().max(100).optional() }).describe("The document `self` descriptor copied verbatim from the prior response."),
+              })
+              .passthrough()
+              .describe("The Document/Attachment object copied verbatim from a prior MCP response (order search result or order detail `documents[]`)."),
+          },
+          annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["order_document"],
+        },
+        async (args) => wrap("order_document", async () => result(await apiAccount(deps).orderDocument(args.document))),
+      );
+    },
+  };
+
+  // ---- Account credential/identity mutations (A14–A18, 2026-09-22) ----
+  const changePassword: RegisterableTool = {
+    name: "change_password",
+    register(server, wrap) {
+      server.registerTool(
+        "change_password",
+        {
+          title: "Change the account password",
+          description:
+            "Change the Alza account password (row A14, `POST /v2/account/password`): submit the current password and the new password twice (new + confirm). " +
+            "Credential mutation: requires a one-time token from `prepare_mutation` (action=`change_password`). " +
+            "Side effect: on success Alza logs the user out of every device — the current access token stops working, so re-run `auth_start`/`auth_exchange` with the new password.",
+          inputSchema: {
+            user_id: z.string().regex(/^\d{1,16}$/).describe("Numeric Alza user id (from the `profile`/`user_data` read)."),
+            old_password: z.string().min(4).max(64).describe("Current password."),
+            new_password: z.string().min(8).max(64).describe("New password (min 8 chars)."),
+            new_password_confirm: z.string().min(8).max(64).describe("New password again (must match `new_password`)."),
+            confirmation_token: confirmationToken,
+          },
+          annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["change_password"],
+        },
+        async (args) => wrap("change_password", async () => result(await apiAccount(deps).changePassword({ user_id: args.user_id, old_password: args.old_password, new_password: args.new_password, new_password_confirm: args.new_password_confirm }, args.confirmation_token))),
+      );
+    },
+  };
+  const twoFactorSet: RegisterableTool = {
+    name: "two_factor_set",
+    register(server, wrap) {
+      server.registerTool(
+        "two_factor_set",
+        {
+          title: "Enable or disable SMS two-factor",
+          description:
+            "Turn SMS two-factor on or off (row A15, `PATCH /v1/account` → `/2faEnabled`): `enabled=true` to activate, `false` to deactivate. " +
+            "2FA sends a code by SMS to the account's contact phone, so set the phone first if it is wrong. " +
+            "Requires a one-time token from `prepare_mutation` (action=`two_factor_set`).",
+          inputSchema: {
+            user_id: z.string().regex(/^\d{1,16}$/).describe("Numeric Alza user id (from the `profile`/`user_data` read)."),
+            enabled: z.boolean().describe("true to enable 2FA, false to disable it."),
+            confirmation_token: confirmationToken,
+          },
+          annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["two_factor_set"],
+        },
+        async (args) => wrap("two_factor_set", async () => result(await apiAccount(deps).twoFactorSet({ user_id: args.user_id, enabled: args.enabled }, args.confirmation_token))),
+      );
+    },
+  };
+  const phoneChange: RegisterableTool = {
+    name: "phone_change",
+    register(server, wrap) {
+      server.registerTool(
+        "phone_change",
+        {
+          title: "Change the contact phone number",
+          description:
+            "Change the account's contact phone number (row A16, `PATCH /v1/account` → `/phone`): the number that receives pickup codes and 2FA SMS. " +
+            "Requires a one-time token from `prepare_mutation` (action=`phone_change`). " +
+            "Side effect: the new number becomes the SMS destination for the account.",
+          inputSchema: {
+            user_id: z.string().regex(/^\d{1,16}$/).describe("Numeric Alza user id (from the `profile`/`user_data` read)."),
+            phone: z.string().min(6).max(20).describe("New phone in international form, e.g. '+420777123456'."),
+            confirmation_token: confirmationToken,
+          },
+          annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["phone_change"],
+        },
+        async (args) => wrap("phone_change", async () => result(await apiAccount(deps).phoneChange({ user_id: args.user_id, phone: args.phone }, args.confirmation_token))),
+      );
+    },
+  };
+  const emailChange: RegisterableTool = {
+    name: "email_change",
+    register(server, wrap) {
+      server.registerTool(
+        "email_change",
+        {
+          title: "Change the contact email",
+          description:
+            "Change the account's contact email (row A16 bonus, `PATCH /v1/account` → `/email`): the address that receives invoices and order/claim notifications. " +
+            "Requires a one-time token from `prepare_mutation` (action=`email_change`).",
+          inputSchema: {
+            user_id: z.string().regex(/^\d{1,16}$/).describe("Numeric Alza user id (from the `profile`/`user_data` read)."),
+            email: z.string().min(3).max(100).describe("New contact email address."),
+            confirmation_token: confirmationToken,
+          },
+          annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["email_change"],
+        },
+        async (args) => wrap("email_change", async () => result(await apiAccount(deps).emailChange({ user_id: args.user_id, email: args.email }, args.confirmation_token))),
+      );
+    },
+  };
+  const deleteAccount: RegisterableTool = {
+    name: "delete_account",
+    register(server, wrap) {
+      server.registerTool(
+        "delete_account",
+        {
+          title: "Delete the Alza account",
+          description:
+            "Delete the Alza account and its personal data (row A18, `DELETE /v1/account` with `acknowledgeAndDelete`). " +
+            "Irreversible: the account, invoices, e-library, and claims are removed. " +
+            "Use only on a disposable account with the user's explicit double confirmation — never the standing E2E account. " +
+            "Requires a one-time token from `prepare_mutation` (action=`delete_account`).",
+          inputSchema: {
+            user_id: z.string().regex(/^\d{1,16}$/).describe("Numeric Alza user id to delete (from the `profile`/`user_data` read)."),
+            confirmation_token: confirmationToken,
+          },
+          annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: true, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["delete_account"],
+        },
+        async (args) => wrap("delete_account", async () => result(await apiAccount(deps).deleteAccount({ user_id: args.user_id }, args.confirmation_token))),
+      );
+    },
+  };
+
+  return [profile, contacts, register, addressUpsert, addressDelete, addressSearch, paymentMethods, afterOrderPayments, payAfterOrder, webPayAfterOrder, order, orderSearch, orderArchive, productByEan, gdprInfo, claimDetail, orderDocument, changePassword, twoFactorSet, phoneChange, emailChange, deleteAccount, reviewSubmit, complaintClaims, subscriptionOverview, subscriptionActivate, subscriptionUpdateInstallment, uploadAttachment, webPlaceOrder];
 }

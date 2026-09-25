@@ -96,6 +96,89 @@ export const CHECKOUT_PREVIEW = z
   .passthrough()
   .describe("Read-side checkout: cart + delivery/payment groups + checkout state, plus the one-time token place_order requires.");
 
+/** `order_search` result (OR6, 2026-09-22) — the HATEOAS search response:
+ * `orders[]` (with `documents[]` invoice refs) + `commodities[]`. */
+export const ORDER_SEARCH = z
+  .object({
+    self: z.unknown().optional(),
+    orders: z.array(z.record(z.string(), z.unknown())).optional(),
+    commodities: z.array(z.record(z.string(), z.unknown())).optional(),
+  })
+  .passthrough()
+  .describe("Order search results: matching orders (status, phase, price, documents[]) and commodities.");
+
+/** `order_archive` result (OR7, 2026-09-24) — the HATEOAS archive section:
+ * `value[]` orders (same shape as the search results) + `paging`. */
+export const ORDER_ARCHIVE = z
+  .object({
+    self: z.unknown().optional(),
+    paging: z.unknown().optional(),
+    value: z.array(z.record(z.string(), z.unknown())).optional(),
+  })
+  .passthrough()
+  .describe("Archived orders: `value[]` (status, phase, price, documents[]) with `paging` (use `paging.next` for the next page).");
+
+/** `product_by_ean` result (AT3, 2026-09-24) — the EAN-lookup envelope:
+ * `data` on a match, or `err:1` + `msg` (\"No products found.\") when no
+ * catalog product carries the scanned code. */
+export const PRODUCT_BY_EAN = z
+  .object({
+    /** The matching product data (present on a catalog hit). */
+    data: z.unknown().nullable().optional(),
+    /** Alza `BaseResponse` error flag (0 = ok, 1 = not found). */
+    err: z.number().int().optional(),
+    /** Alza `BaseResponse` message (e.g. "No products found."). */
+    msg: z.string().nullable().optional(),
+  })
+  .passthrough()
+  .describe("Barcode/EAN product lookup: matching product data, or err:1 'No products found.' for unknown codes.");
+
+/** `gdpr_info` result (A17, 2026-09-22). */
+export const GDPR_INFO = z
+  .object({
+    /** The `PersonalGdprDetails` section (`gdprInfoAction`, `deleteAccountAction`). */
+    personalDetails: z.unknown().optional(),
+    /** The `AccountGdprDialog` (`emailInfo`, `sendGdprInfoForm`), or an error object when the dialog read failed. */
+    gdprDialog: z.unknown().optional(),
+  })
+  .passthrough()
+  .describe("GDPR section + export dialog (where the data export will be sent).");
+
+/** `order_document` result (OR10, 2026-09-22) — downloaded document content. */
+export const ORDER_DOCUMENT = z
+  .object({
+    name: z.string().nullable().optional(),
+    /** The validated server-provided href that was fetched. */
+    href: z.string(),
+    contentType: z.string().nullable(),
+    byteLength: z.number().int(),
+    /** UTF-8 body when the content is text-like (JSON/XML/text). */
+    text: z.string().nullable().optional(),
+    /** Base64 body for binary content (PDF and friends). */
+    base64: z.string().nullable().optional(),
+  })
+  .passthrough()
+  .describe("Downloaded order document: metadata plus text or base64 content (max 8 MiB).");
+
+/** Account credential/identity mutation results (A14–A18, 2026-09-22). These tools
+ * return the Alza upstream envelope on success, or a small confirmation object when
+ * the upstream body is empty. */
+export const ACCOUNT_MUTATION = z
+  .object({
+    /** Present when Alza returns the standard envelope (err/msg/data). */
+    err: z.union([z.number(), z.string(), z.null()]).optional(),
+    msg: z.union([z.string(), z.null()]).optional(),
+    data: z.unknown().optional(),
+    /** Confirmation keys emitted when the upstream body was empty. */
+    changed: z.boolean().optional(),
+    enabled: z.boolean().optional(),
+    phone: z.string().optional(),
+    email: z.string().optional(),
+    deleted: z.boolean().optional(),
+  })
+  .passthrough()
+  .describe("Account credential/identity mutation (A14–A18): the Alza envelope on success, or a confirmation flag when the upstream body is empty.");
+
 /** `web_pickup_places` result (W11–W14 family). */
 export const WEB_PICKUP_PLACES = z
   .object({
@@ -252,4 +335,17 @@ export const OUTPUT_SCHEMAS: Record<string, z.AnyZodObject> = {
   web_place_order: ENVELOPE,
   web_pay_after_order: ENVELOPE,
   upload_attachment: ENVELOPE,
+  // Read-side dynamic-action wrappers (2026-09-22, task-5)
+  order_search: ORDER_SEARCH,
+  order_archive: ORDER_ARCHIVE,
+  product_by_ean: PRODUCT_BY_EAN,
+  gdpr_info: GDPR_INFO,
+  claim_detail: ENVELOPE,
+  order_document: ORDER_DOCUMENT,
+  // account credential/identity mutations (2026-09-22, task-6)
+  change_password: ACCOUNT_MUTATION,
+  two_factor_set: ACCOUNT_MUTATION,
+  phone_change: ACCOUNT_MUTATION,
+  email_change: ACCOUNT_MUTATION,
+  delete_account: ACCOUNT_MUTATION,
 };

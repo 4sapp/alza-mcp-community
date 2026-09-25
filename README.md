@@ -86,6 +86,7 @@ Catalog tools:
 | **`get_product_reviews`** | Aggregate rating + review count |
 | **`find_pickup_points`** | Nearest brick-and-mortar AlzaShop showrooms by postal code |
 | **`list_categories`** | 20 top-level Alza categories with ids — feed `category_id` to `search_products` to narrow |
+| **`product_by_ean`** | Looks up catalog products by barcode/EAN (the app's camera barcode-scan API, AT3; read-only, no account required) |
 
 Account and checkout tools:
 
@@ -132,6 +133,16 @@ User-management, payments, orders, and post-purchase tools:
 | **`subscription_activate`** | Activates AlzaSubscription (one-time token) |
 | **`subscription_update_installment`** | Changes the installment plan (one-time token) |
 | **`upload_attachment`** | Uploads image attachments via the multipart server-provided action (one-time token) |
+| **`order_search`** | Searches the account's orders by term (OR6; read-only) |
+| **`order_archive`** | Reads the account's archived orders (OR7; read-only; the "Skrýt zrušené" include/hide-cancelled toggle) |
+| **`order_document`** | Downloads an order invoice/document from its server-provided href (OR10; origin-validated to the Alza host family) |
+| **`gdpr_info`** | Reads the GDPR section + export dialog (A17; read-only — where the data export will be sent) |
+| **`claim_detail`** | Reads one warranty claim's detail via its server-provided action (K2; read-only) |
+| **`change_password`** | Changes the account password (A14; one-time token; logs the user out of every device) |
+| **`two_factor_set`** | Enables/disables SMS two-factor (A15; one-time token) |
+| **`phone_change`** | Changes the contact phone number (A16; one-time token) |
+| **`email_change`** | Changes the contact email (A16 sibling; one-time token) |
+| **`delete_account`** | Deletes the account (A18; one-time token; **irreversible — disposable accounts only**) |
 
 Every high-impact mutation runs only with a one-time token from `prepare_mutation`; the full route inventory, exposure decisions, and verification labels live in [docs/mobile-endpoint-coverage.md](docs/mobile-endpoint-coverage.md).
 
@@ -183,7 +194,7 @@ Register the local build in pi's global MCP config (`~/.pi/agent/mcp.json`):
 }
 ```
 
-Run `/reload` (or `mcp connect alza` — the gateway respawns the stdio process, so a freshly built `dist/` takes effect without `/reload`). The gateway exposes the 41 tools under the `alza_` prefix (`alza_search_products`, `alza_get_product`, `alza_cart`, …). Auth auto-loads from `~/.alza-mcp/tokens.json`. Verified in both modes: (a) in-session through the gateway — search/filter/detail, authenticated add-to-cart, bogus-coupon round-trip → server-side `err:1` envelope ([docs/live-evidence/pi-integration-2026-09-10.md](docs/live-evidence/pi-integration-2026-09-10.md)); and (b) **headless** (`pi -p` one-shot prompt), where the agent discovers the `alza_*` tools, calls `search_products` with the right args, and reports the correct cheapest in-stock product ([docs/live-evidence/headless-pi-2026-09-12.json](docs/live-evidence/headless-pi-2026-09-12.json)); the 2026-09-13 re-run adds three more headless scenarios — catalog search with price-ascending sort, the authenticated account stack (`account_status` + `cart`), and the one-time mutation token flow (`prepare_mutation`) — all captured in [docs/live-evidence/headless-pi-2026-09-13.json](docs/live-evidence/headless-pi-2026-09-13.json).
+Run `/reload` (or `mcp connect alza` — the gateway respawns the stdio process, so a freshly built `dist/` takes effect without `/reload`). The gateway exposes the tools (52 as of 2026-09-24) under the `alza_` prefix (`alza_search_products`, `alza_get_product`, `alza_cart`, …). Auth auto-loads from `~/.alza-mcp/tokens.json`. Verified in both modes: (a) in-session through the gateway — search/filter/detail, authenticated add-to-cart, bogus-coupon round-trip → server-side `err:1` envelope ([docs/live-evidence/pi-integration-2026-09-10.md](docs/live-evidence/pi-integration-2026-09-10.md)); and (b) **headless** (`pi -p` one-shot prompt), where the agent discovers the `alza_*` tools, calls `search_products` with the right args, and reports the correct cheapest in-stock product ([docs/live-evidence/headless-pi-2026-09-12.json](docs/live-evidence/headless-pi-2026-09-12.json)); the 2026-09-13 re-run adds three more headless scenarios — catalog search with price-ascending sort, the authenticated account stack (`account_status` + `cart`), and the one-time mutation token flow (`prepare_mutation`) — all captured in [docs/live-evidence/headless-pi-2026-09-13.json](docs/live-evidence/headless-pi-2026-09-13.json).
 
 ---
 
