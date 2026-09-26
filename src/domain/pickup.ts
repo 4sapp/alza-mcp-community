@@ -6,11 +6,20 @@ import type { Locale } from "../infra/locale.js";
 import type { PickupPoint } from "./types.js";
 
 /**
- * AlzaBox locker discovery is not implemented in this release — a DOM-scrape
- * of https://www.alza.cz/alzabox.htm is recorded as a separate follow-up goal
- * (docs/mcp-best-practices-audit.md N-series; find_pickup_points documents the
- * caveat in its description). This module returns AlzaShop showrooms from the
- * curated branch dataset only.
+ * AlzaBox locker discovery is not implemented in this release. This is not
+ * just an omission: live-verified 2026-09-26, `GET /api/personalPickup/v1/places`
+ * (and `pickupPlaceForm`) reject a request with no `orderId`/`groupId` with
+ * HTTP 400 `{"OrderId":["The OrderId field is required."],"GroupId":[...]}`
+ * — the endpoint is checkout-cart-scoped, not a standalone geo lookup. Those
+ * ids only exist once a product is in the mobile cart and `delivery_options`
+ * has registered a delivery group; a bare postal-code search has neither.
+ * Getting real AlzaBox results therefore requires the live checkout-cart
+ * flow (`add_to_cart` → `delivery_options` → `web_pickup_places` with the
+ * `orderId`/`groupId` parsed from the AlzaBox delivery option's
+ * `deliveryOption.href`), not a read-only geo endpoint — see
+ * `find_pickup_points`'s description and docs/gap-analysis.md G3 for the
+ * worked sequence. This module returns AlzaShop showrooms from the curated
+ * branch dataset only.
  */
 export interface FindPickupOptions {
   postalCode: string;

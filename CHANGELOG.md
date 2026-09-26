@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **`cancel_order` typed tool (OR11)**, live-verified 2026-09-26 against a real order created through `web_place_order` and cancelled end to end: `GET /api/v1/orders/{id}/{hash}/parts/{partId}/cancelForm` → `PUT .../cancellations` with a one-time `prepare_mutation` token (action `cancel_order`), `reason` 0–5. Unit-tested (token gating, single-use, reason validation, request shape).
+
+### Fixed
+
+- **Documentation corrections from a real live E2E run (2026-09-26, real order 1060090910: 40" monitor → cancelled)**, all in tool descriptions/docstrings, no behavior change to working tools:
+  - `find_pickup_points`/`Pickup` module: corrected "AlzaBox discovery not yet implemented" to explain *why* — the live `personalPickup/v1/places`/`pickupPlaceForm` endpoints 400 without an `orderId`/`groupId` from an active cart; it's checkout-cart-scoped, not a standalone geo lookup. Pointed the description at the actual working sequence (`add_to_cart` → `delivery_options` → `web_pickup_places`).
+  - `web_pickup_places`: documented that `order_id`/`group_id` are typed optional but the live API 400s without both, and that distance-sort silently falls back to a small fixed list without them; added the worked example.
+  - **Corrected a wrong cart-pairing claim**: `web_place_order` (legacy WCF pipeline) submits the cart populated by `add_to_cart` (mobile `restservice.svc/v2/basket/add`), NOT the HATEOAS cart from `web_add_to_cart`/`web_cart` as the prior descriptions implied. Fixed in all four tool descriptions.
+  - `add_to_cart`/`delivery_options`: noted live-verified anonymous-session behavior — both succeed without an OAuth token (fall back to an anonymous visitor-keyed WCF cart), making the full `add_to_cart` → `delivery_options` → `web_place_order` chain usable end to end without login.
+  - Documented, from live testing across three monitor sizes, that Alza excludes large items (observed: 34"+ monitors) from the entire AlzaBox locker network — not just distance-limited, structurally excluded — routing them to a small nationwide set of oversized-item pickup points instead.
+
 - **Task-6 account credential/identity mutations closed** (goal `mu3orcal-hqvsbi`, 2026-09-23) — five formerly `blocked` rows (A14–A16, A18 + the A16 email sibling) are now typed tools with one-time tokens, explicit validation, and unit tests:
   - `change_password` (A14): `POST /api/users/{id}/v2/account/password` `{oldPassword, password1, password2}`; new ≥ 8 chars, confirm must match, new ≠ old.
   - `two_factor_set` (A15): `PATCH /api/users/{id}/v1/account` JSON-Patch `{op:replace, path:/2faEnabled, value:bool}`; boolean-validated, reversible.

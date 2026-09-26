@@ -287,6 +287,33 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
       );
     },
   };
+  const cancelOrder: RegisterableTool = {
+    name: "cancel_order",
+    register(server, wrap) {
+      server.registerTool(
+        "cancel_order",
+        {
+          title: "Cancel an order (OR11)",
+          description:
+            "Cancel an order part via Alza's HATEOAS cancel flow (OR11): reads the `cancelForm` (validating the order/part/hash are cancellable), then commits the cancellation with the given `reason`. " +
+            "Live-verified against a real `web_place_order`-created order (2026-09-26): pass `hash` from that order's `?x=` link (`order_detail_link`/`GetOrderDetailAction.webLink`) and `part_id` from the order detail's `parts[].self.href`. " +
+            "High-impact, money-relevant side effect: cancels a real order — use only after explicit user confirmation. " +
+            "A 202 response means the cancellation was accepted; the order may briefly show a transitional \"processing changes\" state before settling to cancelled — re-read the order to confirm. " +
+            "Requires a one-time token from `prepare_mutation` (action=`cancel_order`).",
+          inputSchema: {
+            order_id: z.string().min(1).max(64).describe("The order id to cancel (from `place_order`/`web_place_order`'s result, or `order`/`order_search`)."),
+            part_id: z.string().min(1).max(64).describe("The order part id to cancel (from the order's `parts[].self.href`, or the `web_place_order` result if surfaced)."),
+            hash: z.string().min(1).max(128).describe("The order's `?x=` access token from `order_detail_link`/`GetOrderDetailAction.webLink`."),
+            reason: z.number().int().min(0).max(5).default(0).describe("Cancellation reason: 0=no reason given, 1=want different goods, 2=cheaper elsewhere, 3=don't want to wait, 4=need to change delivery, 5=other. Default 0."),
+            confirmation_token: confirmationToken,
+          },
+          annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: true, openWorldHint: true },
+          outputSchema: OUTPUT_SCHEMAS["cancel_order"],
+        },
+        async (args) => wrap("cancel_order", async () => result(await apiAccount(deps).cancelOrder(args.order_id, args.hash, args.part_id, args.reason, args.confirmation_token))),
+      );
+    },
+  };
   const reviewSubmit: RegisterableTool = {
     name: "review_submit",
     register(server, wrap) {
@@ -413,7 +440,8 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
           description:
             "Place an order through the live-verified legacy web WCF checkout pipeline (EShopService.svc: SaveOrder2 → SaveOrder3 → SaveAndConfirmOrder2 with the documented AlzaPlus 113-gate retry → CheckOrder4 → SendOrder4). " +
             "This is the currently-working order-submission path — the mobile `place_order` (sendOrder3) returns HTTP 500 (docs/gap-analysis.md G1/G5). " +
-            "Typed inputs only: `delivery_id`/`delivery_group_id` from `delivery_options`, `parcel_shop_id` from `web_pickup_places`, `payment_id` from `payment_methods`, plus the contact/address block. " +
+            "Cart note (live-verified 2026-09-26): this submits whatever is in the cart populated by `add_to_cart` (mobile `restservice.svc/v2/basket/add`) — NOT the separate HATEOAS cart from `web_add_to_cart`. Neither `add_to_cart` nor `delivery_options` actually require login despite their usual auth prerequisite (falls back to an anonymous visitor-keyed cart) — this whole chain works anonymously end to end. " +
+            "Typed inputs only: `delivery_id`/`delivery_group_id` from `delivery_options`, `parcel_shop_id` from `web_pickup_places` (using the `orderId`/`groupId` parsed from `delivery_options`' AlzaBox `deliveryOption.href` — see `web_pickup_places`'s description), `payment_id` from `delivery_options`' payment groups, plus the contact/address block. " +
             "High-impact, money-relevant: creates a real Alza order — use only with explicit user confirmation, with a one-time token from `prepare_mutation` (action=`web_place_order`). " +
             "Example: `web_place_order({delivery_id: 2680, parcel_shop_id: \"1128203\", payment_id: 103, name: \"Jan Novák\", street: \"Praha 110 00\", city: \"Praha\", zip_code: \"110 00\", phone: \"+420 777 123 456\", email: \"jan@example.cz\", confirmation_token: \"...\"})`.",
           inputSchema: {
@@ -770,5 +798,5 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
     },
   };
 
-  return [profile, contacts, register, addressUpsert, addressDelete, addressSearch, paymentMethods, afterOrderPayments, payAfterOrder, webPayAfterOrder, order, orderSearch, orderArchive, productByEan, gdprInfo, claimDetail, orderDocument, changePassword, twoFactorSet, phoneChange, emailChange, deleteAccount, reviewSubmit, complaintClaims, subscriptionOverview, subscriptionActivate, subscriptionUpdateInstallment, uploadAttachment, webPlaceOrder];
+  return [profile, contacts, register, addressUpsert, addressDelete, addressSearch, paymentMethods, afterOrderPayments, payAfterOrder, webPayAfterOrder, order, orderSearch, orderArchive, productByEan, gdprInfo, claimDetail, orderDocument, changePassword, twoFactorSet, phoneChange, emailChange, deleteAccount, reviewSubmit, complaintClaims, subscriptionOverview, subscriptionActivate, subscriptionUpdateInstallment, uploadAttachment, webPlaceOrder, cancelOrder];
 }

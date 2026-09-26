@@ -333,6 +333,7 @@ export const OUTPUT_SCHEMAS: Record<string, z.AnyZodObject> = {
   subscription_activate: ENVELOPE,
   subscription_update_installment: ENVELOPE,
   web_place_order: ENVELOPE,
+  cancel_order: ENVELOPE,
   web_pay_after_order: ENVELOPE,
   upload_attachment: ENVELOPE,
   // Read-side dynamic-action wrappers (2026-09-22, task-5)

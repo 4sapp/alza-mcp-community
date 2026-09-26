@@ -12,7 +12,7 @@ export const MUTATION_ACTIONS = [
   "after_order_payment", "register", "address_create", "address_edit", "address_delete",
   "review_submit", "subscription_activate", "subscription_update_installment", "attachment_upload",
   // web checkout family (legacy WCF pipeline O11 + web pickup W11–W14, 2026-09-08)
-  "web_place_order", "web_after_order_payment",
+  "web_place_order", "web_after_order_payment", "cancel_order",
   // GDPR data export (A17, 2026-09-22): POSTs the sendGdprInfoForm target —
   // Alza queues the XML export to the account's own login email (202 Accepted).
   "gdpr_export",
@@ -702,6 +702,23 @@ export class MobileAccount {
     if (partId === undefined) return { order };
     const part = await this.api.orderPart(orderId, partId);
     return { order, part };
+  }
+
+  /** OR11: cancel an order part. High-impact, one-time token like `web_place_order`.
+   * `reason` mirrors the cancelForm's enum (0 = no reason given .. 5 = other);
+   * defaults to 0. A 202 with an empty body is success (live-verified); the
+   * order re-read may briefly show a "processing changes" transitional state
+   * before settling to cancelled. */
+  async cancelOrder(orderId: string, hash: string, partId: string, reason: number, token: string): Promise<unknown> {
+    this.assertMutationToken("cancel_order", token);
+    if (typeof orderId !== "string" || orderId.length === 0 || orderId.length > 64) throw new Error("order_id must be a non-empty string (max 64)");
+    if (typeof hash !== "string" || hash.length === 0 || hash.length > 128) throw new Error("hash must be a non-empty string (max 128)");
+    if (typeof partId !== "string" || partId.length === 0 || partId.length > 64) throw new Error("part_id must be a non-empty string (max 64)");
+    if (!Number.isInteger(reason) || reason < 0 || reason > 5) throw new Error("reason must be an integer between 0 and 5");
+    await this.api.orderCancelForm(orderId, hash, partId);
+    await this.api.orderCancel(orderId, hash, partId, reason);
+    this.pendingMutation = undefined;
+    return { accepted: true, order_id: orderId, part_id: partId, reason };
   }
 
   /** Reviews / complaints / subscriptions / attachments (server-provided AppAction forms). */

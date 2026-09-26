@@ -462,6 +462,23 @@ export class MobileApi {
   async anonymousOrder(orderId: string): Promise<unknown> { return this.request(`/api/anonymous/v1/orders/${encodeURIComponent(orderId)}`); }
   async userOrder(userFlag: number, orderId: string, initialCreated = false): Promise<unknown> { return this.request(`/api/users/${userFlag}/v1/orders/${encodeURIComponent(orderId)}${initialCreated ? "?initialCreated=1" : ""}`); }
   async orderPart(orderId: string, partId: string): Promise<unknown> { return this.request(`/api/v1/orders/${encodeURIComponent(orderId)}/${encodeURIComponent(partId)}`); }
+
+  /** OR11 (order cancellation, live-verified 2026-09-06/2026-09-16 and again
+   * 2026-09-26 against a real anonymous order): the HATEOAS create-form GET
+   * exposes the `reason` enum (0-5) + a `submit` button; the PUT commits it.
+   * `hash` is the `?x=` token from the order's `GetOrderDetailAction.webLink`
+   * (or `/api/anonymous/v1/orders/{id}/hashRequests` for a hashless order). */
+  async orderCancelForm(orderId: string, hash: string, partId: string): Promise<unknown> {
+    return this.request(`/api/v1/orders/${encodeURIComponent(orderId)}/${encodeURIComponent(hash)}/parts/${encodeURIComponent(partId)}/cancelForm`);
+  }
+  async orderCancel(orderId: string, hash: string, partId: string, reason: number): Promise<unknown> {
+    const body = JSON.stringify({ value: [{ name: "reason", value: String(reason) }, { name: "submit" }] });
+    return this.request(`/api/v1/orders/${encodeURIComponent(orderId)}/${encodeURIComponent(hash)}/parts/${encodeURIComponent(partId)}/cancellations`, {
+      method: "PUT",
+      body,
+      headers: { "content-type": "application/json" },
+    });
+  }
   async orderAddInfo(): Promise<unknown> { return this.request("/services/restservice.svc/v2/getOrderAddInfo?isGiftsEnabled=true"); }
   async order2Info(country = "CZ"): Promise<unknown> {
     // Live correction (2026-09-09): requestModel.Country is required (HTTP 400 without).

@@ -35,6 +35,7 @@ const CATALOG = ["search_products", "get_product", "get_product_reviews", "find_
 const DESTRUCTIVE = new Set([
   "place_order",
   "web_place_order",
+  "cancel_order",
   "register",
   "address_delete",
   "pay_after_order",
@@ -47,9 +48,9 @@ const DESTRUCTIVE = new Set([
 const NO_OPEN_WORLD = new Set(["account_status", "prepare_mutation"]);
 
 describe("tool annotation contract", () => {
-  it("serves exactly 52 tools with bare, snake_case names", async () => {
+  it("serves exactly 53 tools with bare, snake_case names", async () => {
     const tools = await listTools();
-    expect(tools).toHaveLength(52);
+    expect(tools).toHaveLength(53);
     for (const t of tools) {
       expect(t.name).toMatch(/^[a-z][a-z0-9_]*$/);
     }
@@ -86,17 +87,19 @@ describe("tool annotation contract", () => {
   });
 
   it("marks readOnlyHint on every tool except the 23 mutating ones", async () => {
-    // The 23 mutating tools: OAuth handshake (auth_start/auth_exchange),
+    // The 24 mutating tools: OAuth handshake (auth_start/auth_exchange),
     // whitelisted low-risk mutate_list, cart/checkout/registration/payment
-    // writes, the chat send, and the A14–A18 account credential/identity
-    // mutations (change_password, two_factor_set, phone_change, email_change,
-    // delete_account — all one-time-token gated, 2026-09-22/23).
+    // writes, the chat send, order cancellation (OR11), and the A14–A18
+    // account credential/identity mutations (change_password, two_factor_set,
+    // phone_change, email_change, delete_account — all one-time-token gated,
+    // 2026-09-22/23).
     const mutating = new Set([
       "auth_start", "auth_exchange", "mutate_list", "add_to_cart",
       "select_pickup_point", "place_order", "web_add_to_cart", "chat_send",
       "register", "address_upsert", "address_delete", "pay_after_order",
       "web_pay_after_order", "review_submit", "subscription_activate",
       "subscription_update_installment", "upload_attachment", "web_place_order",
+      "cancel_order",
       "change_password", "two_factor_set", "phone_change", "email_change", "delete_account",
     ]);
     const tools = await listTools();

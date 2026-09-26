@@ -51,7 +51,7 @@ const CANONICAL_ORDER = [
   "profile", "contacts", "register", "address_upsert", "address_delete", "address_search",
   "payment_methods", "after_order_payments", "pay_after_order", "web_pay_after_order", "order",
   "review_submit", "complaint_claims", "subscription_overview", "subscription_activate",
-  "subscription_update_installment", "upload_attachment", "web_place_order",
+  "subscription_update_installment", "upload_attachment", "web_place_order", "cancel_order",
 ];
 
 type NamedTool = Tool & { outputSchema?: Record<string, unknown> };

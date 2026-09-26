@@ -438,6 +438,35 @@ describe("web checkout family (gap-analysis G1/G2/G3, 2026-09-08)", () => {
     } finally { restore(); }
   });
 
+  it("OR11: reads the cancelForm then PUTs the cancellation, gated by a one-time token", async () => {
+    const account = makeAccount();
+    const { calls, restore } = mockFetch((url) =>
+      url.includes("/cancelForm")
+        ? new Response(JSON.stringify({ method: "PUT", value: [{ name: "reason" }, { name: "submit" }] }), { status: 200, headers: { "content-type": "application/json" } })
+        : new Response(null, { status: 202 })
+    );
+    try {
+      await expect(account.cancelOrder("1060090910", "HASH123", "1083569825", 0, "bad-token")).rejects.toThrow(/confirmation token/);
+
+      const ok = account.prepareMutation("cancel_order");
+      const out = await account.cancelOrder("1060090910", "HASH123", "1083569825", 1, ok.confirmationToken) as { accepted: boolean; order_id: string; part_id: string; reason: number };
+      expect(out).toEqual({ accepted: true, order_id: "1060090910", part_id: "1083569825", reason: 1 });
+      expect(calls[0].url).toBe("https://test.alza.invalid/api/v1/orders/1060090910/HASH123/parts/1083569825/cancelForm");
+      expect(calls[1].url).toBe("https://test.alza.invalid/api/v1/orders/1060090910/HASH123/parts/1083569825/cancellations");
+      expect(calls[1].init?.method).toBe("PUT");
+      expect(JSON.parse(String(calls[1].init?.body))).toEqual({ value: [{ name: "reason", value: "1" }, { name: "submit" }] });
+
+      // the token is single-use
+      await expect(account.cancelOrder("1060090910", "HASH123", "1083569825", 0, ok.confirmationToken)).rejects.toThrow(/confirmation token/);
+    } finally { restore(); }
+  });
+
+  it("OR11: rejects an out-of-range reason before making any request", async () => {
+    const account = makeAccount();
+    const ok = account.prepareMutation("cancel_order");
+    await expect(account.cancelOrder("1060090910", "HASH123", "1083569825", 6, ok.confirmationToken)).rejects.toThrow(/reason must be/);
+  });
+
   it("G1: web after-order payment validates inputs and sends the CreateAfterPayment body", async () => {
     const account = makeAccount();
     const { calls, restore } = mockFetch(() => wcf({ ErrorLevel: 0, Value: "https://login.kb.cz/login?sso=MojePlatba-1189" }));

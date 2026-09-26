@@ -234,10 +234,12 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
         {
           title: "Add a product to the account cart",
           description:
-            "Add one product to the authenticated user's Alza account cart by its Alza product code (the `code` from `search_products`/`get_product`, e.g. `RI054b1` — not the numeric id). " +
+            "Add one product to the mobile-API cart (`restservice.svc/v2/basket/add`) by its Alza product code (the `code` from `search_products`/`get_product`, e.g. `RI054b1` — not the numeric id). " +
             "Use when the user wants a product put into their Alza account; pass `quantity` (default 1, max 99). " +
-            "Side effect: mutates the user's cart — the item stays there until removed or ordered (there is no basket-remove tool). " +
-            "Do not use for the anonymous web checkout cart — that is `web_add_to_cart`. " +
+            "Side effect: mutates the cart — the item stays there until removed or ordered (there is no basket-remove tool). " +
+            "Do not use for the separate HATEOAS web checkout cart — that is `web_add_to_cart` (does not share state with this tool; see its description). " +
+            "LIVE NOTE (2026-09-26): despite the usual auth prerequisite, this call also succeeds with no OAuth token loaded — it falls back to an anonymous, visitor-keyed (Balancer-Guid) WCF cart (`account_status` still reports `authenticated: true` but `user_id: -1`). " +
+            "That anonymous cart is exactly what `delivery_options` + `web_place_order` need for the working (non-500) anonymous order pipeline — do NOT use `checkout_preview`/`place_order` for anonymous checkout, their `sendOrder3` step 500s unconditionally (docs/gap-analysis.md G1/G5). " +
             AUTH_PREREQ + " The response echoes the added line and the new basket count; verify with `cart` if in doubt. Example: `add_to_cart({code: \"RI054b1\", quantity: 1})`.",
           inputSchema: {
             code: z.string().min(1).describe("Alza product code, e.g. 'RI054b1' (the `code` field from `search_products`)."),
@@ -356,13 +358,15 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             "List Alza pickup places from the live m.alza.cz personalPickup/v1 API: the type-availability form (AlzaBox/branches/24-7/showroom counts), a paginated place list, and — with `place_id` — a single place's detail (deliveryId, parcelShopId, isFree, typeText, opening hours). " +
             "Use to find where the user can collect or pick up, or to obtain the `deliveryId`/`parcelShopId` that `web_place_order` needs. " +
             "Unlike `delivery_options`, this is visitor-readable — no account token required. " +
-            "Pass `order_id`/`group_id` from the current basket checkout context when available. " +
-            "Read-only. Example: `web_pickup_places({latitude: 50.08, longitude: 14.42, types: [1], limit: 10})`.",
+            "IMPORTANT (live-verified 2026-09-26): `order_id`/`group_id` are typed optional but the live API 400s without both (`{\"OrderId\":[\"...required\"],\"GroupId\":[\"...required\"]}`) — this endpoint is checkout-cart-scoped, not a standalone geo lookup. Get them by calling `add_to_cart` on a product, then `delivery_options`, then reading the AlzaBox delivery option's `deliveryOption.href` query params (`orderId`, `groupId` — the same session's ids only; a fresh session's own `add_to_cart` result won't match another session's ids). " +
+            "Distance sorting also needs both `latitude`/`longitude` valid alongside `order_id`/`group_id` — without a matching cart context, results come back as a fixed small list unrelated to the given coordinates. " +
+            "Not every product is AlzaBox-eligible: large items (observed: 34\"+ monitors) are excluded from the full ~4000-locker AlzaBox network and only route to a handful of oversized-item pickup points nationwide — check the place list size/spread as a signal. " +
+            "Read-only (this call itself has no side effect; `add_to_cart` does). Example: `add_to_cart({code: \"WK060a1l56\"})` → `delivery_options({})` → parse `orderId`/`groupId` from the AlzaBox option's `deliveryOption.href` → `web_pickup_places({order_id, group_id, latitude: 50.08, longitude: 14.42, types: [1], limit: 10})`.",
           inputSchema: {
-            order_id: z.number().int().positive().optional().describe("Basket/order id of the current checkout (from the basket context), if any."),
-            group_id: z.number().int().positive().optional().describe("Delivery group id (from delivery options), if any."),
-            latitude: z.number().min(-90).max(90).optional().describe("Latitude to centre the search on (WGS84)."),
-            longitude: z.number().min(-180).max(180).optional().describe("Longitude to centre the search on (WGS84)."),
+            order_id: z.number().int().positive().optional().describe("Basket/order id of the current checkout, parsed from `delivery_options`' AlzaBox `deliveryOption.href` (`orderId` query param). In practice required — the live API 400s without it alongside `group_id`."),
+            group_id: z.number().int().positive().optional().describe("Delivery group id, parsed from `delivery_options`' response (`deliveryGroupId`) or the same `deliveryOption.href` (`groupId` query param). In practice required — the live API 400s without it alongside `order_id`."),
+            latitude: z.number().min(-90).max(90).optional().describe("Latitude to centre the search on (WGS84). Distance sorting requires this alongside a matching `order_id`/`group_id`."),
+            longitude: z.number().min(-180).max(180).optional().describe("Longitude to centre the search on (WGS84). Distance sorting requires this alongside a matching `order_id`/`group_id`."),
             types: z.array(z.number().int().positive()).min(1).max(5).optional().describe("Pickup type filter (e.g. 1=AlzaBox, 2=branches); omit for all types."),
             limit: z.number().int().min(1).max(100).optional().describe("Page size for the place list. Default server value."),
             offset: z.number().int().min(0).optional().describe("Pagination offset for the place list."),
@@ -383,10 +387,11 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
         {
           title: "Add a product to the web visitor cart",
           description:
-            "Add a product to the anonymous (visitor-keyed) Alza web cart via the live m.alza.cz basket/v1 API, using the numeric `commodity_id` (e.g. 7229946) from `search_products`/`get_product`. " +
+            "Add a product to the anonymous (visitor-keyed) Alza HATEOAS web cart via the live m.alza.cz basket/v1 API, using the numeric `commodity_id` (e.g. 7229946) from `search_products`/`get_product`. " +
             "Use for the web checkout flow (row W5) instead of the account cart — this basket is keyed to the visitor (Balancer-Guid), not to an Alza login. " +
-            "The response carries the basket id; pass it to `web_cart` to read the cart, and the place/payment ids flow into `web_place_order`. " +
-            "Side effect: creates or extends the visitor basket. No account token required. " +
+            "The response carries the basket id; pass it to `web_cart` to read this same HATEOAS cart. " +
+            "IMPORTANT — separate cart, live-verified 2026-09-26: `web_place_order` does NOT read this basket. It runs the legacy WCF pipeline (`EShopService.svc`), which shares its cart with `add_to_cart`'s mobile `restservice.svc/v2/basket/add` cart instead (same visitor session, different API family). To actually place an order, use `add_to_cart` (not this tool) → `delivery_options` → `web_place_order`. " +
+            "Side effect: creates or extends the visitor HATEOAS basket. No account token required. " +
             "Example: `web_add_to_cart({commodity_id: 7229946, count: 1})`.",
           inputSchema: {
             commodity_id: z.number().int().positive().describe("Numeric Alza commodity id (e.g. 7229946; the numeric id from `get_product`/`search_products`)."),
@@ -463,7 +468,8 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           title: "Read the web visitor cart",
           description:
             "Read the anonymous (visitor) Alza web checkout cart by `basket_id` (obtained from `web_add_to_cart`): the HATEOAS cart state (maxStep, itemsAction, emptyCartAction) plus item lines (productId, count, basketItemId, updateQuantityAction). " +
-            "Use to verify a `web_add_to_cart` worked or to inspect the web cart before `web_place_order`. " +
+            "Use to verify a `web_add_to_cart` worked or to inspect this HATEOAS cart's contents. " +
+            "Note: this is a different cart than the one `web_place_order` submits (that pairs with `add_to_cart`, not `web_add_to_cart`) — see `web_add_to_cart`'s description. " +
             "Do not use for the authenticated account cart — that is `cart`. " +
             "Read-only; no token required.",
           inputSchema: {
