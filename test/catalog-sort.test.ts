@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareForSort, passesInStock, sortSweepPages } from "../src/domain/catalog.js";
+import { buildFilteredCategoryUrl, compareForSort, parseFacetsResponse, parseScreenInches, passesInStock, pickAdditionalProperties, sortSweepPages } from "../src/domain/catalog.js";
 import type { Product } from "../src/domain/types.js";
 
 const p = (over: Partial<Product>): Product => ({
@@ -78,5 +78,95 @@ describe("passesInStock", () => {
     expect(passesInStock(p({ availability: "not purchasable now" }), true)).toBe(false);
     // undetermined stock is excluded — the flag is an assertion
     expect(passesInStock(p({}), true)).toBe(false);
+  });
+});
+
+describe("parseScreenInches", () => {
+  it('parses the leading NN" token from Alza display product names', () => {
+    expect(parseScreenInches('40" MSI MAG401QR')).toBe(40);
+    expect(parseScreenInches('34" AOC CU34G4')).toBe(34);
+    expect(parseScreenInches("31,5\" LG 32MR50C-B")).toBe(31.5);
+    expect(parseScreenInches("49'' ASUS XG49VQ")).toBe(49);
+  });
+
+  it("returns undefined for names with no leading size", () => {
+    expect(parseScreenInches("Logitech MX Master 3S")).toBeUndefined();
+    expect(parseScreenInches("")).toBeUndefined();
+    // a size appearing mid-name doesn't count — only a leading token
+    expect(parseScreenInches('USB-C to 40" cable')).toBeUndefined();
+  });
+});
+
+describe("buildFilteredCategoryUrl", () => {
+  const base = "https://www.alza.cz";
+
+  it("builds a bare category URL with no filters", () => {
+    expect(buildFilteredCategoryUrl(base, 18876240)).toBe("https://www.alza.cz/18876240.htm");
+  });
+
+  it("appends producer ids as -v{id} segments", () => {
+    expect(buildFilteredCategoryUrl(base, 18876240, [1432])).toBe("https://www.alza.cz/18876240-v1432.htm");
+    expect(buildFilteredCategoryUrl(base, 18876240, [1432, 1299])).toBe("https://www.alza.cz/18876240-v1432-v1299.htm");
+  });
+
+  it("appends attribute filters as -par{paramId}-{valueId} segments", () => {
+    expect(buildFilteredCategoryUrl(base, 18842948, undefined, [{ paramId: 18740, valueId: 239739715 }])).toBe(
+      "https://www.alza.cz/18842948-par18740-239739715.htm"
+    );
+  });
+
+  it("combines producers and filters (live-verified order: producer(s) then par filters)", () => {
+    expect(
+      buildFilteredCategoryUrl(base, 18842948, [1432], [{ paramId: 18740, valueId: 239739715 }])
+    ).toBe("https://www.alza.cz/18842948-v1432-par18740-239739715.htm");
+  });
+});
+
+describe("parseFacetsResponse", () => {
+  it("flattens groups, marks only Checkbox renderType as filterable, and drops unparseable values", () => {
+    const raw = {
+      params: [
+        {
+          groups: [
+            {
+              params: [
+                { tId: 17828, name: "Native contrast", renderType: "Checkbox", values: [{ v: 239718597, desc: "3000:1", cnt: 74 }, { v: undefined, desc: "bad" }] },
+                { tId: 17816, name: "Diagonal", renderType: "Slider", values: [{ v: 685.8, desc: '27 "' }] },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const groups = parseFacetsResponse(raw);
+    expect(groups).toHaveLength(2);
+    const contrast = groups.find((g) => g.paramId === 17828)!;
+    expect(contrast.filterable).toBe(true);
+    expect(contrast.values).toEqual([{ valueId: 239718597, description: "3000:1", count: 74 }]);
+    const diagonal = groups.find((g) => g.paramId === 17816)!;
+    expect(diagonal.filterable).toBe(false);
+  });
+
+  it("returns an empty list for a response with no params", () => {
+    expect(parseFacetsResponse({})).toEqual([]);
+  });
+});
+
+describe("pickAdditionalProperties", () => {
+  it("extracts name/value pairs from a schema.org PropertyValue[] array", () => {
+    const raw = [
+      { "@type": "PropertyValue", name: "Počet LAN portů s rychlostí 10 Gbit", value: "4" },
+      { "@type": "PropertyValue", name: "RJ-45", value: "5 ×" },
+    ];
+    expect(pickAdditionalProperties(raw)).toEqual([
+      { name: "Počet LAN portů s rychlostí 10 Gbit", value: "4" },
+      { name: "RJ-45", value: "5 ×" },
+    ]);
+  });
+
+  it("drops entries missing a name or value, and handles non-array input", () => {
+    expect(pickAdditionalProperties([{ name: "X" }, { value: "Y" }, null, "not an object"])).toEqual([]);
+    expect(pickAdditionalProperties(undefined)).toEqual([]);
+    expect(pickAdditionalProperties(null)).toEqual([]);
   });
 });

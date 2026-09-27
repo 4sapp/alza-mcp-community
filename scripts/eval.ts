@@ -41,7 +41,7 @@ const outPath = resolve(evidenceDir, `eval-${today}.json`);
 
 const CANONICAL_ORDER = [
   // catalog (server.ts order)
-  "search_products", "get_product", "get_product_reviews", "find_pickup_points", "list_categories",
+  "search_products", "get_product", "get_product_reviews", "find_pickup_points", "list_category_filters", "list_categories",
   // account.ts order
   "auth_discovery", "auth_start", "auth_exchange", "mobile_read", "prepare_mutation", "mutate_list",
   "account_status", "cart", "add_to_cart", "delivery_options", "select_pickup_point",
@@ -50,8 +50,12 @@ const CANONICAL_ORDER = [
   // advanced.ts order
   "profile", "contacts", "register", "address_upsert", "address_delete", "address_search",
   "payment_methods", "after_order_payments", "pay_after_order", "web_pay_after_order", "order",
+  "order_search", "order_archive", "product_by_ean", "gdpr_info", "claim_detail", "order_document",
+  "change_password", "two_factor_set", "phone_change", "email_change", "delete_account",
   "review_submit", "complaint_claims", "subscription_overview", "subscription_activate",
   "subscription_update_installment", "upload_attachment", "web_place_order", "cancel_order",
+  // toolsets.ts meta-tools (registered last, after every domain tool)
+  "list_toolsets", "set_toolset",
 ];
 
 type NamedTool = Tool & { outputSchema?: Record<string, unknown> };
@@ -75,6 +79,10 @@ async function openSession(): Promise<Session> {
   // Server-first connect (client-first deadlocks in the linked pair).
   await built.server.connect(serverTransport);
   await client.connect(clientTransport);
+  // Progressive disclosure (src/tools/toolsets.ts): most tools start disabled
+  // to keep the default tools/list small. This harness audits the full
+  // registration surface, so enable everything first.
+  await client.callTool({ name: "set_toolset", arguments: { id: "all", enabled: true } });
   const res = await client.listTools();
   const tools = res.tools as NamedTool[];
   await built.close();
@@ -91,6 +99,10 @@ async function call(name: string, args: Record<string, unknown> = {}): Promise<u
   await built.server.connect(serverTransport);
   await client.connect(clientTransport);
   try {
+    // See openSession(): enable every toolset so any named tool is callable.
+    if (name !== "set_toolset" && name !== "list_toolsets") {
+      await client.callTool({ name: "set_toolset", arguments: { id: "all", enabled: true } });
+    }
     return await client.callTool({ name, arguments: args });
   } finally {
     await client.close();
@@ -124,19 +136,19 @@ async function run(): Promise<void> {
 
   scenarios.push(await scenario("registration-surface", false, async (c) => {
     const tools = session.tools;
-    check(c, "tool count is 41", tools.length === 41, String(tools.length));
+    check(c, "tool count is 56 (54 domain tools + list_toolsets + set_toolset)", tools.length === 56, String(tools.length));
     check(c, "registration order is deterministic", JSON.stringify(tools.map((t) => t.name)) === JSON.stringify(CANONICAL_ORDER), JSON.stringify(tools.map((t) => t.name)));
     const missing = tools.filter((t) => !t.title || !t.description || t.description.length < 40);
     check(c, "every tool has a ≥40-char description and a title", missing.length === 0, missing.map((t) => t.name).join(","));
     const noOut = tools.filter((t) => !t.outputSchema || (t.outputSchema as Record<string, unknown>).type !== "object");
     check(c, "every tool publishes an object outputSchema", noOut.length === 0, noOut.map((t) => t.name).join(","));
-    check(c, "outputSchema map covers all 41 names", Object.keys(OUTPUT_SCHEMAS).length === 41, String(Object.keys(OUTPUT_SCHEMAS).length));
+    check(c, "outputSchema map covers all 54 domain-tool names", Object.keys(OUTPUT_SCHEMAS).length === 54, String(Object.keys(OUTPUT_SCHEMAS).length));
     const readOnly = tools.filter((t) => t.annotations?.readOnlyHint === true).map((t) => t.name);
     const destructive = tools.filter((t) => t.annotations?.destructiveHint === true).map((t) => t.name);
     const mutating = tools.filter((t) => t.annotations?.readOnlyHint === false).map((t) => t.name);
-    check(c, "readOnlyHint true on exactly 23", readOnly.length === 23, String(readOnly.length));
-    check(c, "destructiveHint true on exactly 8", destructive.length === 8, String(destructive.length));
-    check(c, "readOnlyHint false (mutating) on exactly 18", mutating.length === 18, String(mutating.length));
+    check(c, "readOnlyHint true on exactly 31", readOnly.length === 31, String(readOnly.length));
+    check(c, "destructiveHint true on exactly 10", destructive.length === 10, String(destructive.length));
+    check(c, "readOnlyHint false (mutating) on exactly 25", mutating.length === 25, String(mutating.length));
   }));
 
   scenarios.push(await scenario("catalog-read", true, async (c) => {

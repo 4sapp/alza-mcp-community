@@ -41,7 +41,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const profile: RegisterableTool = {
     name: "profile",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "profile",
         {
           title: "Read Alza user profile and address book",
@@ -61,7 +61,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const contacts: RegisterableTool = {
     name: "contacts",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "contacts",
         {
           title: "Read Alza account contacts",
@@ -81,7 +81,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const register: RegisterableTool = {
     name: "register",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "register",
         {
           title: "Register a new Alza account",
@@ -107,7 +107,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const addressUpsert: RegisterableTool = {
     name: "address_upsert",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "address_upsert",
         {
           title: "Create or edit a delivery address",
@@ -146,7 +146,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const addressDelete: RegisterableTool = {
     name: "address_delete",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "address_delete",
         {
           title: "Delete a delivery address",
@@ -170,7 +170,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const addressSearch: RegisterableTool = {
     name: "address_search",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "address_search",
         {
           title: "Search delivery addresses",
@@ -193,7 +193,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const paymentMethods: RegisterableTool = {
     name: "payment_methods",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "payment_methods",
         {
           title: "List available payment methods",
@@ -215,7 +215,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const afterOrderPayments: RegisterableTool = {
     name: "after_order_payments",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "after_order_payments",
         {
           title: "List after-order payment options",
@@ -238,7 +238,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const payAfterOrder: RegisterableTool = {
     name: "pay_after_order",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "pay_after_order",
         {
           title: "Execute an after-order payment (mobile API)",
@@ -265,7 +265,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const order: RegisterableTool = {
     name: "order",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "order",
         {
           title: "Read an Alza order",
@@ -290,7 +290,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const cancelOrder: RegisterableTool = {
     name: "cancel_order",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "cancel_order",
         {
           title: "Cancel an order (OR11)",
@@ -317,7 +317,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const reviewSubmit: RegisterableTool = {
     name: "review_submit",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "review_submit",
         {
           title: "Submit a product review",
@@ -343,7 +343,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const complaintClaims: RegisterableTool = {
     name: "complaint_claims",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "complaint_claims",
         {
           title: "List warranty claims",
@@ -364,7 +364,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const subscriptionOverview: RegisterableTool = {
     name: "subscription_overview",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "subscription_overview",
         {
           title: "Read AlzaSubscription overview",
@@ -385,7 +385,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const subscriptionActivate: RegisterableTool = {
     name: "subscription_activate",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "subscription_activate",
         {
           title: "Activate AlzaSubscription",
@@ -409,7 +409,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const subscriptionUpdateInstallment: RegisterableTool = {
     name: "subscription_update_installment",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "subscription_update_installment",
         {
           title: "Update AlzaSubscription installment plan",
@@ -433,7 +433,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const webPlaceOrder: RegisterableTool = {
     name: "web_place_order",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "web_place_order",
         {
           title: "Place an order (legacy web WCF — working path)",
@@ -474,7 +474,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const webPayAfterOrder: RegisterableTool = {
     name: "web_pay_after_order",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "web_pay_after_order",
         {
           title: "Execute a web after-order payment (working path)",
@@ -501,7 +501,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const uploadAttachment: RegisterableTool = {
     name: "upload_attachment",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "upload_attachment",
         {
           title: "Upload complaint/claim attachments",
@@ -537,7 +537,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const orderSearch: RegisterableTool = {
     name: "order_search",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "order_search",
         {
           title: "Search the account's orders",
@@ -560,7 +560,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const orderArchive: RegisterableTool = {
     name: "order_archive",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "order_archive",
         {
           title: "Read the account's archived orders",
@@ -584,7 +584,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const productByEan: RegisterableTool = {
     name: "product_by_ean",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "product_by_ean",
         {
           title: "Look up catalog products by barcode (EAN)",
@@ -609,7 +609,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const gdprInfo: RegisterableTool = {
     name: "gdpr_info",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "gdpr_info",
         {
           title: "Read the GDPR section and export dialog",
@@ -631,7 +631,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const claimDetail: RegisterableTool = {
     name: "claim_detail",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "claim_detail",
         {
           title: "Read a warranty claim detail",
@@ -653,7 +653,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const orderDocument: RegisterableTool = {
     name: "order_document",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "order_document",
         {
           title: "Download an order invoice/document",
@@ -684,7 +684,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const changePassword: RegisterableTool = {
     name: "change_password",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "change_password",
         {
           title: "Change the account password",
@@ -709,7 +709,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const twoFactorSet: RegisterableTool = {
     name: "two_factor_set",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "two_factor_set",
         {
           title: "Enable or disable SMS two-factor",
@@ -732,7 +732,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const phoneChange: RegisterableTool = {
     name: "phone_change",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "phone_change",
         {
           title: "Change the contact phone number",
@@ -755,7 +755,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const emailChange: RegisterableTool = {
     name: "email_change",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "email_change",
         {
           title: "Change the contact email",
@@ -777,7 +777,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const deleteAccount: RegisterableTool = {
     name: "delete_account",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "delete_account",
         {
           title: "Delete the Alza account",

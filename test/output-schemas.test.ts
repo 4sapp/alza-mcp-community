@@ -20,13 +20,16 @@ async function clientAndServer() {
   // Server first (see tool-annotations.test.ts note).
   await built.server.connect(serverTransport);
   await client.connect(clientTransport);
+  // Progressive disclosure (toolsets.ts): most tools start disabled to keep
+  // the default tools/list small. Enable everything for these full-inventory checks.
+  await client.callTool({ name: "set_toolset", arguments: { id: "all", enabled: true } });
   return { client, built };
 }
 
 describe("per-tool outputSchema (N-1)", () => {
-  it("covers all 53 tools in the shared map", () => {
+  it("covers all 54 tools in the shared map", () => {
     const names = Object.keys(OUTPUT_SCHEMAS);
-    expect(names).toHaveLength(53);
+    expect(names).toHaveLength(54);
     for (const n of names) expect(OUTPUT_SCHEMAS[n]).toBeTruthy();
   });
 
@@ -34,7 +37,7 @@ describe("per-tool outputSchema (N-1)", () => {
     const { client, built } = await clientAndServer();
     try {
       const res = await client.listTools();
-      expect(res.tools).toHaveLength(53);
+      expect(res.tools).toHaveLength(56); // 54 domain tools + list_toolsets + set_toolset
       for (const t of res.tools) {
         const os = t.outputSchema as Record<string, unknown> | undefined;
         expect(os, `missing outputSchema on ${t.name}`).toBeTruthy();

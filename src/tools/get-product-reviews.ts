@@ -22,7 +22,7 @@ export function createGetProductReviewsTool(deps: ToolDeps): RegisterableTool {
   return {
     name,
     register(server, errorWrap) {
-      server.registerTool(
+      return server.registerTool(
         name,
         {
           title: "Get product reviews",

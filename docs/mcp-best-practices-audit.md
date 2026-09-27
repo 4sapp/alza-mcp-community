@@ -444,3 +444,44 @@ Live matrix of 5 probe cases and the gate (102/102, typecheck, build,
 diff-check) are recorded in the evidence file. The tool-level contract
 (schema shape, annotations, outputSchema) is unchanged by this batch — only
 behavioral honesty and descriptions moved.
+
+### F-11 · P1 · Progressive tool disclosure added (2026-09-27)
+
+- **The gap:** by 2026-09-27 the server had grown to 53 tools, all registered
+  and listed simultaneously on every `tools/list` call — every prior audit
+  cycle here focused on per-tool quality (naming, descriptions, annotations,
+  outputSchema) but never addressed the *aggregate* count. This runs against
+  S3/S4/S5's shared theme (progressive discovery, "few thoughtful tools",
+  avoid overwhelming the agent's context) once a server's tool count grows
+  this large — 53 tool definitions is a meaningful chunk of context before
+  the agent has done anything.
+- **Fix:** `src/tools/toolsets.ts` groups all 53 tools into 8 toolsets
+  (`catalog`, `auth`, `basket_and_checkout`, `account_management`,
+  `orders_and_payments`, `reviews_and_subscriptions`, `chat`,
+  `advanced_raw`); only `catalog` + `auth` (10 tools) are enabled by default.
+  Two new meta-tools, always enabled: `list_toolsets` (read-only, shows every
+  group + member tools + enabled state) and `set_toolset` (enables/disables a
+  whole group, or `all`, via the SDK's `RegisteredTool.enable()`/`.disable()`
+  — which fires the spec-native `notifications/tools/list_changed`). No
+  functionality is removed; every tool is still registered and reachable
+  once its toolset is enabled — `registerToolsets` asserts at startup that
+  every registered tool name is assigned to exactly one toolset, so a future
+  tool addition can never be silently unreachable.
+  Every `RegisterableTool.register()` now returns the SDK's `RegisteredTool`
+  handle (previously discarded) so `registerToolsets` can manage enable
+  state — a mechanical signature change across all 53 registration call
+  sites, verified by `npm run typecheck`.
+- **Test coverage:** `test/toolsets.test.ts` (6 tests) — every tool assigned
+  to exactly one group, the default-enabled view is exactly the expected 12
+  tools (10 domain + 2 meta), `set_toolset` enabling/disabling works and is
+  observable via a real `listTools()` + `callTool()` round trip, `all` toggles
+  everything, and an unknown toolset id is rejected. The three existing
+  full-inventory tests (`tool-annotations.test.ts`, `output-schemas.test.ts`)
+  now call `set_toolset({id:"all", enabled:true})` before asserting counts;
+  their expected tool count moved from 53 to 55 (53 domain + 2 meta).
+  `scripts/eval.ts`'s `registration-surface` scenario and `CANONICAL_ORDER`
+  were fixed the same way, and its `CANONICAL_ORDER`/tool-count constants —
+  found already stale (missing 11 tool names, counts left over from a much
+  earlier tool total) independent of this change — were corrected too.
+- **Live-verified:** `npm run eval` registration-surface scenario passes
+  against the real server (`docs/live-evidence/eval-2026-09-26.json`).

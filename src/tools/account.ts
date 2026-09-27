@@ -53,7 +53,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
   const authDiscovery: RegisterableTool = {
     name: "auth_discovery",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "auth_discovery",
         {
           title: "Read Alza OAuth discovery",
@@ -73,7 +73,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
   const authStart: RegisterableTool = {
     name: "auth_start",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "auth_start",
         {
           title: "Start Alza mobile API OAuth",
@@ -94,7 +94,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
   const authExchange: RegisterableTool = {
     name: "auth_exchange",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "auth_exchange",
         {
           title: "Exchange Alza OAuth code",
@@ -118,7 +118,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
   const mobileRead: RegisterableTool = {
     name: "mobile_read",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "mobile_read",
         {
           title: "Read a raw Alza mobile API operation",
@@ -142,7 +142,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
   const prepareMutation: RegisterableTool = {
     name: "prepare_mutation",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "prepare_mutation",
         {
           title: "Prepare an Alza mutation",
@@ -164,7 +164,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
   const mutateList: RegisterableTool = {
     name: "mutate_list",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "mutate_list",
         {
           title: "Execute a whitelisted Alza mutation",
@@ -189,7 +189,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
   const status: RegisterableTool = {
     name: "account_status",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "account_status",
         {
           title: "Check mobile API auth status",
@@ -209,7 +209,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
   const cart: RegisterableTool = {
     name: "cart",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "cart",
         {
           title: "Read the Alza account cart",
@@ -229,7 +229,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
   const add: RegisterableTool = {
     name: "add_to_cart",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "add_to_cart",
         {
           title: "Add a product to the account cart",
@@ -255,7 +255,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
   const delivery: RegisterableTool = {
     name: "delivery_options",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "delivery_options",
         {
           title: "List delivery & payment options",
@@ -278,7 +278,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
   const pickup: RegisterableTool = {
     name: "select_pickup_point",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "select_pickup_point",
         {
           title: "Select an AlzaBox / pickup point",
@@ -286,6 +286,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             "Associate a chosen pickup point (AlzaBox parcel shop or AlzaShop) with the current checkout by submitting the mobile API's DeliveryPaymentAssociation payload. " +
             "Use after `delivery_options` has returned the association object and the user has picked a concrete pickup point. " +
             "The `association` object must be copied verbatim from the current `delivery_options` response — never hand-craft it. " +
+            "Caveat (2026-09-26): in an anonymous (no-token) session, `delivery_options`' delivery entries carry null `beforeSelectAction`/`afterSelectAction` — no association form to copy — and a hand-crafted `getDeliveryAssociations`-shaped payload returns what looks like a payment-fee list, not per-location AlzaBox associations. Not yet re-verified against a real authenticated session where the server-driven form may differ; treat this tool's AlzaBox flow as unresolved pending that re-test (see docs/gap-analysis.md), and prefer the live-verified `add_to_cart` → `delivery_options` → `web_pickup_places` → `web_place_order` chain for a working AlzaBox order end to end. " +
             "Side effect: updates the delivery selection for the current checkout session (does not submit the order — that is `place_order` or `web_place_order`). " +
             AUTH_PREREQ,
           inputSchema: {
@@ -301,7 +302,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
   const preview: RegisterableTool = {
     name: "checkout_preview",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "checkout_preview",
         {
           title: "Preview mobile checkout",
@@ -324,7 +325,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
   const place: RegisterableTool = {
     name: "place_order",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "place_order",
         {
           title: "Submit an order (mobile API)",
@@ -350,7 +351,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
   const webPickupPlaces: RegisterableTool = {
     name: "web_pickup_places",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "web_pickup_places",
         {
           title: "List web pickup places (AlzaBox, branches, 24/7)",
@@ -382,7 +383,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
   const webAdd: RegisterableTool = {
     name: "web_add_to_cart",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "web_add_to_cart",
         {
           title: "Add a product to the web visitor cart",
@@ -407,7 +408,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
   const chatNav: RegisterableTool = {
     name: "chat_navigation",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "chat_navigation",
         {
           title: "Read the chatbot HATEOAS navigation",
@@ -429,7 +430,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
   const chatSend: RegisterableTool = {
     name: "chat_send",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "chat_send",
         {
           title: "Open/continue an Alza chatbot session",
@@ -462,7 +463,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
   const webCart: RegisterableTool = {
     name: "web_cart",
     register(server, wrap) {
-      server.registerTool(
+      return server.registerTool(
         "web_cart",
         {
           title: "Read the web visitor cart",

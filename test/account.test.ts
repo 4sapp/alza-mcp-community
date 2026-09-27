@@ -467,6 +467,27 @@ describe("web checkout family (gap-analysis G1/G2/G3, 2026-09-08)", () => {
     await expect(account.cancelOrder("1060090910", "HASH123", "1083569825", 6, ok.confirmationToken)).rejects.toThrow(/reason must be/);
   });
 
+  it("anonymous fallback (live-verified 2026-09-26): add_to_cart and delivery_options succeed with no access token and no authorization header sent", async () => {
+    const account = makeAccount();
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    const { calls, restore } = mockFetch((url) =>
+      url.includes("/basket/add")
+        ? json({ err: 0, basket_cnt: 1 })
+        : json({ deliveryGroups: [{ deliveryGroupId: 398327444, deliveries: [] }] })
+    );
+    try {
+      const add = await account.addToCart("WK060a1l56", 1) as { err: number };
+      expect(add.err).toBe(0);
+      const del = await account.deliveryOptions() as { deliveryGroups: unknown[] };
+      expect(del.deliveryGroups).toHaveLength(1);
+      for (const call of calls) {
+        const headers = call.init?.headers as Record<string, string> | Headers | undefined;
+        const hasAuth = headers instanceof Headers ? headers.has("authorization") : Boolean(headers && "authorization" in headers);
+        expect(hasAuth).toBe(false);
+      }
+    } finally { restore(); }
+  });
+
   it("G1: web after-order payment validates inputs and sends the CreateAfterPayment body", async () => {
     const account = makeAccount();
     const { calls, restore } = mockFetch(() => wcf({ ErrorLevel: 0, Value: "https://login.kb.cz/login?sso=MojePlatba-1189" }));

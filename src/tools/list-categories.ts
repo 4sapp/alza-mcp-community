@@ -18,7 +18,7 @@ export function createListCategoriesTool(deps: ToolDeps): RegisterableTool {
   return {
     name,
     register(server, errorWrap) {
-      server.registerTool(
+      return server.registerTool(
         name,
         {
           title: "List Alza categories",

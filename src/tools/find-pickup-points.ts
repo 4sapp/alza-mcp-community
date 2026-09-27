@@ -36,7 +36,7 @@ export function createFindPickupPointsTool(deps: ToolDeps): RegisterableTool {
   return {
     name,
     register(server, errorWrap) {
-      server.registerTool(
+      return server.registerTool(
         name,
         {
           title: "Find Alza showrooms",

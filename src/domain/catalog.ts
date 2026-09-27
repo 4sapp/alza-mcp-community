@@ -3,7 +3,7 @@ import { TtlCache } from "../infra/cache.js";
 import { NotFoundError } from "../infra/errors.js";
 import { extractJsonLd, findProduct as findJsonLdProduct } from "../infra/jsonld.js";
 import { log } from "../infra/logger.js";
-import type { Category, Product, SearchResult } from "./types.js";
+import type { Category, FacetGroup, Product, ProductParam, SearchResult } from "./types.js";
 
 export type SortOrder = "relevance" | "price-asc" | "price-desc" | "rating" | "newest";
 
@@ -16,6 +16,12 @@ export interface SearchOptions {
   maxPrice?: number;
   inStock?: boolean;
   categoryId?: number;
+  minScreenInches?: number;
+  maxScreenInches?: number;
+  /** Alza producer/brand ids (from `list_category_filters`'s `producers` group). Requires `categoryId`. */
+  producerIds?: number[];
+  /** Checkbox-type attribute facet selections (from `list_category_filters`, `filterable: true` groups only). Requires `categoryId`. */
+  filters?: Array<{ paramId: number; valueId: number }>;
 }
 
 interface RawCard {
@@ -141,6 +147,10 @@ export class Catalog {
   constructor(private readonly browser: AlzaBrowser) {}
 
   async searchProducts(opts: SearchOptions): Promise<SearchResult> {
+    const hasAttrFilters = (opts.producerIds && opts.producerIds.length > 0) || (opts.filters && opts.filters.length > 0);
+    if (hasAttrFilters && !opts.categoryId) {
+      throw new Error("producer_ids/filters require category_id (attribute facets are category-scoped in Alza's system) — get category_id from list_categories, then call list_category_filters to discover valid filter values");
+    }
     const limit = clamp(opts.limit ?? 20, 1, 50);
     const page = Math.max(1, opts.page ?? 1);
     const cacheKey = JSON.stringify({ ...opts, limit, page });
@@ -194,6 +204,7 @@ export class Catalog {
       const products = candidates
         .filter((p) => filterByPrice(p, opts))
         .filter((p) => passesInStock(p, opts.inStock))
+        .filter((p) => filterByScreenSize(p, opts))
         .sort((a, b) => compareForSort(a, b, opts.sort))
         .slice(0, limit);
 
@@ -277,6 +288,15 @@ export class Catalog {
       const breadcrumbs = pickBreadcrumbs(data.breadcrumb);
       const images = pickImages(ld.image);
 
+      // Merge both spec sources — some page templates only populate one
+      // (live-verified 2026-09-27: the DOM .paramTbl table is sometimes
+      // entirely absent while additionalProperty carries the real specs).
+      // DOM-table rows win on name collisions; extra additionalProperty
+      // rows are appended, capped at 30 total to match the DOM-only cap.
+      const seenNames = new Set(data.params.map((p) => p.name));
+      const extraParams = pickAdditionalProperties(ld.additionalProperty).filter((p) => !seenNames.has(p.name));
+      const mergedParams = [...data.params, ...extraParams].slice(0, 30);
+
       return {
         code: ((ld.sku as string) ?? trimmed).trim(),
         id: 0,
@@ -289,8 +309,34 @@ export class Catalog {
         rating: rating.average,
         brand: pickBrand(ld.brand),
         category: breadcrumbs[breadcrumbs.length - 2],
-        params: data.params.length > 0 ? data.params : undefined,
+        params: mergedParams.length > 0 ? mergedParams : undefined,
       };
+    });
+  }
+
+  private readonly facetsCache = new TtlCache<number, FacetGroup[]>(60 * 60 * 1000);
+
+  /**
+   * Category attribute facets (brand, native contrast, panel type, screen
+   * diagonal, …) from the live JSON facets API. Read-only, same-origin
+   * fetch from within a loaded page (this endpoint sits behind the same
+   * Cloudflare wall as everything else; a real browser page already
+   * cleared it). Only `renderType: "Checkbox"` groups are `filterable` —
+   * see `buildFilteredCategoryUrl`'s docstring for why Slider-type facets
+   * aren't.
+   */
+  async getFacets(categoryId: number): Promise<FacetGroup[]> {
+    return this.facetsCache.memoize(categoryId, async () => {
+      const pageUrl = `${this.browser.locale.baseUrl}/${categoryId}.htm`;
+      const apiUrl = `/services/restservice.svc/v3/params/${categoryId}?type=CATEGORY&typeId=0&search=`;
+      return this.browser.withPage(async (p) => {
+        await p.goto(pageUrl, { waitUntil: "commit", timeout: 30_000 });
+        await p.waitForLoadState("load", { timeout: 20_000 }).catch(() => {});
+        const raw = (await p.evaluate(
+          `fetch(${JSON.stringify(apiUrl)}, { headers: { accept: "application/json" } }).then((r) => r.json())`
+        )) as FacetsApiResponse;
+        return parseFacetsResponse(raw);
+      });
     });
   }
 
@@ -376,6 +422,16 @@ export class Catalog {
   }
 
   private buildSearchUrl(opts: SearchOptions, page: number): string {
+    const hasAttrFilters = (opts.producerIds && opts.producerIds.length > 0) || (opts.filters && opts.filters.length > 0);
+    if (hasAttrFilters && opts.categoryId) {
+      // Category+attribute-filter browse page (live-verified 2026-09-27):
+      // the URL's slug segments are cosmetic (any text, or none, resolves
+      // to the canonical page) — only the numeric `{categoryId}[-v{producerId}]
+      // [-par{paramId}-{valueId}]...` suffix matters. Real pagination for
+      // this path still comes from the rendered page-link anchors (same as
+      // /search.htm), not a query parameter.
+      return buildFilteredCategoryUrl(this.browser.locale.baseUrl, opts.categoryId, opts.producerIds, opts.filters);
+    }
     const url = new URL("/search.htm", this.browser.locale.baseUrl);
     url.searchParams.set("exps", opts.query);
     if (opts.sort) {
@@ -478,6 +534,99 @@ function filterByPrice(p: Product, opts: SearchOptions): boolean {
   return true;
 }
 
+/**
+ * Category browse URL with brand/attribute filters applied — live-verified
+ * 2026-09-27 against real Alza category pages (monitor category, HDMI +
+ * brand combined: product codes and page title both changed correctly).
+ * The path's slug segments are purely cosmetic (any text, or none, 302s/
+ * resolves to the canonical URL) — only the numeric suffix matters:
+ * `{categoryId}[-v{producerId}]...[-par{paramId}-{valueId}]...`. Only
+ * Checkbox-type facets (see `FacetGroup.filterable`) work this way; Slider
+ * facets (size, refresh rate, weight, …) have no known URL/API encoding.
+ */
+interface FacetsApiResponse {
+  params?: Array<{
+    groups?: Array<{
+      params?: Array<{
+        tId?: number;
+        name?: string;
+        renderType?: string;
+        values?: Array<{ v?: number; desc?: string; cnt?: number }>;
+      }>;
+    }>;
+  }>;
+}
+
+/**
+ * Flattens the facets API's `params[].groups[].params[]` nesting into a
+ * flat list, and drops values whose `v`/`desc` didn't parse (the JSON
+ * sometimes carries decorative rows, e.g. an "id:0" `art` entry within
+ * the Diagonal slider — live-verified 2026-09-27).
+ */
+export function parseFacetsResponse(raw: FacetsApiResponse): FacetGroup[] {
+  const out: FacetGroup[] = [];
+  for (const group of raw.params ?? []) {
+    for (const g of group.groups ?? []) {
+      for (const p of g.params ?? []) {
+        if (p.tId === undefined || !p.name) continue;
+        const values: FacetGroup["values"] = [];
+        for (const v of p.values ?? []) {
+          if (v.v === undefined || !v.desc) continue;
+          values.push({ valueId: Math.trunc(v.v), description: v.desc, count: v.cnt });
+        }
+        out.push({
+          paramId: p.tId,
+          name: p.name,
+          renderType: p.renderType ?? "Unknown",
+          filterable: p.renderType === "Checkbox",
+          values,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+export function buildFilteredCategoryUrl(
+  baseUrl: string,
+  categoryId: number,
+  producerIds?: number[],
+  filters?: Array<{ paramId: number; valueId: number }>
+): string {
+  let suffix = String(categoryId);
+  for (const id of producerIds ?? []) suffix += `-v${id}`;
+  for (const f of filters ?? []) suffix += `-par${f.paramId}-${f.valueId}`;
+  return new URL(`/${suffix}.htm`, baseUrl).toString();
+}
+
+/**
+ * Screen-diagonal size, parsed from the product name's leading `NN"` token
+ * (Alza's naming convention for displays: monitors/TVs/laptops name-prefix
+ * the diagonal, e.g. `40" MSI MAG401QR`). Not a real attribute filter —
+ * Alza's actual diagonal facet is a client-side-only jQuery UI slider with
+ * no URL/API encoding we could find (live-verified 2026-09-27: the search
+ * JSON API's `params`/`producers` fields accept values without error but
+ * silently don't filter; the category page's slider fires no discoverable
+ * XHR/URL on change). This name-prefix heuristic is a pragmatic substitute
+ * that works for the product families that actually carry a diagonal in
+ * their name; see `search-products.ts`'s description for the caveat.
+ */
+export function parseScreenInches(name: string): number | undefined {
+  const m = name.match(/^(\d+(?:[.,]\d+)?)\s*(?:"|''|″)/);
+  if (!m) return undefined;
+  const n = Number((m[1] ?? "").replace(",", "."));
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function filterByScreenSize(p: Product, opts: SearchOptions): boolean {
+  if (opts.minScreenInches === undefined && opts.maxScreenInches === undefined) return true;
+  const inches = parseScreenInches(p.name);
+  if (inches === undefined) return false; // can't verify => excluded, like passesInStock's undetermined case
+  if (opts.minScreenInches !== undefined && inches < opts.minScreenInches) return false;
+  if (opts.maxScreenInches !== undefined && inches > opts.maxScreenInches) return false;
+  return true;
+}
+
 function parsePrice(raw: string | null | undefined): number | undefined {
   if (!raw) return undefined;
   // Alza search cards show prices like "5 290,-" or "Super cena 4 399,- Ušetříte 91,-".
@@ -529,6 +678,28 @@ function pickImages(raw: unknown): string[] {
     return u ? [u] : [];
   }
   return [];
+}
+
+/**
+ * Product spec rows from the JSON-LD `additionalProperty` (schema.org
+ * `PropertyValue[]`) array, when the product page's `Product` block carries
+ * one. Some product-page templates (live-verified 2026-09-27, e.g. Mikrotik
+ * CRS304-4XG-IN) render specs this way instead of — or in addition to — the
+ * `.paramTbl` DOM table `PRODUCT_PAGE_EXTRACTOR` scrapes, so `getProduct`
+ * merges both sources rather than relying on the DOM table alone (which
+ * returned nothing at all for that product despite Alza's own page data
+ * clearly listing e.g. "Počet LAN portů s rychlostí 10 Gbit": "4").
+ */
+export function pickAdditionalProperties(raw: unknown): ProductParam[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ProductParam[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const name = asString((entry as Record<string, unknown>)["name"]);
+    const value = asString((entry as Record<string, unknown>)["value"]);
+    if (name && value) out.push({ name, value });
+  }
+  return out;
 }
 
 function pickBreadcrumbs(raw: unknown): string[] {

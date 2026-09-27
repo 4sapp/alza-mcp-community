@@ -288,6 +288,31 @@ export const FIND_PICKUP_POINTS_OUTPUT = z
   })
   .passthrough();
 
+export const LIST_CATEGORY_FILTERS_OUTPUT = z
+  .object({
+    category_id: z.number(),
+    groups: z.array(
+      z
+        .object({
+          paramId: z.number(),
+          name: z.string(),
+          renderType: z.string(),
+          filterable: z.boolean(),
+          values: z.array(
+            z
+              .object({
+                valueId: z.number(),
+                description: z.string(),
+                count: z.number().optional(),
+              })
+              .passthrough(),
+          ),
+        })
+        .passthrough(),
+    ),
+  })
+  .passthrough();
+
 /** Map tool name → its output schema. Kept in one place so the registration
  * contract test can assert coverage per tool. */
 export const OUTPUT_SCHEMAS: Record<string, z.AnyZodObject> = {
@@ -297,6 +322,7 @@ export const OUTPUT_SCHEMAS: Record<string, z.AnyZodObject> = {
   get_product_reviews: GET_PRODUCT_REVIEWS_OUTPUT,
   list_categories: LIST_CATEGORIES_OUTPUT,
   find_pickup_points: FIND_PICKUP_POINTS_OUTPUT,
+  list_category_filters: LIST_CATEGORY_FILTERS_OUTPUT,
   // Account (typed)
   auth_start: AUTH_START,
   prepare_mutation: PREPARE_MUTATION,

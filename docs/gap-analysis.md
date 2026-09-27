@@ -316,3 +316,201 @@ authenticated identity for this batch (side finding in
 Security boundary applied throughout (unchanged from the 2026-09-08 goal): typed +
 validated + one-time-token flows only; no new transports; external-origin hand-offs
 stay blocked; origin validation on any download-style wrapper.
+
+## Post-launch corrections from a real live E2E order (2026-09-26)
+
+A real end-to-end run (search → compare → `add_to_cart` → `delivery_options` →
+`web_place_order` → real order 1060090910 → cancelled) surfaced documentation
+gaps that don't change which endpoints work, but were actively misleading
+about *how* the working tools relate to each other:
+
+- **`OR11` (order cancellation) closed**: now a typed tool, `cancel_order`
+  (one-time token, `reason` 0–5), live-verified against the real order above
+  (`PUT .../cancellations` → 202). Unit-tested.
+- **Cart-pairing correction**: `web_place_order` submits the cart populated by
+  `add_to_cart` (mobile `restservice.svc/v2/basket/add`), **not** the separate
+  HATEOAS cart from `web_add_to_cart`/`web_cart` as four tool descriptions
+  previously implied. Fixed in all four.
+- **Anonymous-checkout discovery**: `add_to_cart`, `delivery_options`,
+  `payment_methods`, and `checkout_preview` all succeed with **no OAuth
+  token loaded** — they fall back to an anonymous, visitor-keyed WCF cart
+  (`account_status` reports `authenticated: true` but `user_id: -1`). Only
+  `checkout_preview`'s own submission path (`place_order` → mobile
+  `sendOrder3`/`orderfinished`) is still broken (G1/G5); `web_place_order`
+  against that same anonymous cart is the working submission path. This
+  means the full search → cart → deliver → pay chain now works **without
+  ever logging in**, which the AUTH_PREREQ boilerplate on those four tool
+  descriptions didn't previously convey.
+- **`find_pickup_points`/`web_pickup_places` AlzaBox scoping**: confirmed the
+  live `personalPickup/v1/places`/`pickupPlaceForm` endpoints 400 without an
+  `orderId`/`groupId` from an active cart+delivery-group — AlzaBox discovery
+  is checkout-cart-scoped by the API itself, not merely unimplemented in this
+  client. Docs now point at the working sequence
+  (`add_to_cart` → `delivery_options` → parse the AlzaBox option's
+  `deliveryOption.href` → `web_pickup_places`).
+- **New physical-eligibility finding**: Alza excludes large items (observed:
+  34"+ monitors, both a 40" and a 34" ultrawide tested) from the entire
+  ~4000-locker AlzaBox network — not a distance/coverage gap, a structural
+  exclusion. Those items route to a fixed set of 8 nationwide oversized-item
+  pickup points instead. A 27" monitor routes normally to the full network
+  (confirmed against a real box in Hradec Králové — Kukleny, "K Biřičce",
+  0.68 km from the district center). No typed tool currently surfaces this
+  eligibility before checkout; a `get_product`/`search_products` field would
+  close it (recorded below as a new candidate, not yet a numbered gap).
+- **`sendOrder3` 500 re-confirmed with more precision (2026-09-26)**: with a
+  correctly-populated `deliveryGroups` (real `deliveryGroupId` from
+  `delivery_options`, not the empty-array shape), `sendOrder3` itself
+  returned `err:1` "Nebyl zvolen způsob dopravy a platby" (already-documented
+  behavior for a mismatched/incomplete delivery selection, not the 500) —
+  the 500 shows up downstream, either at `sendOrder3` in some states or at
+  `orderfinished` (`/api/orders/v7/orderfinished`) in others. The underlying
+  conclusion (G1/G5: the mobile submission path is broken server-side; use
+  `web_place_order`) is unchanged, but the exact failing step is state-dependent
+  rather than always `sendOrder3` — worth noting for anyone re-verifying G5.
+
+### `list_categories` drill-down bug — found, not yet fixed (2026-09-27)
+
+- **The gap:** `list_categories({parent_id: 18890188})` ("Počítače a
+  notebooky") returned the same 21 top-level categories as
+  `list_categories({})` with no `parent_id` — the subcategory drill-down
+  appears to be broken, not just for this id (found while resolving the
+  router category for a live filter-workflow test; had to fall back to
+  resolving the category id from a product page's breadcrumb links
+  instead). Not yet root-caused (could be the DOM selectors in
+  `listCategories`'s extractor not matching this page's subcategory-list
+  markup, or the URL construction). Recorded as a re-test/fix target, not
+  investigated further this session to stay in scope.
+
+### `get_product` spec-table scraping gap — closed (2026-09-27)
+
+- **The gap:** found while live-verifying the "cheapest router with four 10
+  Gbit ports" workflow. `get_product("Mikro25001")` (Mikrotik CRS304-4XG-IN)
+  returned `params: undefined` — no spec data at all — even though Alza's own
+  page clearly lists `Počet LAN portů s rychlostí 10 Gbit: 4`. The DOM
+  `.paramTbl`/`.productSpecBox` selectors `PRODUCT_PAGE_EXTRACTOR` scrapes
+  found nothing on this product's page template.
+- **Root cause**: this product's specs render through the JSON-LD `Product`
+  block's `additionalProperty` array (schema.org `PropertyValue[]`) instead
+  of, or in addition to, the DOM table — a different page template than the
+  one `.paramTbl` assumes. `getProduct` already parsed the full `Product`
+  JSON-LD (`ld`) for name/price/rating/etc. but never read
+  `ld.additionalProperty`.
+- **Fix**: `pickAdditionalProperties` (`src/domain/catalog.ts`) extracts
+  `{name, value}` pairs from `additionalProperty`; `getProduct` merges them
+  with the DOM-scraped rows (DOM rows win on name collisions, capped at 30
+  total, same as before). Live-verified: the router now returns 21 spec rows
+  including the exact 10 Gbit port count; re-checked a product that already
+  worked via the DOM table (40" MSI MAG401QR) to confirm no regression (still
+  30 rows, unchanged). Unit-tested (`pickAdditionalProperties` in
+  `test/catalog-sort.test.ts`).
+
+### `select_pickup_point` re-test needed against an authenticated session
+
+- **The observation (2026-09-26, anonymous session)**: `delivery_options`'
+  delivery entries all carry null `beforeSelectAction`/`afterSelectAction` —
+  there is no association form to copy, contradicting the tool's description
+  ("copied verbatim from the `delivery_options` response"). Hand-crafting the
+  `getDeliveryAssociations` payload from the pre-existing debug script
+  (`scripts/debug-order-steps.mjs`) and calling `select_pickup_point` returned
+  a `data` array shaped like a payment-fee list (`price`, `isLowCredit`,
+  `paymentPrice` fields on ids matching known *payment* method ids like 103/
+  143/144/203), not per-location AlzaBox associations.
+- **Not yet resolved**: this may be specific to the anonymous fallback
+  session (no real Alza login) — the server-driven association form might
+  only populate for an authenticated cart. Re-test target: run the same
+  sequence against a real authenticated session and see whether
+  `beforeSelectAction` is populated.
+- **Workaround that works today**: the live-verified
+  `add_to_cart` → `delivery_options` → `web_pickup_places` (parsing
+  `orderId`/`groupId` from the AlzaBox option's `deliveryOption.href`) →
+  `web_place_order` (with `parcel_shop_id` from `web_pickup_places`) chain
+  places a real AlzaBox order without needing `select_pickup_point` at all —
+  this is what should be recommended until the above is re-tested.
+
+### Search-time attribute/facet filtering — closed for Checkbox-type facets (2026-09-27)
+
+- **The gap:** Alza's category pages have a rich per-category attribute filter
+  system (facets) — e.g. screen diagonal, native contrast, panel technology,
+  refresh rate — but `search_products` only ever exposed `min_price`/
+  `max_price`/`category_id`/`in_stock`/`sort`. A user wanting "largest
+  monitor under 20,000 Kč" or "compare contrast across candidates" had no
+  filter to reach for.
+- **First investigation round (2026-09-27, three attempts, all inconclusive)**:
+  1. The JSON search API (`v5/search`)'s `params`/`producers` fields accept
+     values without a validation error but silently have **no filtering
+     effect** on that endpoint.
+  2. A first DOM capture of `https://www.alza.cz/sirokouhle-monitory/18876240.htm`
+     found brand/producer as plain SEO links but the *visible* ("topped")
+     attribute-parameter groups on that narrow subcategory rendered with no
+     real hrefs (empty/`#`) — looked like everything beyond brand was
+     client-side-only.
+  3. Confirmed the facet *definitions* (names, `tId`, value lists) are
+     available read-only via the JSON facets API (`GET
+     /services/restservice.svc/v3/params/{categoryId}`, row C3) — but round 1
+     found no working path from a definition to an actual filtered result.
+- **Second round, same session — the actual mechanism found**: re-captured a
+  broader category (`/lcd-monitory/18842948.htm`, reached via `/search.htm`'s
+  own redirect for a single-category-matching query) and found that
+  Checkbox-type facets (the majority — brand, native contrast, panel type,
+  resolution, interfaces, aspect ratio, backlight, color depth, energy
+  class, …) DO have working URLs: `{categoryId}-par{paramId}-{valueId}.htm`,
+  directly parallel to the producer pattern `{categoryId}-v{producerId}.htm`.
+  Live-verified: (a) the facet JSON's `v` field is exactly the URL's
+  `valueId` (byte-identical, e.g. `239739715` for HDMI) — filter URLs can be
+  built purely from the facets API response, no DOM scraping needed; (b) the
+  slug segments (category name, filter name) are **purely cosmetic** — any
+  text, or none, 200s to the canonical page (`/x/18842948-par....htm`,
+  `/wrongslug/...`, and `/18842948-par....htm` all resolved identically);
+  (c) multiple filters **compose** by concatenating segments in any tested
+  order (`-v{producerId}-par{paramId}-{valueId}...`) and the server applies
+  them as a real AND — confirmed via the page's own title changing correctly
+  ("Monitory" → "Monitory - HDMI" → "Monitory AOC - HDMI") and via distinct,
+  correctly-scoped product codes at each step (the AOC+HDMI page returned
+  only `WK...`-family AOC codes).
+- **Implemented**: `Catalog.getFacets`/`buildFilteredCategoryUrl` in
+  `src/domain/catalog.ts`; new read-only tool `list_category_filters`
+  (returns every facet group per category, flagging `filterable: true` only
+  for Checkbox-type groups); `search_products` gained `producer_ids` and
+  `filters` (`{param_id, value_id}[]`), which switch it to this filtered
+  category-browse URL instead of `/search.htm` when `category_id` is also
+  given (validated — throws a clear error otherwise). Works for **any**
+  category, not just monitors, since the mechanism is generic to Alza's
+  catalog UI. Live end-to-end verified: `list_category_filters` on the
+  ultrawide-monitor category correctly surfaced a "Nativní kontrast" facet
+  up to `1500000:1`; combining that value with an HDMI-interface filter in
+  `search_products` returned real, correctly-narrowed results. Unit-tested
+  (`buildFilteredCategoryUrl`, `parseFacetsResponse` in
+  `test/catalog-sort.test.ts`).
+- **Still not filterable**: Slider-type facets (screen diagonal, refresh
+  rate, response time, brightness, port *counts*, width/height/depth/weight,
+  color-gamut %, energy consumption) — confirmed no discoverable URL/API
+  encoding exists for these (the jQuery UI slider fires no XHR on
+  interaction this session could capture). `min_screen_inches`/
+  `max_screen_inches`'s name-parsing heuristic remains the substitute for
+  screen size specifically; other slider attributes have no substitute —
+  compare via `get_product`'s scraped `params` field instead.
+  `list_category_filters` marks these groups `filterable: false` so the
+  distinction is explicit, not silently missing.
+- **Re-test target**: if the slider's XHR can be found (e.g. by capturing
+  network traffic through a full mouse-drag interaction rather than a
+  programmatic click, which this session didn't attempt), a proper
+  server-side range filter could replace the size-parsing heuristic too.
+
+### AlzaBox size-eligibility surfaced pre-checkout — closed as infeasible from product data (2026-09-27)
+
+- **The gap:** nothing in `search_products`/`get_product` indicates whether a
+  product is AlzaBox-eligible; the only way to find out is to add it to cart
+  and read `delivery_options`, which is expensive if you're comparing several
+  products.
+- **Why it matters:** directly caused wasted round-trips in the 2026-09-26 E2E
+  run (three different monitors added to cart just to find eligibility).
+- **Resolution (2026-09-27): confirmed infeasible from product-page data.**
+  Fetched the raw JSON-LD `Product` schema block Alza embeds on the product
+  page (the same source `get_product` scrapes) for the 40" MSI monitor
+  (`https://www.alza.cz/40-msi-mag-401qr-d7975093.htm`) directly: it carries
+  `name`/`image`/`description`/`sku`/`mpn`/`brand`/`aggregateRating`/`offers`
+  only — no `weight`, `width`/`height`/`depth`, or any `additionalProperty`
+  entries schema.org would use for package dimensions. There is no
+  product-page-level signal to build this from; `delivery_options` against a
+  live cart remains the only way to learn AlzaBox eligibility. Not promoted
+  to a numbered G-item — closed as a dead end, not deferred.

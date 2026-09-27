@@ -19,6 +19,9 @@ async function listTools(): Promise<{ name: string; annotations: Record<string, 
   await built.server.connect(serverTransport);
   await client.connect(clientTransport);
   try {
+    // Progressive disclosure (toolsets.ts): most tools start disabled to keep
+    // the default tools/list small. Enable everything for these full-inventory checks.
+    await client.callTool({ name: "set_toolset", arguments: { id: "all", enabled: true } });
     const res = await client.listTools();
     return res.tools.map((t) => ({
       name: t.name,
@@ -45,12 +48,12 @@ const DESTRUCTIVE = new Set([
   "delete_account",
 ]);
 
-const NO_OPEN_WORLD = new Set(["account_status", "prepare_mutation"]);
+const NO_OPEN_WORLD = new Set(["account_status", "prepare_mutation", "list_toolsets", "set_toolset"]);
 
 describe("tool annotation contract", () => {
-  it("serves exactly 53 tools with bare, snake_case names", async () => {
+  it("serves exactly 56 tools with bare, snake_case names (54 domain tools + list_toolsets + set_toolset, all toolsets enabled)", async () => {
     const tools = await listTools();
-    expect(tools).toHaveLength(53);
+    expect(tools).toHaveLength(56);
     for (const t of tools) {
       expect(t.name).toMatch(/^[a-z][a-z0-9_]*$/);
     }
@@ -67,32 +70,34 @@ describe("tool annotation contract", () => {
     }
   });
 
-  it("marks destructiveHint only on the 9 genuinely destructive tools", async () => {
+  it("marks destructiveHint only on the 10 genuinely destructive tools", async () => {
     const tools = await listTools();
     const marked = new Set(tools.filter((t) => t.annotations?.destructiveHint === true).map((t) => t.name));
     expect([...marked].sort()).toEqual([...DESTRUCTIVE].sort());
   });
 
-  it("leaves openWorldHint false only on the 2 no-network tools", async () => {
+  it("leaves openWorldHint false only on the 4 no-network tools", async () => {
     const tools = await listTools();
     const noOpenWorld = new Set(
       tools.filter((t) => t.annotations?.openWorldHint === false).map((t) => t.name),
     );
     expect([...noOpenWorld].sort()).toEqual([...NO_OPEN_WORLD].sort());
-    // account_status and prepare_mutation are read-only + no-network.
+    // account_status, prepare_mutation, and list_toolsets are read-only + no-network;
+    // set_toolset is also no-network but mutates which tools are exposed (readOnlyHint false).
     for (const name of NO_OPEN_WORLD) {
       const a = tools.find((t) => t.name === name)?.annotations ?? {};
-      expect(a.readOnlyHint).toBe(true);
+      expect(a.readOnlyHint).toBe(name !== "set_toolset");
     }
   });
 
   it("marks readOnlyHint on every tool except the 23 mutating ones", async () => {
-    // The 24 mutating tools: OAuth handshake (auth_start/auth_exchange),
+    // The 25 mutating tools: OAuth handshake (auth_start/auth_exchange),
     // whitelisted low-risk mutate_list, cart/checkout/registration/payment
-    // writes, the chat send, order cancellation (OR11), and the A14–A18
+    // writes, the chat send, order cancellation (OR11), the A14–A18
     // account credential/identity mutations (change_password, two_factor_set,
     // phone_change, email_change, delete_account — all one-time-token gated,
-    // 2026-09-22/23).
+    // 2026-09-22/23), and set_toolset (changes server-exposed capability,
+    // even though it has no Alza-side effect).
     const mutating = new Set([
       "auth_start", "auth_exchange", "mutate_list", "add_to_cart",
       "select_pickup_point", "place_order", "web_add_to_cart", "chat_send",
@@ -101,6 +106,7 @@ describe("tool annotation contract", () => {
       "subscription_update_installment", "upload_attachment", "web_place_order",
       "cancel_order",
       "change_password", "two_factor_set", "phone_change", "email_change", "delete_account",
+      "set_toolset",
     ]);
     const tools = await listTools();
     for (const t of tools) {

@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer, RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Catalog } from "../domain/catalog.js";
 import type { Reviews } from "../domain/reviews.js";
 import type { Pickup } from "../domain/pickup.js";
@@ -25,5 +25,5 @@ export interface ToolResult {
  */
 export interface RegisterableTool {
   name: string;
-  register(server: McpServer, errorWrap: (name: string, fn: () => Promise<ToolResult>) => Promise<ToolResult>): void;
+  register(server: McpServer, errorWrap: (name: string, fn: () => Promise<ToolResult>) => Promise<ToolResult>): RegisteredTool;
 }

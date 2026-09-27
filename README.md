@@ -77,6 +77,21 @@ That's the agent calling four MCP tools across two parallel searches and synthes
 
 ## What it does
 
+With 53 underlying operations, listing every tool on every `tools/list` call would front-load an agent's context with dozens of tools it may never touch in a given conversation. So they're grouped into **toolsets**, and only two are enabled by default:
+
+| Toolset | Enabled by default? | Covers |
+|---|---|---|
+| `catalog` | ✅ | Search, product detail, reviews, categories, pickup-point lookup |
+| `auth` | ✅ | OAuth handshake, account status, the mutation-token issuer |
+| `basket_and_checkout` | — | Cart, delivery/pickup selection, checkout, order placement & cancellation |
+| `account_management` | — | Profile, contacts, addresses, registration, credential/identity changes |
+| `orders_and_payments` | — | Order history, payment methods, after-order payments, claims, documents |
+| `reviews_and_subscriptions` | — | Reviews, complaints, AlzaSubscription, attachments, EAN lookup |
+| `chat` | — | Alza's in-app chatbot |
+| `advanced_raw` | — | `mobile_read`, the untyped escape hatch |
+
+Call **`list_toolsets`** to see every group and **`set_toolset({id, enabled: true})`** to turn one on before using its tools — e.g. enable `basket_and_checkout` before adding something to a cart. This is standard MCP progressive disclosure (`RegisteredTool.enable()`/`.disable()`, which fires the normal `tools/list_changed` notification) — no functionality is removed, it's just not all visible at once.
+
 Catalog tools:
 
 | Tool | Purpose |
@@ -85,6 +100,7 @@ Catalog tools:
 | **`get_product`** | Full detail for one product — price, availability, brand, image, URL |
 | **`get_product_reviews`** | Aggregate rating + review count |
 | **`find_pickup_points`** | Nearest brick-and-mortar AlzaShop showrooms by postal code |
+| **`list_category_filters`** | Real per-category attribute filters (brand, contrast, panel type, resolution, interfaces, …) with live values/counts — feed the results into `search_products`'s `filters`/`producer_ids` |
 | **`list_categories`** | 20 top-level Alza categories with ids — feed `category_id` to `search_products` to narrow |
 | **`product_by_ean`** | Looks up catalog products by barcode/EAN (the app's camera barcode-scan API, AT3; read-only, no account required) |
 
