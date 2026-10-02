@@ -205,25 +205,25 @@ Register the local build in pi's global MCP config (`~/.pi/agent/mcp.json`):
 {
   "alza": {
     "command": "node",
-    "args": ["/home/dev/Development/alza-mcp/dist/index.js"]
+    "args": ["/absolute/path/to/alza-mcp/dist/index.js"]
   }
 }
 ```
 
-Run `/reload` (or `mcp connect alza` — the gateway respawns the stdio process, so a freshly built `dist/` takes effect without `/reload`). The gateway exposes the tools (52 as of 2026-09-24) under the `alza_` prefix (`alza_search_products`, `alza_get_product`, `alza_cart`, …). Auth auto-loads from `~/.alza-mcp/tokens.json`. Verified in both modes: (a) in-session through the gateway — search/filter/detail, authenticated add-to-cart, bogus-coupon round-trip → server-side `err:1` envelope ([docs/live-evidence/pi-integration-2026-09-10.md](docs/live-evidence/pi-integration-2026-09-10.md)); and (b) **headless** (`pi -p` one-shot prompt), where the agent discovers the `alza_*` tools, calls `search_products` with the right args, and reports the correct cheapest in-stock product ([docs/live-evidence/headless-pi-2026-09-12.json](docs/live-evidence/headless-pi-2026-09-12.json)); the 2026-09-13 re-run adds three more headless scenarios — catalog search with price-ascending sort, the authenticated account stack (`account_status` + `cart`), and the one-time mutation token flow (`prepare_mutation`) — all captured in [docs/live-evidence/headless-pi-2026-09-13.json](docs/live-evidence/headless-pi-2026-09-13.json).
+Run `/reload` (or `mcp connect alza` — the gateway respawns the stdio process, so a freshly built `dist/` takes effect without `/reload`). The gateway exposes the tools (54 domain tools plus `list_toolsets`/`set_toolset`; only the `catalog` and `auth` toolsets are enabled until you call `set_toolset`) under the `alza_` prefix (`alza_search_products`, `alza_get_product`, `alza_cart`, …). Auth auto-loads from `~/.alza-mcp/tokens.json`. Verified in both modes: (a) in-session through the gateway — search/filter/detail, authenticated add-to-cart, bogus-coupon round-trip → server-side `err:1` envelope ([docs/live-evidence/pi-integration-2026-09-10.md](docs/live-evidence/pi-integration-2026-09-10.md)); and (b) **headless** (`pi -p` one-shot prompt), where the agent discovers the `alza_*` tools, calls `search_products` with the right args, and reports the correct cheapest in-stock product ([docs/live-evidence/headless-pi-2026-09-12.json](docs/live-evidence/headless-pi-2026-09-12.json)); the 2026-09-13 re-run adds three more headless scenarios — catalog search with price-ascending sort, the authenticated account stack (`account_status` + `cart`), and the one-time mutation token flow (`prepare_mutation`) — all captured in [docs/live-evidence/headless-pi-2026-09-13.json](docs/live-evidence/headless-pi-2026-09-13.json).
 
 ---
 
 ## How it works
 
-Alza has no public consumer API. This project uses the Android app's documented-by-source REST surface where permitted. Alza may return HTTP 403 to non-app transports; the client reports that response and does not bypass bot protection.
+Alza has no public consumer API. This project reverse-engineers the Android app's REST surface (route names and DTOs recovered from the APK) and the website's own checkout pipeline. Neither is a supported or documented interface, so any of it can change or break without notice.
 
-No generic arbitrary-route tool is exposed. The following APK route classes are intentionally excluded or guarded:
+**Cloudflare Bot Management.** Alza sits behind it and returns HTTP 403 to plain HTTP clients. This server gets past it in two ways: a headless Chromium (catalog scraping) and a Chrome-fingerprint HTTP sidecar (`scripts/cf-transport.py`, using `curl_cffi` to impersonate Chrome's TLS/HTTP2 fingerprint) for the account/checkout API. That is circumvention of a bot-protection measure, which Alza's terms of use may prohibit. The sidecar is optional and is only present when running from a repo checkout (it is not in the published npm package, which ships `dist/` only); without it the account stack falls back to plain fetch and then the browser. See the [Disclaimer](#disclaimer) and [SECURITY.md](SECURITY.md) before using it.
 
-- Administrative login and telemetry/audit routes.
-- Device-token and anonymous-activity routes.
-- Dynamic (server-driven) credential flows (password change, 2FA, GDPR, delete account) — documented as `blocked` in the coverage matrix.
-- External payment hand-offs (Klarna, Google Pay) and the quick-order payment family — documented as `blocked`.
+No generic arbitrary-route tool is exposed. What is and isn't covered:
+
+- Excluded: administrative login routes, telemetry/audit routes, device-token and anonymous-activity routes, and external payment hand-offs (Klarna, Google Pay) plus the quick-order payment family (documented as `blocked` in the coverage matrix).
+- Included, behind one-time tokens: order placement and cancellation, account registration, and credential/identity changes (password, 2FA, phone, email, account deletion — `delete_account` is irreversible).
 - Server-driven action URLs are followed only when returned by a confirmed response, through the origin-validated `AppActionExecutor` (GET/POST, path allowlist, sensitive-field blocklist, one-time confirmation token); they are not accepted as arbitrary MCP URLs.
 
 The complete 12-family route inventory with method, DTO, prerequisites, side effects, exposure, and verification status is maintained in [docs/mobile-endpoint-coverage.md](docs/mobile-endpoint-coverage.md).
@@ -243,11 +243,16 @@ Image, font, and analytics requests are blocked at the route level — every sea
 │ stdio transport (npx alza-mcp)             │
 ├────────────────────────────────────────────┤
 │ MCP tools / resources / prompts            │
+│  grouped into toolsets (toolsets.ts)       │
 ├────────────────────────────────────────────┤
-│ Domain: catalog · reviews · pickup         │
+│ Domain: catalog · reviews · pickup ·       │
+│         mobile-account (cart/checkout/…)   │
 ├────────────────────────────────────────────┤
 │ Infra:                                     │
-│  • browser (Playwright, page pool, CDP)    │
+│  • browser (Playwright, CDP)               │
+│  • impersonate-transport (curl_cffi        │
+│    Chrome-fingerprint sidecar)             │
+│  • mobile-api (APK-derived REST client)    │
 │  • jsonld (schema.org parser)              │
 │  • cache (LRU + TTL)                       │
 │  • locale (multi-country)                  │
@@ -294,9 +299,11 @@ node dist/index.js          # run the server (waits for stdio MCP messages)
 
 ## Roadmap
 
-The current release is intentionally small and read-only. Highlights of what's planned:
+Highlights of what's planned (the current release already covers catalog, filtering, cart, checkout, order placement/cancellation and account management — see [What it does](#what-it-does) and the known limitations in [docs/gap-analysis.md](docs/gap-analysis.md)):
 
-- **AlzaBox locker discovery** — surface 24/7 parcel lockers, not just showrooms
+- **Standalone AlzaBox locker discovery** — today lockers are only reachable through a live cart (`add_to_cart` → `delivery_options` → `web_pickup_places`), because Alza's pickup API is cart-scoped
+- **Slider-type attribute filters** (screen size, refresh rate, weight, …) — Alza exposes no discoverable filter API for these; `search_products` only has a name-based screen-size substitute
+- **`list_categories` drill-down** — `parent_id` currently returns the top level
 - **Individual review bodies** — load the reviews tab and scrape per-review text, not just the aggregate
 - **Streamable HTTP transport** + hosted endpoint on Vercel
 - **Compare / recommend / deals** tools
@@ -314,10 +321,10 @@ Cloudflare's Bot Management runs a JavaScript challenge that only a real browser
 
 ### How are login and ordering protected?
 
-1. Credentials are entered by the user in a visible or attached browser; they are never MCP tool arguments. The only credential-bearing tool (`register`) submits the APK `Register` DTO and requires an explicit one-time token.
-2. `checkout_preview` creates a one-time confirmation token after the cart and delivery choice are reviewed.
-3. `place_order` refuses arbitrary tokens and is the only tool that attempts final submission.
-4. After-order payments (`pay_after_order`) and every other high-impact mutation require a one-time token from `prepare_mutation`; MFA and 3-D Secure remain user-controlled browser interactions.
+1. The Alza login password is never an MCP tool argument — sign-in happens in the user's browser (OAuth PKCE) and the MCP only exchanges the returned code. Tools that necessarily carry credentials as arguments (`register`, `change_password`, `phone_change`, `email_change`) require an explicit one-time token and should only be called with the user's direct instruction.
+2. `checkout_preview` creates a one-time confirmation token after the cart and delivery choice are reviewed; `place_order` refuses arbitrary tokens.
+3. `web_place_order` (the currently working submission path — mobile `place_order` returns HTTP 500 server-side) and every other high-impact mutation (`cancel_order`, `pay_after_order`, `delete_account`, …) require a one-time token from `prepare_mutation`. Tokens are single-use and bound to one action. MFA and 3-D Secure remain user-controlled browser interactions.
+4. These tools create, change and cancel **real orders and accounts**. The token is a guard against accidental calls by an agent, not a substitute for the user confirming the action — have your agent show the order summary and ask first.
 
 ### Can I avoid the Chromium download?
 
@@ -335,14 +342,14 @@ The MCP will use *your* Chrome — no separate download, faster cold starts, and
 
 ### Will Alza take this down?
 
-The project identifies itself in `User-Agent`, caches aggressively to minimize traffic, has no commercial intent, and provides a takedown contact path via [issues](https://github.com/lukabudik/alza-mcp/issues). If Alza requests removal, we'll comply.
+It might, and you should assume that's possible. The project has no commercial intent, caches to minimize traffic, and provides a takedown contact path via [issues](https://github.com/lukabudik/alza-mcp/issues) — if Alza requests removal, we'll comply. But it does get past Alza's bot protection (see [How it works](#how-it-works)), so it is not a polite scraper by Alza's standards, and Alza's terms of use may forbid it. Use it for personal automation, not at scale.
 
 ### How does this compare to rohlik-mcp?
 
 [tomaspavlin/rohlik-mcp](https://github.com/tomaspavlin/rohlik-mcp) is the inspiration. Differences:
 - Rohlik isn't behind a Cloudflare challenge → rohlik-mcp uses plain HTTP. We're forced to a real browser because Alza is.
 - Alza is a much larger catalog (millions of SKUs vs. a grocery list).
-- We're read-only by design; rohlik-mcp ships cart actions because the use case is recurring grocery orders.
+- We cover the whole purchase path (cart, checkout, order placement and cancellation) plus account management, not only catalog reads, and group the tools into toolsets so only the catalog is listed by default.
 - We expose MCP **resources** and **prompts** in addition to tools.
 
 ---
@@ -351,9 +358,15 @@ The project identifies itself in `User-Agent`, caches aggressively to minimize t
 
 `alza-mcp` is **not affiliated with, endorsed by, or sponsored by Alza.cz a.s.** "Alza", "Alza.cz", and "AlzaBox" are trademarks of their respective owners.
 
-`alza-mcp` uses the documented/read-only mobile API routes discovered from the Alza Android application for account and checkout operations. The public catalog tools in the current release still use the existing page adapter. The maintainers make no guarantees of availability, accuracy, or fitness for any purpose. Use at your own risk; do not rely on this for commercial decisions.
+**What this software does.** It is a reverse-engineered client. Its mobile-API routes and data shapes were recovered from the Alza Android application, and its catalog tools scrape alza.cz pages with a headless browser. To reach Alza's servers it circumvents Cloudflare Bot Management (headless Chromium plus a Chrome-fingerprint HTTP sidecar). The Android app's OAuth client credential, which is embedded in the public APK, is used as the default for the token exchange.
 
-If you are an Alza employee and have concerns, please open an issue or reach out — we will respond promptly.
+**Legal.** None of this is a published or supported interface, and Alza's terms of use may prohibit automated access, bot-protection circumvention and reverse engineering. Whether and how you may use this software depends on your jurisdiction and your agreement with Alza. You are solely responsible for that determination. This is not legal advice, and the maintainers make no representation that use of this software is lawful or permitted.
+
+**It acts on real accounts and spends real money.** The checkout, order, payment, registration and account-deletion tools operate on live Alza accounts. Orders placed are real and binding; cancellation is not guaranteed to succeed. One-time tokens guard against accidental agent calls but are not a substitute for confirming each action yourself. Test only with accounts and orders you are prepared to lose, and never with credentials you are not prepared to expose to your agent's context.
+
+**No warranty.** Provided "as is" under the MIT license. The maintainers make no guarantees of availability, accuracy, or fitness for any purpose, and are not liable for orders, charges, account lockouts or bans resulting from its use. The upstream interfaces can change without notice, so any tool may stop working. Do not rely on this for commercial decisions.
+
+**Security issues** — see [SECURITY.md](SECURITY.md). **Alza employees or rights holders** with concerns: please open an issue or contact the maintainers — we will respond promptly and comply with reasonable removal requests.
 
 ---
 

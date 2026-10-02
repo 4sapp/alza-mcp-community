@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- **Pre-publication documentation pass (2026-10-02).** README: corrected statements that were no longer true (it said the client "does not bypass bot protection", that the project is "read-only by design", and that credential flows are blocked); documented the Cloudflare-circumvention transport, that it is absent from the published npm package, the embedded OAuth client credential, and that order/account tools act on real accounts; rewrote the Disclaimer (legal posture, real-money actions, no warranty); updated the architecture diagram, roadmap, FAQ and the credential-handling answer (`change_password`/`phone_change`/`email_change` do take credentials as arguments); replaced a personal absolute path. `CONTRIBUTING.md`: tool registration now requires returning the `RegisteredTool` handle and assigning the tool to a toolset. Added `SECURITY.md` and `docs/upstream-comparison.md`.
+
 ### Fixed
 
 - **`get_product` no longer silently returns no specs for products using the `additionalProperty` JSON-LD template** (found live-verifying a router search: Mikrotik CRS304-4XG-IN returned `params: undefined` despite Alza's page clearly listing its port speeds). `getProduct` now merges the JSON-LD `Product.additionalProperty` (schema.org `PropertyValue[]`) with the existing DOM `.paramTbl` scrape instead of relying on the DOM table alone — live-verified (21 rows recovered, including the exact 10 Gbit port count) with no regression on products that already worked via the DOM table. See `docs/gap-analysis.md`.
