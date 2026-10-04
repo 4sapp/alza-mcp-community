@@ -94,6 +94,11 @@ The repo version jumped from 0.1.2 (npm-published) straight to 0.3.0; npm still 
 - `find_pickup_points` no longer documents a non-existent AlzaBox surface; stale v0.2 pickup comments removed.
 - Deterministic tool registration order (catalog → account → advanced) and wire-level annotation-contract tests.
 
+## [0.2.1] — 2026-10-03
+
+### Fixed
+- **`npx -y alza-mcp` failed to install.** `scripts/postinstall.cjs` was missing from the published package, so the postinstall hook crashed. CI now installs the packed tarball to catch this.
+
 ## [0.2.0] — 2026-10-03
 
 Catalog improvements ported from [#1](https://github.com/lukabudik/alza-mcp/pull/1) by [@samuelseidel](https://github.com/samuelseidel). Thank you!
