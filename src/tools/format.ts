@@ -1,4 +1,4 @@
-import type { Product, ProductReviews, SearchResult, Category, PickupPoint, FacetGroup } from "../domain/types.js";
+import type { Product, ProductReviews, SearchResult, Category, PickupPoint, CategoryFilters } from "../domain/types.js";
 
 export function formatPrice(price: number | undefined, currency: string): string {
   if (price === undefined) return "—";
@@ -81,10 +81,21 @@ export function formatCategories(cats: Category[]): string {
     .join("\n");
 }
 
-export function formatCategoryFilters(groups: FacetGroup[]): string {
-  if (groups.length === 0) return "No attribute filters for this category.";
+export function formatCategoryFilters(filters: CategoryFilters): string {
+  if (filters.brands.length === 0 && filters.groups.length === 0) {
+    return "No filters for this category.";
+  }
   const lines: string[] = [];
-  for (const g of groups) {
+  if (filters.brands.length > 0) {
+    lines.push("**Brands** (pass as producer_ids)");
+    for (const v of filters.brands.slice(0, 30)) {
+      const count = v.count !== undefined ? ` (${v.count})` : "";
+      lines.push(`  - ${v.description}${count} → producer_id: ${v.valueId}`);
+    }
+    if (filters.brands.length > 30) lines.push(`  … ${filters.brands.length - 30} more brands`);
+    lines.push("");
+  }
+  for (const g of filters.groups) {
     const flag = g.filterable ? "" : " (not filterable via search_products — informational only)";
     lines.push(`**${g.name}** (param_id: ${g.paramId}, ${g.renderType})${flag}`);
     for (const v of g.values.slice(0, 15)) {

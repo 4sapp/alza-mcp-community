@@ -57,7 +57,7 @@ const inputSchema = {
     .array(z.number().int().positive())
     .optional()
     .describe(
-      "Filter by brand/producer id(s) — get real ids from `list_category_filters`'s `producers` group. Requires `category_id`. Works for any category (this is a real, live-verified Alza filter, not a heuristic)."
+      "Filter by brand id(s) — get real ids from `list_category_filters`'s `brands`. Requires `category_id`. Works in every category."
     ),
   filters: z
     .array(
@@ -68,7 +68,7 @@ const inputSchema = {
     )
     .optional()
     .describe(
-      "Attribute filter selections — get real param_id/value_id pairs from `list_category_filters` (only groups with `filterable: true` work here; never guess ids). Requires `category_id`. Each entry ANDs a different facet group together (live-verified 2026-09-27, e.g. brand + HDMI-support combined correctly narrowed real Alza results)."
+      "Attribute filter selections — real param_id/value_id pairs from `list_category_filters` (`filterable: true` groups only; never guess ids). Requires `category_id`. Combines with `producer_ids`. If Alza doesn't honour a filter, the call errors instead of returning unfiltered results."
     ),
 };
 
@@ -83,8 +83,8 @@ export function createSearchProductsTool(deps: ToolDeps): RegisterableTool {
           title: "Search Alza products",
           description:
             "Search the Alza.cz catalog by keyword. Use this for product discovery — finding what's available, comparing options, or starting research. Returns a list with product code, name, price, stock (from the card's purchase CTA), and rating. To get full details for one product, follow up with `get_product`. Sorting: Alza's search page ignores server-side sort, so price-asc / price-desc / rating scan up to ~72 top-ranked candidates (3 pages) and sort them client-side — `candidatesScanned` reports how many were scanned; for an absolute price floor also pass `max_price`. `in_stock: true` keeps only products with a live purchase CTA. " +
-            "Attribute filtering works for ANY category via `filters`/`producer_ids` — call `list_category_filters({category_id})` first to see what's available and get real ids (never guess them), then pass them here alongside `category_id`; this switches the search to Alza's own filtered category-browse page (live-verified 2026-09-27), so results are exactly what the website itself would show. Only Checkbox-type facets support this (brand always does); Slider-type facets (screen size, refresh rate, weight, brightness, …) have no discoverable filter API — `list_category_filters` marks those `filterable: false`. " +
-            "`min_screen_inches`/`max_screen_inches` remain a name-based substitute specifically for screen size, since that facet is Slider-type. For any other unfilterable attribute (contrast, panel type, etc.), compare shortlisted candidates with `get_product`'s scraped `params` field instead. " +
+            "Brand/attribute filtering: call `list_category_filters({category_id})` for real ids, then pass `producer_ids` and/or `filters` with `category_id`. This switches to Alza's own filtered category page, so `query` is ignored and results match what the website shows; a filter Alza doesn't honour returns an error rather than unfiltered results. " +
+            "`min_screen_inches`/`max_screen_inches` are a name-based substitute for screen size (a slider facet Alza can't filter by URL). For other unfilterable attributes, compare shortlisted candidates with `get_product`'s `params`. " +
             "Read-only.",
           inputSchema,
           outputSchema: OUTPUT_SCHEMAS["search_products"],

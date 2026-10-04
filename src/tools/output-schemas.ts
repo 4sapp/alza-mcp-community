@@ -291,6 +291,7 @@ export const FIND_PICKUP_POINTS_OUTPUT = z
 export const LIST_CATEGORY_FILTERS_OUTPUT = z
   .object({
     category_id: z.number(),
+    brands: z.array(z.object({ valueId: z.number(), description: z.string(), count: z.number().optional() }).passthrough()),
     groups: z.array(
       z
         .object({

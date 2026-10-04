@@ -1,3 +1,5 @@
+> Historical comparison recorded before integration. On 2026-10-04, the integration branch combined upstream `b1b5ed7` (v0.2.0) and the packaging changes from PR #4 (`74c03c1`) with the full account/checkout implementation from `4d84b02`. The earlier ancestry and scope statements below describe the pre-integration state.
+
 # Comparison with lukabudik/alza-mcp (upstream)
 
 Checked 2026-10-02 against `lukabudik/alza-mcp` HEAD `c371ae6` (v0.1.2, 2026-05-11).
