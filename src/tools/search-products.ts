@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import { formatSearchResult } from "./format.js";
 import type { RegisterableTool, ToolDeps } from "./types.js";
 
@@ -76,7 +77,7 @@ export function createSearchProductsTool(deps: ToolDeps): RegisterableTool {
   return {
     name,
     register(server, errorWrap) {
-      server.registerTool(
+      return server.registerTool(
         name,
         {
           title: "Search Alza products",
@@ -86,6 +87,7 @@ export function createSearchProductsTool(deps: ToolDeps): RegisterableTool {
             "`min_screen_inches`/`max_screen_inches` are a name-based substitute for screen size (a slider facet Alza can't filter by URL). For other unfilterable attributes, compare shortlisted candidates with `get_product`'s `params`. " +
             "Read-only.",
           inputSchema,
+          outputSchema: OUTPUT_SCHEMAS["search_products"],
           annotations: {
             readOnlyHint: true,
             idempotentHint: true,
