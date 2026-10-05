@@ -11,6 +11,12 @@
   "files": [
     "dist",
     "scripts/postinstall.cjs",
+    "scripts/cf-transport.py",
+    "scripts/ensure-cf-venv.sh",
+    "scripts/alza-auth-login.mjs",
+    "scripts/alza-auth-login-noninteractive.mjs",
+    "scripts/alza-auth-exchange.mjs",
+    "scripts/alza-auth-refresh.mjs",
     "README.md",
     "LICENSE"
   ],

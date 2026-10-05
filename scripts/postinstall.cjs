@@ -44,6 +44,19 @@ function log(msg) {
   try { fs.appendFileSync(logFile, msg + "\n"); } catch { /* ignore */ }
 }
 
+// Chrome-fingerprint transport (scripts/cf-transport.py). Without it every request
+// — including the OAuth endpoints — falls back to plain fetch, which Alza's edge
+// answers with a 403 challenge. Best-effort by design: ensure-cf-venv.sh exits 0
+// when python3 is absent, and the server degrades to the browser transport.
+const ensureVenv = path.join(__dirname, "ensure-cf-venv.sh");
+if (fs.existsSync(ensureVenv)) {
+  log("setting up the Chrome-fingerprint transport venv (curl_cffi) …");
+  const venv = spawnSync("bash", [ensureVenv], { stdio: "inherit" });
+  if (venv.status !== 0) {
+    log("cf-venv setup exited with code " + venv.status + "; the server will fall back to the browser transport.");
+  }
+}
+
 log("downloading chromium headless-shell (~92 MB) for the browser-driven MCP …");
 const result = spawnSync(
   process.execPath,
