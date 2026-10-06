@@ -148,3 +148,10 @@ The same check with the board swapped to `ACb550tgp` returned **incompatible**:
 - `cpu_socket_motherboard` fail: LGA1851 vs AM4.
 - `ram_motherboard` fail: DDR5 vs DDR4.
 - `motherboard_form_factor_case` fail: an ATX board does not fit the mATX/mITX case.
+
+## 7. Independent reviewer re-run, `live-verified`
+
+A reviewer re-ran `PcBuilder.check` (anonymous, `ALZA_TOKEN_FILE=none`, a fresh managed Chromium, sequential) on 2026-10-06 22:00 UTC with the 7 non-storage codes from iteration 3 and their roles:
+- Overall **compatible**, all 10 rules `pass`, with the same values as above (LGA1851 = LGA1851, DDR5 1/4 slots, 750 W ≥ 670 W recommended with the GPU draw derived from 550 W, 229 mm ≤ 330 mm, 155 mm ≤ 161 mm, mATX in "mATX, mITX", ATX PSU). Prices and stock matched the table above.
+- With the board swapped to `ACb550tgp`: **incompatible**, with the same three fails (socket LGA1851 vs AM4, DDR5 vs DDR4, ATX board in an mATX/mITX case).
+- Timing: **116 s** for the 7 cold product pages, Chromium launch included (about 16 s per page). The 1.6 s / 4.3 s figures above are warm-cache re-checks. A cold `pc_build_check` or `pc_build_suggest` can exceed a 60 s client tool-call timeout.
