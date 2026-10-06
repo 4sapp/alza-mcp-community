@@ -357,7 +357,7 @@ node dist/index.js --http   # or serve MCP Streamable HTTP on http://127.0.0.1:3
 
 `main` already covers catalog, filtering, cart, checkout, order placement/cancellation and account management (see [What it does](#what-it-does) and the known limitations in [docs/gap-analysis.md](docs/gap-analysis.md)). Next up:
 
-- **PC builder** ([#15](https://github.com/lukabudik/alza-mcp/issues/15)) and a **hosted HTTP endpoint** (follow-up to [#16](https://github.com/lukabudik/alza-mcp/issues/16); local `--http` mode is shipped)
+- **PC builder** follow-ups ([#15](https://github.com/lukabudik/alza-mcp/issues/15); `pc_builder` toolset shipped) and a **hosted HTTP endpoint** (follow-up to [#16](https://github.com/lukabudik/alza-mcp/issues/16); local `--http` mode is shipped)
 
 Priorities live in [ROADMAP.md](ROADMAP.md); everything is tracked in [issues](https://github.com/lukabudik/alza-mcp/issues) — [`good first issue`](https://github.com/lukabudik/alza-mcp/labels/good%20first%20issue) is the place to start.
 
