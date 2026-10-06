@@ -758,11 +758,28 @@ export function pickAdditionalProperties(raw: unknown): ProductParam[] {
   const out: ProductParam[] = [];
   for (const entry of raw) {
     if (!entry || typeof entry !== "object") continue;
-    const name = asString((entry as Record<string, unknown>)["name"]);
-    const value = asString((entry as Record<string, unknown>)["value"]);
+    const name = decodeBasicEntities(asString((entry as Record<string, unknown>)["name"]) ?? "").trim();
+    const value = decodeBasicEntities(asString((entry as Record<string, unknown>)["value"]) ?? "").trim();
     if (name && value) out.push({ name, value });
   }
   return out;
+}
+
+/**
+ * JSON-LD `additionalProperty` strings arrive HTML-escaped (live 2026-10-06:
+ * a monitor diagonal came back as `27 &quot; (68,58 cm)`). Decode the XML
+ * entities plus numeric references instead of dropping them.
+ */
+function decodeBasicEntities(s: string): string {
+  return s
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCharCode(parseInt(n, 16)))
+    .replace(/&amp;/g, "&");
 }
 
 function pickBreadcrumbs(raw: unknown): string[] {
