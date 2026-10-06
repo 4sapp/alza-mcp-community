@@ -9,7 +9,7 @@ import { buildServer } from "../src/server.js";
  * annotation matrix as served on the wire (no network — tools/list is local).
  */
 
-async function listTools(): Promise<{ name: string; annotations: Record<string, unknown> | undefined }[]> {
+async function listTools(): Promise<{ name: string; annotations: Record<string, unknown> | undefined; inputSchema: { properties?: Record<string, { enum?: string[] }> } }[]> {
   const built = buildServer();
   const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "annotation-contract", version: "0" });
@@ -26,6 +26,7 @@ async function listTools(): Promise<{ name: string; annotations: Record<string, 
     return res.tools.map((t) => ({
       name: t.name,
       annotations: t.annotations as Record<string, unknown> | undefined,
+      inputSchema: t.inputSchema as { properties?: Record<string, { enum?: string[] }> },
     }));
   } finally {
     await client.close();
@@ -90,7 +91,7 @@ describe("tool annotation contract", () => {
     }
   });
 
-  it("marks readOnlyHint on every tool except the 23 mutating ones", async () => {
+  it("marks readOnlyHint on every tool except the mutating ones", async () => {
     // The 27 mutating tools: OAuth handshake (auth_start/auth_exchange),
     // whitelisted low-risk mutate_list, cart/checkout/registration/payment
     // writes, the chat send, order cancellation (OR11), the A14–A18
@@ -119,5 +120,14 @@ describe("tool annotation contract", () => {
         expect(a.readOnlyHint).toBe(true);
       }
     }
+  });
+
+  it("lets prepare_mutation issue a token for every typed mutation, and mutate_list no longer offers the dead set_watchdog", async () => {
+    const tools = await listTools();
+    const prepare = tools.find((t) => t.name === "prepare_mutation")!.inputSchema.properties!.action!.enum!;
+    expect(prepare).toEqual(expect.arrayContaining(["cancel_order", "watchdog_set", "watchdog_delete", "web_place_order"]));
+    expect(prepare).not.toContain("set_watchdog");
+    const mutate = tools.find((t) => t.name === "mutate_list")!.inputSchema.properties!.action!.enum!;
+    expect(mutate).not.toContain("set_watchdog");
   });
 });

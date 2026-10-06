@@ -7,7 +7,7 @@ import { WATCHDOG_ID_RE, parseWatchdogDialog, parseWatchdogList, type WatchdogEn
 export const MUTATION_ACTIONS = [
   // low-risk whitelisted writes (executed via mutate_list)
   "create", "rename", "delete", "add", "remove", "move", "set_country", "set_isic",
-  "add_gift", "add_order_service", "set_watchdog", "send_feedback", "submit_discussion", "rate_discussion",
+  "add_gift", "add_order_service", "send_feedback", "submit_discussion", "rate_discussion",
   "coupon_add", "coupon_remove", "basket_update", "basket_unlock",
   // high-impact writes (executed via the typed tools)
   "after_order_payment", "register", "address_create", "address_edit", "address_delete",
@@ -26,7 +26,7 @@ export const MUTATION_ACTIONS = [
 
 const WHITELISTED_MUTATIONS = new Set<string>([
   "create", "rename", "delete", "add", "remove", "move", "set_country", "set_isic",
-  "add_gift", "add_order_service", "set_watchdog", "send_feedback", "submit_discussion", "rate_discussion",
+  "add_gift", "add_order_service", "send_feedback", "submit_discussion", "rate_discussion",
   "coupon_add", "coupon_remove", "basket_update", "basket_unlock",
   "gdpr_export",
 ]);
@@ -151,7 +151,7 @@ function validateListPayload(action: string, payload: Record<string, unknown>): 
     create: ["name"], rename: ["id", "name"], delete: ["id"],
     add: ["productId", "commodityListType"], remove: ["id", "productId"], move: ["id", "productId", "targetId"],
     set_country: ["countryId"], set_isic: ["isic"],
-    add_gift: ["rangeIdsGiftCodes"], set_watchdog: ["commodityId", "email", "isTrackingStock"], send_feedback: ["text", "info"], add_order_service: ["orderItemId", "enabled", "selected"], // orderItemId: live correction 2026-09-10 (server ModelState binds Int32)
+    add_gift: ["rangeIdsGiftCodes"], send_feedback: ["text", "info"], add_order_service: ["orderItemId", "enabled", "selected"], // orderItemId: live correction 2026-09-10 (server ModelState binds Int32)
     submit_discussion: ["commodityId", "msg", "userEmail", "anonymous", "notifications"], rate_discussion: ["postId", "rating"],
     coupon_add: ["coupon"], coupon_remove: ["couponId"], basket_update: ["basket_id"], basket_unlock: [], gdpr_export: ["user_id"], // couponId: live correction 2026-09-10 (delcoupon binds Int32)
   };
@@ -162,7 +162,6 @@ function validateListPayload(action: string, payload: Record<string, unknown>): 
     if (field in payload && (typeof payload[field] !== "number" || !Number.isInteger(payload[field]))) throw new Error(`${field} must be an integer`);
   }
   if (("name" in payload) && typeof payload.name !== "string") throw new Error("name must be a string");
-  if (action === "set_watchdog" && typeof payload.email !== "string") throw new Error("email must be a string");
   if (action === "send_feedback" && (typeof payload.text !== "string" || typeof payload.info !== "string")) throw new Error("feedback text and info must be strings");
 }
 
@@ -865,7 +864,6 @@ export class MobileAccount {
       : action === "set_isic" ? await this.api.setIsic(payload as { isic: string })
       : action === "add_gift" ? await this.api.addGift(payload as { rangeIdsGiftCodes: Array<{ priceRangeId: number; giftCodes: string[] }> })
       : action === "add_order_service" ? await this.api.addOrderService(String(payload.orderItemId), Boolean(payload.enabled), Boolean(payload.selected))
-      : action === "set_watchdog" ? await this.api.setWatchdog(payload as { commodityId: number; email: string; isTrackingStock: boolean; price?: number })
       : action === "send_feedback" ? await this.api.sendFeedback(payload as { text: string; email?: string; info: string })
       : action === "submit_discussion" ? await this.api.submitDiscussionPost(payload as { commodityId: number; msg: string; userEmail: string; anonymous: boolean; notifications: boolean; parentPostId?: number })
       : action === "rate_discussion" ? await this.api.rateDiscussionPost(Number(payload.postId), Boolean(payload.rating))

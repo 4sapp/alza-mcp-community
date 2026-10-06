@@ -24,7 +24,7 @@ const AUTH_PREREQ =
 
 const LOW_RISK_ACTIONS = [
   "create", "rename", "delete", "add", "remove", "move", "set_country", "set_isic",
-  "add_gift", "add_order_service", "set_watchdog", "send_feedback", "submit_discussion", "rate_discussion",
+  "add_gift", "add_order_service", "send_feedback", "submit_discussion", "rate_discussion",
   "coupon_add", "coupon_remove", "basket_update", "basket_unlock",
   "gdpr_export",
 ] as const;
@@ -32,7 +32,7 @@ const LOW_RISK_ACTIONS = [
 const HIGH_IMPACT_ACTIONS = [
   "after_order_payment", "register", "address_create", "address_edit", "address_delete",
   "review_submit", "subscription_activate", "subscription_update_installment", "attachment_upload",
-  "web_place_order", "web_after_order_payment",
+  "web_place_order", "web_after_order_payment", "cancel_order",
   // account credential/identity mutations (A14–A18, 2026-09-22)
   "change_password", "two_factor_set", "phone_change", "email_change", "delete_account",
 ] as const;
@@ -153,7 +153,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           title: "Prepare an Alza mutation",
           description:
             "Start a two-step mutation by returning a one-time confirmation token bound to exactly one action. This call itself sends nothing to Alza. " +
-            "Use it before the high-impact typed mutations — `register` (action `register`), `address_upsert` (`address_create` or `address_edit`), `address_delete` (`address_delete`), `pay_after_order` (`after_order_payment`), `web_place_order` (`web_place_order`), `web_pay_after_order` (`web_after_order_payment`), `review_submit` (`review_submit`), `subscription_activate` (`subscription_activate`), `subscription_update_installment` (`subscription_update_installment`), `upload_attachment` (`attachment_upload`), `watchdog_set` (`watchdog_set`), `watchdog_delete` (`watchdog_delete`) — and before any low-risk `mutate_list` action (" + LOW_RISK_ACTIONS.map((a) => "`" + a + "`").join(", ") + "). " +
+            "Use it before the high-impact typed mutations — `register` (action `register`), `address_upsert` (`address_create` or `address_edit`), `address_delete` (`address_delete`), `pay_after_order` (`after_order_payment`), `web_place_order` (`web_place_order`), `web_pay_after_order` (`web_after_order_payment`), `cancel_order` (`cancel_order`), `review_submit` (`review_submit`), `subscription_activate` (`subscription_activate`), `subscription_update_installment` (`subscription_update_installment`), `upload_attachment` (`attachment_upload`), `watchdog_set` (`watchdog_set`), `watchdog_delete` (`watchdog_delete`) — and before any low-risk `mutate_list` action (" + LOW_RISK_ACTIONS.map((a) => "`" + a + "`").join(", ") + "). " +
             "Pass the returned token as `confirmation_token` on the matching call; the token is single-use and only valid for the exact action you prepared. " +
             "Do not use for read-only tools, and not for `add_to_cart` (which is a low-risk cart write that needs no token).",
           inputSchema: {
@@ -175,7 +175,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           title: "Execute a whitelisted Alza mutation",
           description:
             "Execute one low-risk, APK-confirmed mutation using a one-time token from `prepare_mutation`. " +
-            "Use for shopping-list operations (`create`/`rename`/`delete`/`add`/`remove`/`move`), account settings (`set_country`, `set_isic`), `add_gift`, `add_order_service`, `set_watchdog`, `send_feedback`, `submit_discussion`, `rate_discussion`, coupons (`coupon_add` takes `{coupon: \"CODE\"}`; `coupon_remove` takes `{couponId: <int>}` — the id from a prior `cart` read), basket flags (`basket_update` takes `{basket_id, flag?, is_delayed_payment?}`; `basket_unlock`), and the GDPR data export (`gdpr_export` takes `{user_id}` — queues the XML personal-data export to the account's own login email, 202 Accepted; read `gdpr_info` first). " +
+            "Use for shopping-list operations (`create`/`rename`/`delete`/`add`/`remove`/`move`), account settings (`set_country`, `set_isic`), `add_gift`, `add_order_service`, `send_feedback`, `submit_discussion`, `rate_discussion`, coupons (`coupon_add` takes `{coupon: \"CODE\"}`; `coupon_remove` takes `{couponId: <int>}` — the id from a prior `cart` read), basket flags (`basket_update` takes `{basket_id, flag?, is_delayed_payment?}`; `basket_unlock`), and the GDPR data export (`gdpr_export` takes `{user_id}` — queues the XML personal-data export to the account's own login email, 202 Accepted; read `gdpr_info` first). " +
             "Do not use for high-impact mutations (order, payment, registration, address, review, subscription, attachment) — each has its own typed tool with its own token. " +
             "The `payload` fields must match the mobile DTO for the chosen action exactly. " +
             "Side effect: persists the change on the user's Alza account. Example: `mutate_list({action: \"coupon_add\", confirmation_token: \"...\", payload: {coupon: \"WELCOME10\"}})`.",
