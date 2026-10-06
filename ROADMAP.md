@@ -15,7 +15,6 @@ Rough priority order. Every item is a GitHub issue — comment there before star
 
 - [#19](https://github.com/lukabudik/alza-mcp/issues/19) Publish to the official MCP Registry from the release workflow
 - [#20](https://github.com/lukabudik/alza-mcp/issues/20) List in MCP directories (Smithery, Glama, PulseMCP, mcp.so)
-- [#21](https://github.com/lukabudik/alza-mcp/issues/21) Animated demo in the README
 - [#22](https://github.com/lukabudik/alza-mcp/issues/22) One-click install links (Cursor, VS Code, Claude Desktop)
 
 ## Medium-term
