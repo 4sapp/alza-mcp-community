@@ -7,8 +7,53 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
-
+- `compare_products` (catalog toolset, read-only): 2–6 product codes side by side as one aligned spec table (price, availability, rating, then every spec row in any product). Pages load two at a time through the product cache; a bad code is reported in its own column instead of failing the call ([#11](https://github.com/lukabudik/alza-mcp/issues/11)). Optional `summarize: true` asks the client's LLM for a short verdict via MCP sampling, grounded only in the table, capped at 400 tokens; clients without sampling get the table and `summary.status: "unavailable"` ([#18](https://github.com/lukabudik/alza-mcp/issues/18)).
+- **`recommend_alternatives` tool (#12)** — read-only, `catalog` toolset. `{code, mode?: cheaper|better-specs|same-brand, limit?}` uses Alza's own alternatives list (`MobileApi.alternatives`, keyed by the numeric `d########` commodity id from the product URL, via the Cloudflare transport chain) as the candidate pool and falls back to a same-category `search_products` when it is empty or nothing survives the mode filter. Heuristics: cheaper = strictly lower price, cheapest first; same-brand = brand match, then rating desc / price asc; better-specs = rating >= source (rating heuristic, not a spec-table comparison). Response shape live-verified 2026-10-06 (C7, see `docs/mobile-endpoint-coverage.md`).
+- **`get_deals({category_id?, min_discount_percent?, limit?})`** (new read-only catalog tool, issue #13) — discounted products with current price, original price, savings and a discount % computed from the observed prices (never the marketing badge). Source (live-verified 2026-10-06): listing cards carry a crossed-out original price or an "Ušetříte N,-" amount; there is no Akce facet and the sale pages are product-less hubs. Bounded sample of listing pages, CZ-only (errors on other locales). See `docs/gap-analysis.md` and `docs/live-evidence/get-deals-2026-10-06.md`.
+- **`autocomplete({query, limit?})` (catalog toolset, read-only; issue #14).** Alza's search-box suggestion endpoint was captured with Playwright (`page.keyboard.type`) as `GET webapi.alza.cz/api/anonymous/search/whisperer/v1/whisper` (anonymous, no token) and is called over plain HTTP through the existing CF-sidecar transport chain — no page render. Returns suggested phrases plus categories (`id`), brands (`id`), products (`id` + `code`) and articles, cached 5 min by normalised query. Live-verified 2026-10-06; documented as C15/C16 in `docs/mobile-endpoint-coverage.md`.
+- `find_pickup_points` returns AlzaBox lockers without a cart or login ([#8](https://github.com/lukabudik/alza-mcp/issues/8)). They come from Alza's public locker-map API (`/api/salesNetwork/v1/places`), with one request per postal code, cached for 12 h. The default `types` merges lockers and showrooms by distance. Each locker includes its `parcelShopId`, and the first 10 lockers returned get opening hours from the per-locker detail (cached 1 h). The tool description says a standalone list can't tell whether a given (oversized) product fits.
+- Slider (range) attribute filters ([#10](https://github.com/lukabudik/alza-mcp/issues/10), live-verified 2026-10-06). `search_products`'s `filters` now also takes `{param_id, min?, max?}` for Slider facets: screen size, refresh rate, brightness, response time, weight, dimensions, port counts, RAM, and so on. `list_category_filters` marks those groups `filterable: true, filterMode: "range"` and gives each step's raw `value`. A real mouse drag showed that Alza's category page keeps slider state in the URL hash (`#f&…&par{paramId}={from}--{to}`) and its JS then POSTs `/Services/EShopService.svc/Filter`. The MCP loads the hash URL, reads the page's own `Filter` reply, and returns the applied, step-snapped ranges as `appliedRanges`. With `category_id`, `min_screen_inches`/`max_screen_inches` now use the category's real diagonal slider (millimetres on monitors and laptops, inches on TVs). The product-name heuristic is only the fallback. See `docs/gap-analysis.md`.
+- Streamable HTTP transport ([#16](https://github.com/lukabudik/alza-mcp/issues/16)): `alza-mcp --http [--port N] [--host H]` or `ALZA_TRANSPORT=http` serves the server at `/mcp` using the SDK's `StreamableHTTPServerTransport`. stdio is still the default. Each MCP session gets its own server instance, so toolset state, OAuth tokens and confirmation tokens are never shared. Only the `catalog` toolset is usable over HTTP; the others are listed as locked unless `ALZA_HTTP_ENABLE_ACCOUNT=1` is set. `ALZA_TOKEN_FILE` is not loaded over HTTP unless `ALZA_HTTP_ALLOW_TOKEN_FILE=1` is also set. Binds `127.0.0.1` with a `Host`/`Origin` allow-list, a session cap and idle expiry. The README covers running it locally and what hosting still needs, including the Cloudflare datacenter-IP problem.
+- Price and stock watchdog tools: `watchdog_list`, `watchdog_set`, and `watchdog_delete`, in the new `watchdogs` toolset ([#17](https://github.com/lukabudik/alza-mcp/issues/17)). They wrap Alza's own watchdog, which emails the account address, so the MCP stores nothing. `watchdog_set` and `watchdog_delete` need a one-time `prepare_mutation` token, and no output includes the account email. The list and delete routes come from the user navigation and the per-product `watchdogDialog`. Create and delete were tested live on 2026-10-06 and no watchdog was left behind (rows B9/B9a/B9b, `docs/live-evidence/watchdog-b9-2026-10-06.md`).
+- **`get_product_reviews` returns individual reviews (#9, 2026-10-06).** Reviews now come from `webapi.alza.cz/api/catalog/commodities/{id}/reviews` (commodity id from the product URL `-d####.htm` or `?dq=`), paged up to `limit` (max 50) with author, ISO date, rating, body, pros/cons, verified-purchase, variant and helpful count; the aggregate still comes from the product page. Any reviews-API failure falls back to the previous aggregate-only result.
+- PC builder ([#15](https://github.com/lukabudik/alza-mcp/issues/15)): new `pc_builder` toolset, off by default, with two tools.
+  - **`pc_build_check`** fetches the specs of a parts list and returns live prices, the total and stock. It gives one verdict per compatibility rule (pass / warn / fail / unknown / not_applicable), with the spec values compared and the Czech spec row each came from. The rules: CPU socket ↔ motherboard, RAM generation / DIMM type / slots ↔ motherboard, RAM ↔ CPU, PSU wattage vs estimated draw + headroom, GPU length ↔ case, cooler height or radiator size ↔ case, cooler ↔ CPU socket, motherboard and PSU form factor ↔ case, and display output.
+  - **`pc_build_suggest`** proposes a compatible build within a CZK budget (gaming / workstation / office profiles, `fixed_parts`, `cpu_vendor`). It picks from Alza's real component categories, and its product-detail fetches are bounded by `max_detail_fetches`.
+  - The rules are pure, unit-tested functions in `src/domain/pc-build.ts`. Live evidence: `docs/live-evidence/2026-10-06-pc-builder.md`.
 - **Distribution (2026-10-06).** Release workflow now verifies `server.json` / `mcpb/manifest.json` versions against `package.json` before `npm publish`, then publishes to the official MCP Registry with `mcp-publisher` (OIDC); `server.json` corrected from 0.1.2 to 0.3.0 and its description shortened to the registry's 100-char limit. README "Quick install" gains Cursor and VS Code one-click links; a Claude Desktop `.mcpb` bundle (`mcpb/manifest.json`, `scripts/build-mcpb.sh`) is built and attached to GitHub releases. `smithery.yaml` configSchema now matches the README env vars; `docs/directory-listings.md` holds ready-to-paste directory submission text.
+- `Catalog.getProductSpecs`: the same page load as `get_product`, but it keeps up to 80 spec rows. `get_product` still returns at most 30.
+
+### Changed
+- `select_pickup_point` description ([#23](https://github.com/lukabudik/alza-mcp/issues/23)). A re-test on an authenticated cart on 2026-10-06 found no `beforeSelectAction`/`afterSelectAction` on any delivery. `getDeliveryAssociations` returns delivery → payment associations, not pickup points. The description now says this and points to `web_pickup_places` → `web_place_order` with `parcel_shop_id` for choosing an AlzaBox (`docs/live-evidence/select-pickup-point-auth-retest-2026-10-06.md`).
+- `auth_exchange` accepts the full `alza://identity?code=…&state=…` redirect URL as `code` and reads `state` from it. Passing `state` is now optional in that case. The `auth_start` description and README explain the misleading "Při přihlášení došlo k chybě." message on desktop browsers (a client-side timer, not a failed sign-in) and how to get the redirect URL from DevTools ([#29](https://github.com/lukabudik/alza-mcp/issues/29)).
+
+### Fixed
+- `prepare_mutation` now accepts `cancel_order`. `cancel_order` requires that token but the action enum did not list it, so cancellation could not be confirmed.
+- `mutate_list` no longer offers `set_watchdog`. It posted to the www `/api/watchdog/v1` route, which returns 404 (live 2026-10-06); use `watchdog_set` instead.
+- `get_product` no longer caches a product with an empty spec list when the spec table had not rendered by the `load` event (seen live on 2026-10-06 for a PSU page). If neither the DOM table nor the JSON-LD `additionalProperty` has rows, it waits up to 4 s for the table and reads the page again.
+- OAuth login from the npm package ([#29](https://github.com/lukabudik/alza-mcp/issues/29), [#30](https://github.com/lukabudik/alza-mcp/pull/30), thanks [@jankryh](https://github.com/jankryh)). `identity.alza.cz` is behind the same Cloudflare check as `www`, and `auth_start`/`auth_exchange` were getting HTTP 403. The package now ships the Chrome-fingerprint sidecar (`scripts/cf-transport.py`, `scripts/ensure-cf-venv.sh`) and the auth scripts, and `postinstall` sets up the `curl_cffi` venv when `python3` is present. OAuth discovery, token exchange and refresh go through the sidecar, and `URLSearchParams` bodies no longer skip it. If the sidecar is unavailable, OAuth uses plain fetch. If discovery fails, it uses the APK default endpoints instead of stopping.
+
+## [0.3.1] — 2026-10-05
+
+### Added
+- README **Contributors** section, thanking [@samuelseidel](https://github.com/samuelseidel).
+- Roadmap tracked as GitHub issues ([#8](https://github.com/lukabudik/alza-mcp/issues/8)–[#23](https://github.com/lukabudik/alza-mcp/issues/23)), plus feature-request and PR templates.
+- Daily live canary workflow (`.github/workflows/live-canary.yml`). It runs `validate:api` against alza.cz and opens (or comments on) a `canary` issue when checks fail. GitHub-hosted runners get Cloudflare's interactive challenge, so they only report the block. Set the `CANARY_RUNS_ON` variable to a self-hosted runner to get real results.
+- `validate:api` now covers price-sorted and brand-filtered search, product params, sub-level categories and category filters. It retries each failed check once, prints a markdown summary (`--markdown <file>`), and exits 2 (not 1) when Cloudflare challenges the machine.
+
+### Changed
+- README: removed the stale note saying npm serves 0.2.0.
+- CHANGELOG: the 0.3.0 changes now sit under a dated 0.3.0 heading. They had been left under Unreleased, next to a stale 0.3.0 entry from the fork.
+
+## [0.3.0] — 2026-10-05
+
+The first release with outside contributions: account, cart, checkout, order and payment tools, toolsets, and typed output schemas, contributed by [@samuelseidel](https://github.com/samuelseidel) ([#1](https://github.com/lukabudik/alza-mcp/pull/1), [#5](https://github.com/lukabudik/alza-mcp/pull/5)). Also fixes `npx -y alza-mcp` installs, which were broken in 0.1.2 and 0.2.0.
+
+### Integrated
+
+- Luka’s v0.2.0 catalog fixes: brands from the facets API, rejected filters detected after redirects, filter-preserving pagination, and real subcategory discovery.
+- Luka’s pending #4 packaging fix: ship the Chromium postinstall hook and install the packed tarball in CI.
+- Preserve upstream’s npm trusted-publishing workflow and the full account/checkout toolsets with output schemas and confirmation tokens.
 
 ### Changed
 
@@ -66,9 +111,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Tool count 45 → 50 → **52**: task-5 added 4 (`order_search`/`gdpr_info`/`order_document`/`claim_detail`), the A14–A18 wrappers added 5 (`change_password`/`two_factor_set`/`phone_change`/`email_change`/`delete_account`), and this session adds 2 (`order_archive`, `product_by_ean`); annotation + outputSchema contract tests updated accordingly.
 - Operational note (2026-09-24): the standing E2E token is 401-gated on the www `/api/users/{id}/v1/*` user services (token-age re-auth window; the 1secmail inbox is sinkholed from this egress) — a fresh E2E login is required for authenticated OR1/K1/OR6/OR7 reads on the standing account; the disposable account 100000002 is the working authenticated identity for this batch.
 
-## [0.3.0] — 2026-09-13
+### Fork development history (2026-09-13)
 
-The repo version jumped from 0.1.2 (npm-published) straight to 0.3.0; npm still serves 0.1.2 — publishing is not part of this change. This entry documents everything on `main` since 0.1.2, grouped by theme.
+Everything below was developed on [@samuelseidel](https://github.com/samuelseidel)'s fork before it was merged, grouped by theme.
 
 ### Added
 
@@ -91,6 +136,29 @@ The repo version jumped from 0.1.2 (npm-published) straight to 0.3.0; npm still 
 - Browser memory leak and idle shutdown (carried over from 0.1.1 fixes, kept in 0.3.0).
 - `find_pickup_points` no longer documents a non-existent AlzaBox surface; stale v0.2 pickup comments removed.
 - Deterministic tool registration order (catalog → account → advanced) and wire-level annotation-contract tests.
+
+## [0.2.1] — 2026-10-03 (not published; shipped in 0.3.0)
+
+### Fixed
+- **`npx -y alza-mcp` failed to install.** `scripts/postinstall.cjs` was missing from the published package, so the postinstall hook crashed. CI now installs the packed tarball to catch this.
+
+## [0.2.0] — 2026-10-03
+
+Catalog improvements ported from [#1](https://github.com/lukabudik/alza-mcp/pull/1) by [@samuelseidel](https://github.com/samuelseidel). Thank you!
+
+### Added
+- **`list_category_filters`** — a category's brands and attribute facets with real ids and product counts.
+- **Brand and attribute filtering** in `search_products` (`producer_ids`, `filters`, requires `category_id`). Uses Alza's own filtered category pages. Alza only honours URL filters for some facets; when it drops one, the tool now returns an error instead of unfiltered results.
+- `min_screen_inches` / `max_screen_inches` — name-based screen-size filter for displays.
+- `candidatesScanned` in search results.
+
+### Fixed
+- **Sorting.** Alza's search page ignores server-side sort, so `price-asc` / `price-desc` / `rating` now sweep up to 3 pages and sort client-side.
+- **Pagination.** `search.htm?pg=N` is ignored by Alza; pages now follow the rendered page links (or build `-pN` URLs for filtered category pages, whose own links drop the filter).
+- **`in_stock`** now actually filters, based on the card's purchase button.
+- **`get_product` specs.** Merges the JSON-LD `additionalProperty` list, so products whose page has no DOM spec table now return params.
+- **`list_categories(parent_id)`** returned the top-level list for every parent. It now returns the real subcategories.
+- Invalid tool arguments return a readable message.
 
 ## [0.1.2] — 2026-05-11
 

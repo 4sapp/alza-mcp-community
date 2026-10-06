@@ -1,6 +1,8 @@
 # Contributing to alza-mcp
 
-Thanks for considering a contribution. This is a small, focused project — read-only MCP wrapper for Alza.cz — and the bar for any change is "does it make agents better at helping people shop?".
+Thanks for considering a contribution. This is a small, focused project — an MCP server for Alza.cz covering the catalog plus token-guarded account/checkout tools — and the bar for any change is "does it make agents better at helping people shop?".
+
+Looking for something to work on? See [ROADMAP.md](ROADMAP.md) and the [`good first issue`](https://github.com/lukabudik/alza-mcp/labels/good%20first%20issue) label. Comment on an issue before starting so work isn't duplicated.
 
 ## Quick start
 
@@ -44,7 +46,7 @@ scripts/            # validate-api & ops scripts
 
 Add a domain module under `src/domain/`. If it talks to a new upstream:
 
-- Prefer an official API with a documented schema (see how `pickup.ts` uses the AlzaBox OpenAPI).
+- Prefer an official API with a documented schema (see how `pickup.ts` reads AlzaBox lockers from Alza's public `/api/salesNetwork/v1/places` JSON API).
 - If you have to reverse-engineer, document the recipe in a top-of-file comment and reference any prior art.
 - Always plumb errors through the typed errors in `src/infra/errors.ts` so the server can return clean MCP errors.
 

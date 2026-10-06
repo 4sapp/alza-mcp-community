@@ -1,0 +1,470 @@
+{
+  "date": "2026-10-06",
+  "account": "authenticated E2E account (owner session; identifiers redacted)",
+  "product": {
+    "commodity_id": 12999617,
+    "code": "CEN178a",
+    "price_czk": 19
+  },
+  "route_discovery": {
+    "user_navigation_watchDogs": {
+      "webLink": "https://www.alza.cz/my-account/watchdog.htm",
+      "href": "https://www.alza.cz/api/users/<user_id>/v1/watchDogs?country=CZ",
+      "appLink": "userWatchDogs",
+      "enabled": true
+    },
+    "watchDogs_root_before": {
+      "self": {
+        "href": "https://www.alza.cz/api/users/<user_id>/v1/watchDogs?country=CZ",
+        "appLink": "userWatchDogs",
+        "enabled": true
+      },
+      "commodities": {
+        "href": "https://www.alza.cz/api/users/<user_id>/v1/watchDogs/commodities?country=CZ",
+        "appLink": "userWatchDogsCommodities",
+        "enabled": true
+      },
+      "searchForm": {
+        "href": "https://www.alza.cz/api/users/<user_id>/v1/watchDogs/search/form?country=CZ",
+        "appLink": "userWatchDogSearchForm",
+        "enabled": true
+      }
+    },
+    "watchDogs_commodities_before": {
+      "self": {
+        "href": "https://www.alza.cz/api/users/<user_id>/v1/watchDogs/commodities?country=CZ&limit=20",
+        "appLink": "userWatchDogsCommodities",
+        "enabled": true
+      },
+      "emptyInfo": {
+        "message": "Momentálně pro vás nehlídáme žádné produkty"
+      },
+      "paging": {
+        "limit": 20,
+        "size": 0,
+        "first": {
+          "href": "https://www.alza.cz/api/users/<user_id>/v1/watchDogs/commodities?country=CZ&limit=20",
+          "appLink": "userWatchDogsCommodities",
+          "enabled": true
+        },
+        "previous": null,
+        "next": null,
+        "last": null
+      },
+      "value": []
+    },
+    "watchDogs_search_form": "(captured; POST .../watchDogs/search/results with searchTerm >= 3 chars — not exercised)"
+  },
+  "raw_create_then_delete": {
+    "create": {
+      "at": "2026-10-06T21:39:36.584Z",
+      "dialogBefore": {
+        "deleteAction": null,
+        "formHref": "https://webapi.alza.cz/api/watchdog/v1?country=CZ&commodityClientId=<user_id>",
+        "formMethod": "POST"
+      },
+      "create": {
+        "ok": true,
+        "response": {
+          "self": {
+            "href": "https://webapi.alza.cz/api/watchdog/v1/<watchdog_id_1>",
+            "enabled": true
+          },
+          "actions": {
+            "delete": {
+              "name": "Delete watchdog",
+              "form": {
+                "method": "DELETE",
+                "value": null,
+                "isFormValid": false,
+                "rel": [
+                  "form"
+                ],
+                "href": "https://webapi.alza.cz/api/watchdog/v1/<watchdog_id_1>"
+              },
+              "enabled": true
+            },
+            "update": {
+              "name": "Update watchdog",
+              "form": {
+                "method": "PATCH",
+                "value": [
+                  {
+                    "name": "price",
+                    "value": 15,
+                    "itemType": "decimal",
+                    "isHidden": true,
+                    "isEnabled": true
+                  },
+                  {
+                    "name": "isTrackingStock",
+                    "value": true,
+                    "itemType": "boolean",
+                    "isHidden": true,
+                    "isEnabled": true
+                  }
+                ],
+                "rel": [
+                  "form"
+                ],
+                "href": "https://webapi.alza.cz/api/watchdog/v1/<watchdog_id_1>"
+              },
+              "enabled": true
+            }
+          },
+          "watchdogId": "<watchdog_id_1>",
+          "userPriceGroup": 8,
+          "commodityId": 12999617,
+          "email": "<account_email>",
+          "provisionId": 0,
+          "isTrackingStock": true,
+          "price": 15,
+          "priceWithVat": null,
+          "priceWithVatFormatted": null,
+          "countryId": 0,
+          "countryTranslationId": 1,
+          "eshopName": "alza.cz",
+          "userId": "<user_id>",
+          "created": "2026-10-06T23:39:37.25Z",
+          "isDisabled": false
+        }
+      },
+      "dialogAfter": {
+        "self": {
+          "href": "https://www.alza.cz/api/v1/users/<user_id>/products/12999617/watchdogDialog?country=CZ&showAvailability=False&trackIsInStock=True&trackPriceReduction=False",
+          "appLink": "productAvailabilityWatchdogDialog",
+          "enabled": true
+        },
+        "deleteAction": {
+          "appLink": "removeProductAvailabilityWatchdog",
+          "name": "Zrušit hlídaní",
+          "form": {
+            "method": "DELETE",
+            "value": null,
+            "isFormValid": false,
+            "rel": [
+              "form"
+            ],
+            "href": "https://webapi.alza.cz/api/watchdog/v1/<watchdog_id_1>?country=CZ&commodityClientId=<user_id>"
+          },
+          "enabled": true
+        },
+        "isTrackingPriceReduction": true,
+        "form": {
+          "method": "PATCH",
+          "value": [
+            {
+              "name": "commodityId",
+              "value": 12999617,
+              "itemType": "integer",
+              "isHidden": true,
+              "isEnabled": true
+            },
+            {
+              "name": "email",
+              "label": "Vás upozorníme na e-mail:",
+              "value": "<account_email>",
+              "itemType": "string",
+              "semanticItemType": "email",
+              "isEnabled": true
+            },
+            {
+              "name": "isTrackingStock",
+              "label": "Až bude zboží dostupné",
+              "value": true,
+              "itemType": "boolean",
+              "isRequired": false,
+              "isEnabled": true
+            },
+            {
+              "name": "price",
+              "label": "Při snížení ceny pod",
+              "placeholder": "19",
+              "value": 15,
+              "itemType": "decimal",
+              "isRequired": false,
+              "isEnabled": true,
+              "max": 19,
+              "min": 0
+            },
+            {
+              "name": "submitButton",
+              "label": "Potvrdit",
+              "itemType": "submitButton",
+              "isEnabled": true
+            }
+          ],
+          "rel": [
+            "form"
+          ],
+          "href": "https://webapi.alza.cz/api/watchdog/v1/<watchdog_id_1>?country=CZ&commodityClientId=<user_id>"
+        }
+      },
+      "listAfter": {
+        "self": {
+          "href": "https://www.alza.cz/api/users/<user_id>/v1/watchDogs/commodities?country=CZ&limit=20",
+          "appLink": "userWatchDogsCommodities",
+          "enabled": true
+        },
+        "emptyInfo": null,
+        "paging": {
+          "limit": 20,
+          "size": 1,
+          "first": {
+            "href": "https://www.alza.cz/api/users/<user_id>/v1/watchDogs/commodities?country=CZ&limit=20",
+            "appLink": "userWatchDogsCommodities",
+            "enabled": true
+          },
+          "previous": null,
+          "next": null,
+          "last": null
+        },
+        "value": [
+          {
+            "commodityName": "Tužka CENTROPEN 9511 tvrdosti HB, H a B, trojhranná - balení 4 ks",
+            "commodityImageUrl": "https://image.alza.cz/products/CEN178a/CEN178a.jpg?width=190&height=190",
+            "commodityUrl": "https://www.alza.cz/centropen-9511-tvrdosti-hb-h-a-b-trojhranna-baleni-4-ks-d12999617.htm",
+            "commodityDetail": {
+              "href": "https://www.alza.cz/api/router/legacy/catalog/product/12999617?pgrik=<pgrik>&ucik=<ucik>&country=CZ&electronicContentOnly=False",
+              "appLink": "catalogProductDetail",
+              "enabled": true
+            },
+            "priceInfoV2": {
+              "priceWithVat": "19,-",
+              "instalmentsPriceWithVat": null,
+              "comparePrice": null,
+              "pricePrefix": null,
+              "pricePostfix": null,
+              "priceDescription": null,
+              "priceType": 1,
+              "priceGroupType": 0,
+              "headerText": null,
+              "headerIconUrl": null,
+              "priceSave": null,
+              "explanationPriceAction": null,
+              "unitPriceWithVat": "19,-",
+              "unitName": "ks",
+              "priceWithoutVatNoCurrency": 15.7025,
+              "priceNoCurrency": 19
+            },
+            "displayType": 0,
+            "availabilityText": "Skladem > 50 ks",
+            "updateForm": {
+              "method": "PATCH",
+              "value": [
+                {
+                  "name": "isTrackingStock",
+                  "label": "Upozornit až bude produkt skladem",
+                  "value": true,
+                  "itemType": "boolean",
+                  "isRequired": false,
+                  "isEnabled": true
+                },
+                {
+                  "name": "price",
+                  "label": "Upozornit při snížení ceny pod",
+                  "value": 15,
+                  "itemType": "decimal",
+                  "isRequired": false,
+                  "isEnabled": true,
+                  "max": 19
+                }
+              ],
+              "rel": [
+                "edit-form"
+              ],
+              "href": "https://webapi.alza.cz/api/watchdog/v1/<watchdog_id_1>?country=CZ"
+            },
+            "deleteAction": {
+              "href": "https://www.alza.cz/api/anonymous/v1/watchDogs/<watchdog_id_1>/deleteForm?country=CZ",
+              "appLink": "watchDogDeleteForm",
+              "enabled": true
+            }
+          }
+        ]
+      }
+    },
+    "delete": {
+      "at": "2026-10-06T21:39:46.538Z",
+      "deleteAction": {
+        "appLink": "removeProductAvailabilityWatchdog",
+        "name": "Zrušit hlídaní",
+        "form": {
+          "method": "DELETE",
+          "value": null,
+          "isFormValid": false,
+          "rel": [
+            "form"
+          ],
+          "href": "https://webapi.alza.cz/api/watchdog/v1/<watchdog_id_1>?country=CZ&commodityClientId=<user_id>"
+        },
+        "enabled": true
+      },
+      "delete": {
+        "ok": true,
+        "response": null
+      },
+      "dialogAfterDelete": {
+        "deleteAction": null,
+        "formMethod": "POST",
+        "formHref": "https://webapi.alza.cz/api/watchdog/v1?country=CZ&commodityClientId=<user_id>"
+      },
+      "listAfterDelete": {
+        "self": {
+          "href": "https://www.alza.cz/api/users/<user_id>/v1/watchDogs/commodities?country=CZ&limit=20",
+          "appLink": "userWatchDogsCommodities",
+          "enabled": true
+        },
+        "emptyInfo": {
+          "message": "Momentálně pro vás nehlídáme žádné produkty"
+        },
+        "paging": {
+          "limit": 20,
+          "size": 0,
+          "first": {
+            "href": "https://www.alza.cz/api/users/<user_id>/v1/watchDogs/commodities?country=CZ&limit=20",
+            "appLink": "userWatchDogsCommodities",
+            "enabled": true
+          },
+          "previous": null,
+          "next": null,
+          "last": null
+        },
+        "value": []
+      }
+    }
+  },
+  "mcp_tool_run": [
+    {
+      "at": "2026-10-06T21:46:35.628Z",
+      "tool": "set_toolset",
+      "args": {
+        "id": "watchdogs",
+        "enabled": true
+      },
+      "isError": false,
+      "structuredContent": {
+        "id": "watchdogs",
+        "enabled": true,
+        "tools_affected": [
+          "watchdog_list",
+          "watchdog_set",
+          "watchdog_delete"
+        ]
+      }
+    },
+    {
+      "at": "2026-10-06T21:46:36.195Z",
+      "tool": "watchdog_list",
+      "args": {
+        "user_id": "<redacted>"
+      },
+      "isError": false,
+      "structuredContent": {
+        "count": 0,
+        "has_more": false,
+        "empty_message": "Momentálně pro vás nehlídáme žádné produkty",
+        "items": []
+      }
+    },
+    {
+      "at": "2026-10-06T21:46:36.196Z",
+      "tool": "prepare_mutation",
+      "args": {
+        "action": "watchdog_set"
+      },
+      "isError": false,
+      "structuredContent": {
+        "action": "watchdog_set",
+        "confirmationToken": "<one-time>"
+      }
+    },
+    {
+      "at": "2026-10-06T21:46:36.339Z",
+      "tool": "watchdog_set",
+      "args": {
+        "user_id": "<redacted>",
+        "commodity_id": 12999617,
+        "max_price": 15,
+        "track_stock": true,
+        "confirmation_token": "<one-time>"
+      },
+      "isError": false,
+      "structuredContent": {
+        "created": true,
+        "watchdog_id": "<watchdog_id_2>",
+        "commodity_id": 12999617,
+        "is_tracking_stock": true,
+        "max_price": 15,
+        "created_at": "2026-10-06T23:46:36.31Z",
+        "notification": "Alza emails the account's login address when the condition is met."
+      }
+    },
+    {
+      "at": "2026-10-06T21:46:36.395Z",
+      "tool": "watchdog_list",
+      "args": {
+        "user_id": "<redacted>"
+      },
+      "isError": false,
+      "structuredContent": {
+        "count": 1,
+        "has_more": false,
+        "empty_message": null,
+        "items": [
+          {
+            "watchdog_id": "<watchdog_id_2>",
+            "commodity_id": 12999617,
+            "name": "Tužka CENTROPEN 9511 tvrdosti HB, H a B, trojhranná - balení 4 ks",
+            "url": "https://www.alza.cz/centropen-9511-tvrdosti-hb-h-a-b-trojhranna-baleni-4-ks-d12999617.htm",
+            "current_price": 19,
+            "availability": "Skladem > 50 ks",
+            "is_tracking_stock": true,
+            "max_price": 15
+          }
+        ]
+      }
+    },
+    {
+      "at": "2026-10-06T21:46:36.395Z",
+      "tool": "prepare_mutation",
+      "args": {
+        "action": "watchdog_delete"
+      },
+      "isError": false,
+      "structuredContent": {
+        "action": "watchdog_delete",
+        "confirmationToken": "<one-time>"
+      }
+    },
+    {
+      "at": "2026-10-06T21:46:36.461Z",
+      "tool": "watchdog_delete",
+      "args": {
+        "user_id": "<redacted>",
+        "commodity_id": 12999617,
+        "confirmation_token": "<one-time>"
+      },
+      "isError": false,
+      "structuredContent": {
+        "deleted": true,
+        "watchdog_id": "<watchdog_id_2>",
+        "commodity_id": 12999617
+      }
+    },
+    {
+      "at": "2026-10-06T21:46:36.502Z",
+      "tool": "watchdog_list",
+      "args": {
+        "user_id": "<redacted>"
+      },
+      "isError": false,
+      "structuredContent": {
+        "count": 0,
+        "has_more": false,
+        "empty_message": "Momentálně pro vás nehlídáme žádné produkty",
+        "items": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,234 @@
+{
+  "date": "2026-10-06",
+  "session": "authenticated (owner token, refreshed via refresh_token; identifiers redacted)",
+  "cart_before": {
+    "basket_cnt": 3,
+    "basket_total_cnt": 5,
+    "pricePay": "531 Kč",
+    "deliveriesInfo": [
+      {
+        "deliveryId": 2680,
+        "deliveryGroupId": "<delivery_group_1>",
+        "parcelShopId": "<parcel_shop_id>",
+        "deliveryItemType": "AlzaBox"
+      },
+      {
+        "deliveryId": 2680,
+        "deliveryGroupId": "<delivery_group_2>",
+        "parcelShopId": "<parcel_shop_id>",
+        "deliveryItemType": "AlzaBox"
+      }
+    ],
+    "paymentId": 103,
+    "lines": [
+      {
+        "commodityId": 12582308,
+        "code": "SPTbiwo004",
+        "count": 1
+      },
+      {
+        "commodityId": 5303618,
+        "code": "HRAif8315",
+        "count": 1
+      },
+      {
+        "commodityId": 7229946,
+        "code": "FKP0383232",
+        "count": 3
+      }
+    ]
+  },
+  "delivery_options": {
+    "deliveryGroups": 2,
+    "deliveries_per_group": [
+      59,
+      56
+    ],
+    "payments": 12,
+    "select_action_counts_total_vs_nonNull": {
+      "beforeSelectAction": [
+        127,
+        0
+      ],
+      "afterSelectAction": [
+        127,
+        0
+      ],
+      "afterDeselectAction": [
+        127,
+        0
+      ]
+    },
+    "alzabox_2680_entry": {
+      "id": 2680,
+      "name": "AlzaBox",
+      "beforeSelectAction": null,
+      "afterSelectAction": null,
+      "afterDeselectAction": null,
+      "associatedItems_cnt": 0,
+      "isPersonal": true,
+      "canPickDeliveryTime": false
+    }
+  },
+  "select_pickup_point_call": {
+    "payload": {
+      "cardId": 0,
+      "deliveryGroups": [
+        {
+          "deliveryGroupId": "<delivery_group_1>",
+          "deliveryId": 2680,
+          "deliveryServicesIds": [],
+          "parcelShopId": "<parcel_shop_id>",
+          "timeFrameId": 0,
+          "timeSlotId": 0
+        }
+      ]
+    },
+    "note": "payload mirrors the selection already on the cart, so even a persisting call could not change state",
+    "ok": true,
+    "response_keys": [
+      "basket_cnt",
+      "basket_total_cnt",
+      "countryID",
+      "countryPhonePrefix",
+      "data",
+      "data_cnt",
+      "err",
+      "favCnt",
+      "msg",
+      "premiumBooks",
+      "premiumDelivery",
+      "premiumRenew",
+      "premiumValidTo",
+      "serverTime",
+      "types",
+      "user_id",
+      "user_name",
+      "vzt"
+    ],
+    "data": [
+      {
+        "id": 103,
+        "isLowCredit": false,
+        "price": "69 Kč",
+        "originalPrice": null,
+        "priceDecimal": 69,
+        "originalPriceDecimal": 0,
+        "isHidden": false,
+        "deliveryDiscountText": null,
+        "deliveryDiscountImgUrl": null,
+        "paymentPrice": "zdarma"
+      },
+      {
+        "id": 143,
+        "isLowCredit": false,
+        "price": "49 Kč",
+        "originalPrice": null,
+        "priceDecimal": 49,
+        "originalPriceDecimal": 0,
+        "isHidden": false,
+        "deliveryDiscountText": null,
+        "deliveryDiscountImgUrl": null,
+        "paymentPrice": "zdarma"
+      },
+      {
+        "id": 144,
+        "isLowCredit": false,
+        "price": "49 Kč",
+        "originalPrice": null,
+        "priceDecimal": 49,
+        "originalPriceDecimal": 0,
+        "isHidden": false,
+        "deliveryDiscountText": null,
+        "deliveryDiscountImgUrl": null,
+        "paymentPrice": "zdarma"
+      },
+      {
+        "id": 203,
+        "isLowCredit": false,
+        "price": "49 Kč",
+        "originalPrice": null,
+        "priceDecimal": 49,
+        "originalPriceDecimal": 0,
+        "isHidden": false,
+        "deliveryDiscountText": null,
+        "deliveryDiscountImgUrl": null,
+        "paymentPrice": "zdarma"
+      },
+      {
+        "id": 243,
+        "isLowCredit": false,
+        "price": "49 Kč",
+        "originalPrice": null,
+        "priceDecimal": 49,
+        "originalPriceDecimal": 0,
+        "isHidden": false,
+        "deliveryDiscountText": null,
+        "deliveryDiscountImgUrl": null,
+        "paymentPrice": "zdarma"
+      },
+      {
+        "id": 211,
+        "isLowCredit": false,
+        "price": "69 Kč",
+        "originalPrice": null,
+        "priceDecimal": 69,
+        "originalPriceDecimal": 0,
+        "isHidden": false,
+        "deliveryDiscountText": null,
+        "deliveryDiscountImgUrl": null,
+        "paymentPrice": "zdarma"
+      },
+      {
+        "id": 216,
+        "isLowCredit": false,
+        "price": "49 Kč",
+        "originalPrice": null,
+        "priceDecimal": 49,
+        "originalPriceDecimal": 0,
+        "isHidden": false,
+        "deliveryDiscountText": null,
+        "deliveryDiscountImgUrl": null,
+        "paymentPrice": "zdarma"
+      }
+    ]
+  },
+  "cart_after": {
+    "basket_cnt": 3,
+    "basket_total_cnt": 5,
+    "pricePay": "531 Kč",
+    "deliveriesInfo": [
+      {
+        "deliveryId": 2680,
+        "deliveryGroupId": "<delivery_group_1>",
+        "parcelShopId": "<parcel_shop_id>",
+        "deliveryItemType": "AlzaBox"
+      },
+      {
+        "deliveryId": 2680,
+        "deliveryGroupId": "<delivery_group_2>",
+        "parcelShopId": "<parcel_shop_id>",
+        "deliveryItemType": "AlzaBox"
+      }
+    ],
+    "paymentId": 103,
+    "lines": [
+      {
+        "commodityId": 12582308,
+        "code": "SPTbiwo004",
+        "count": 1
+      },
+      {
+        "commodityId": 5303618,
+        "code": "HRAif8315",
+        "count": 1
+      },
+      {
+        "commodityId": 7229946,
+        "code": "FKP0383232",
+        "count": 3
+      }
+    ]
+  },
+  "cart_unchanged": true
+}

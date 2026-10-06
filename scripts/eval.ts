@@ -41,7 +41,7 @@ const outPath = resolve(evidenceDir, `eval-${today}.json`);
 
 const CANONICAL_ORDER = [
   // catalog (server.ts order)
-  "search_products", "get_product", "get_product_reviews", "find_pickup_points", "list_category_filters", "list_categories",
+  "search_products", "get_product", "compare_products", "get_product_reviews", "recommend_alternatives", "find_pickup_points", "list_category_filters", "list_categories", "get_deals", "autocomplete",
   // account.ts order
   "auth_discovery", "auth_start", "auth_exchange", "mobile_read", "prepare_mutation", "mutate_list",
   "account_status", "cart", "add_to_cart", "delivery_options", "select_pickup_point",
@@ -54,6 +54,10 @@ const CANONICAL_ORDER = [
   "change_password", "two_factor_set", "phone_change", "email_change", "delete_account",
   "review_submit", "complaint_claims", "subscription_overview", "subscription_activate",
   "subscription_update_installment", "upload_attachment", "web_place_order", "cancel_order",
+  // watchdog.ts order
+  "watchdog_list", "watchdog_set", "watchdog_delete",
+  // pc-builder.ts (issue #15)
+  "pc_build_check", "pc_build_suggest",
   // toolsets.ts meta-tools (registered last, after every domain tool)
   "list_toolsets", "set_toolset",
 ];
@@ -136,19 +140,19 @@ async function run(): Promise<void> {
 
   scenarios.push(await scenario("registration-surface", false, async (c) => {
     const tools = session.tools;
-    check(c, "tool count is 56 (54 domain tools + list_toolsets + set_toolset)", tools.length === 56, String(tools.length));
+    check(c, "tool count is 65 (63 domain tools + list_toolsets + set_toolset)", tools.length === 65, String(tools.length));
     check(c, "registration order is deterministic", JSON.stringify(tools.map((t) => t.name)) === JSON.stringify(CANONICAL_ORDER), JSON.stringify(tools.map((t) => t.name)));
     const missing = tools.filter((t) => !t.title || !t.description || t.description.length < 40);
     check(c, "every tool has a ≥40-char description and a title", missing.length === 0, missing.map((t) => t.name).join(","));
     const noOut = tools.filter((t) => !t.outputSchema || (t.outputSchema as Record<string, unknown>).type !== "object");
     check(c, "every tool publishes an object outputSchema", noOut.length === 0, noOut.map((t) => t.name).join(","));
-    check(c, "outputSchema map covers all 54 domain-tool names", Object.keys(OUTPUT_SCHEMAS).length === 54, String(Object.keys(OUTPUT_SCHEMAS).length));
+    check(c, "outputSchema map covers all 63 domain-tool names", Object.keys(OUTPUT_SCHEMAS).length === 63, String(Object.keys(OUTPUT_SCHEMAS).length));
     const readOnly = tools.filter((t) => t.annotations?.readOnlyHint === true).map((t) => t.name);
     const destructive = tools.filter((t) => t.annotations?.destructiveHint === true).map((t) => t.name);
     const mutating = tools.filter((t) => t.annotations?.readOnlyHint === false).map((t) => t.name);
-    check(c, "readOnlyHint true on exactly 31", readOnly.length === 31, String(readOnly.length));
+    check(c, "readOnlyHint true on exactly 38", readOnly.length === 38, String(readOnly.length));
     check(c, "destructiveHint true on exactly 10", destructive.length === 10, String(destructive.length));
-    check(c, "readOnlyHint false (mutating) on exactly 25", mutating.length === 25, String(mutating.length));
+    check(c, "readOnlyHint false (mutating) on exactly 27", mutating.length === 27, String(mutating.length));
   }));
 
   scenarios.push(await scenario("catalog-read", true, async (c) => {

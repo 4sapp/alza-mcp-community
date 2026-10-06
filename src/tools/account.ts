@@ -24,7 +24,7 @@ const AUTH_PREREQ =
 
 const LOW_RISK_ACTIONS = [
   "create", "rename", "delete", "add", "remove", "move", "set_country", "set_isic",
-  "add_gift", "add_order_service", "set_watchdog", "send_feedback", "submit_discussion", "rate_discussion",
+  "add_gift", "add_order_service", "send_feedback", "submit_discussion", "rate_discussion",
   "coupon_add", "coupon_remove", "basket_update", "basket_unlock",
   "gdpr_export",
 ] as const;
@@ -32,10 +32,13 @@ const LOW_RISK_ACTIONS = [
 const HIGH_IMPACT_ACTIONS = [
   "after_order_payment", "register", "address_create", "address_edit", "address_delete",
   "review_submit", "subscription_activate", "subscription_update_installment", "attachment_upload",
-  "web_place_order", "web_after_order_payment",
+  "web_place_order", "web_after_order_payment", "cancel_order",
   // account credential/identity mutations (A14–A18, 2026-09-22)
   "change_password", "two_factor_set", "phone_change", "email_change", "delete_account",
 ] as const;
+
+/** Typed account writes outside the high-impact set (native watchdog, 2026-10-06). */
+const TYPED_LOW_RISK_ACTIONS = ["watchdog_set", "watchdog_delete"] as const;
 
 const READ_OPERATIONS = [
   "url_info", "legacy_product", "router_product", "quick_order_summary", "user_review",
@@ -80,7 +83,9 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           description:
             "Start an OAuth 2.0 PKCE sign-in for the Alza mobile API: returns an authorization URL plus a state value. " +
             "Use when `account_status` reports no loaded token, or when account tools start failing with authentication errors. " +
-            "Flow: open the returned authorization URL in a browser, sign in to Alza, the app redirects to `alza://identity?code=...&state=...` — then call `auth_exchange` with that code and this state. " +
+            "Flow: open the returned authorization URL in a browser, sign in to Alza, the app redirects to `alza://identity?code=...&state=...` — then call `auth_exchange` with that redirect URL (or its code and this state). " +
+            "Desktop browsers cannot open the `alza://` scheme, so the page appears to stall and after ~40 s shows \"Při přihlášení došlo k chybě.\" — that message is a client-side timer, not a failed sign-in. " +
+            "Tell the user to open DevTools before signing in (Network tab with \"Preserve log\" on) and copy the `alza://identity?code=...` URL from the redirect's `Location` header, or from the Console error about failing to launch `alza://`. The code is short-lived, so exchange it promptly. " +
             "This call only creates a local PKCE session: the user's credentials never enter the MCP and nothing changes on Alza's side. " +
             "Do not call it repeatedly for one sign-in — each call supersedes the previous state.",
           inputSchema: {},
@@ -101,12 +106,12 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           description:
             "Complete the OAuth 2.0 PKCE sign-in: exchange the authorization code for mobile API tokens and load them into this server. " +
             "Use immediately after the user finishes the `auth_start` flow in the browser. " +
-            "Pass exactly the `code` and `state` from the `alza://identity` redirect — never a password and never a refresh token here. " +
+            "Pass the whole `alza://identity?code=...&state=...` redirect URL as `code` (state is then read from it), or the bare `code` plus `state` — never a password and never a refresh token here. " +
             "Fails if the state does not match a pending `auth_start` session (start over from `auth_start` in that case). " +
             "Side effect: replaces the token set currently loaded in this process; afterwards account tools such as `cart`, `profile`, and `order` are authenticated.",
           inputSchema: {
-            code: z.string().min(1).describe("Authorization code from the `alza://identity` redirect (the `code` query parameter)."),
-            state: z.string().min(1).describe("State value returned by `auth_start`; must match the pending PKCE session exactly."),
+            code: z.string().min(1).describe("Authorization code from the `alza://identity` redirect (the `code` query parameter), or the full redirect URL."),
+            state: z.string().min(1).optional().describe("State value returned by `auth_start`; must match the pending PKCE session exactly. Optional when `code` is the full redirect URL."),
           },
           annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["auth_exchange"],
@@ -148,11 +153,11 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           title: "Prepare an Alza mutation",
           description:
             "Start a two-step mutation by returning a one-time confirmation token bound to exactly one action. This call itself sends nothing to Alza. " +
-            "Use it before the high-impact typed mutations — `register` (action `register`), `address_upsert` (`address_create` or `address_edit`), `address_delete` (`address_delete`), `pay_after_order` (`after_order_payment`), `web_place_order` (`web_place_order`), `web_pay_after_order` (`web_after_order_payment`), `review_submit` (`review_submit`), `subscription_activate` (`subscription_activate`), `subscription_update_installment` (`subscription_update_installment`), `upload_attachment` (`attachment_upload`) — and before any low-risk `mutate_list` action (" + LOW_RISK_ACTIONS.map((a) => "`" + a + "`").join(", ") + "). " +
+            "Use it before the high-impact typed mutations — `register` (action `register`), `address_upsert` (`address_create` or `address_edit`), `address_delete` (`address_delete`), `pay_after_order` (`after_order_payment`), `web_place_order` (`web_place_order`), `web_pay_after_order` (`web_after_order_payment`), `cancel_order` (`cancel_order`), `review_submit` (`review_submit`), `subscription_activate` (`subscription_activate`), `subscription_update_installment` (`subscription_update_installment`), `upload_attachment` (`attachment_upload`), `watchdog_set` (`watchdog_set`), `watchdog_delete` (`watchdog_delete`) — and before any low-risk `mutate_list` action (" + LOW_RISK_ACTIONS.map((a) => "`" + a + "`").join(", ") + "). " +
             "Pass the returned token as `confirmation_token` on the matching call; the token is single-use and only valid for the exact action you prepared. " +
             "Do not use for read-only tools, and not for `add_to_cart` (which is a low-risk cart write that needs no token).",
           inputSchema: {
-            action: z.enum([...LOW_RISK_ACTIONS, ...HIGH_IMPACT_ACTIONS]).describe("Which mutation you are about to perform; the token will only be accepted by that action's tool."),
+            action: z.enum([...LOW_RISK_ACTIONS, ...HIGH_IMPACT_ACTIONS, ...TYPED_LOW_RISK_ACTIONS]).describe("Which mutation you are about to perform; the token will only be accepted by that action's tool."),
           },
           annotations: { readOnlyHint: true, idempotentHint: false, destructiveHint: false, openWorldHint: false },
           outputSchema: OUTPUT_SCHEMAS["prepare_mutation"],
@@ -170,7 +175,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           title: "Execute a whitelisted Alza mutation",
           description:
             "Execute one low-risk, APK-confirmed mutation using a one-time token from `prepare_mutation`. " +
-            "Use for shopping-list operations (`create`/`rename`/`delete`/`add`/`remove`/`move`), account settings (`set_country`, `set_isic`), `add_gift`, `add_order_service`, `set_watchdog`, `send_feedback`, `submit_discussion`, `rate_discussion`, coupons (`coupon_add` takes `{coupon: \"CODE\"}`; `coupon_remove` takes `{couponId: <int>}` — the id from a prior `cart` read), basket flags (`basket_update` takes `{basket_id, flag?, is_delayed_payment?}`; `basket_unlock`), and the GDPR data export (`gdpr_export` takes `{user_id}` — queues the XML personal-data export to the account's own login email, 202 Accepted; read `gdpr_info` first). " +
+            "Use for shopping-list operations (`create`/`rename`/`delete`/`add`/`remove`/`move`), account settings (`set_country`, `set_isic`), `add_gift`, `add_order_service`, `send_feedback`, `submit_discussion`, `rate_discussion`, coupons (`coupon_add` takes `{coupon: \"CODE\"}`; `coupon_remove` takes `{couponId: <int>}` — the id from a prior `cart` read), basket flags (`basket_update` takes `{basket_id, flag?, is_delayed_payment?}`; `basket_unlock`), and the GDPR data export (`gdpr_export` takes `{user_id}` — queues the XML personal-data export to the account's own login email, 202 Accepted; read `gdpr_info` first). " +
             "Do not use for high-impact mutations (order, payment, registration, address, review, subscription, attachment) — each has its own typed tool with its own token. " +
             "The `payload` fields must match the mobile DTO for the chosen action exactly. " +
             "Side effect: persists the change on the user's Alza account. Example: `mutate_list({action: \"coupon_add\", confirmation_token: \"...\", payload: {coupon: \"WELCOME10\"}})`.",
@@ -281,16 +286,16 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
       return server.registerTool(
         "select_pickup_point",
         {
-          title: "Select an AlzaBox / pickup point",
+          title: "Delivery → payment associations (does NOT pick a pickup point)",
           description:
-            "Associate a chosen pickup point (AlzaBox parcel shop or AlzaShop) with the current checkout by submitting the mobile API's DeliveryPaymentAssociation payload. " +
-            "Use after `delivery_options` has returned the association object and the user has picked a concrete pickup point. " +
-            "The `association` object must be copied verbatim from the current `delivery_options` response — never hand-craft it. " +
-            "Caveat (2026-09-26): in an anonymous (no-token) session, `delivery_options`' delivery entries carry null `beforeSelectAction`/`afterSelectAction` — no association form to copy — and a hand-crafted `getDeliveryAssociations`-shaped payload returns what looks like a payment-fee list, not per-location AlzaBox associations. Not yet re-verified against a real authenticated session where the server-driven form may differ; treat this tool's AlzaBox flow as unresolved pending that re-test (see docs/gap-analysis.md), and prefer the live-verified `add_to_cart` → `delivery_options` → `web_pickup_places` → `web_place_order` chain for a working AlzaBox order end to end. " +
-            "Side effect: updates the delivery selection for the current checkout session (does not submit the order — that is `place_order` or `web_place_order`). " +
+            "Despite the name, this tool does not select an AlzaBox or pickup point. It POSTs a delivery selection to the mobile `getDeliveryAssociations` route and returns the payment methods that work with that delivery, each with the resulting delivery price (`data[]`: payment `id` such as 103/143/144/203, `price`, `paymentPrice`, `isLowCredit`, `isHidden`). " +
+            "This was re-tested live on 2026-10-06 against an authenticated cart. All 127 entries in `delivery_options` (115 deliveries across 2 groups plus 12 payments) had null `beforeSelectAction`/`afterSelectAction`, so the server never provides a pickup-point association form. The authenticated response was the same payment-association list the anonymous run returned on 2026-09-26 (docs/gap-analysis.md, docs/live-evidence/select-pickup-point-auth-retest-2026-10-06.md). " +
+            "To actually pick an AlzaBox or pickup point and order, use `add_to_cart`, then `delivery_options` (read `orderId`/`groupId` from the AlzaBox option's `deliveryOption.href`), then `web_pickup_places` (choose a place), then `web_place_order` with that place's `parcel_shop_id`. " +
+            "Use this tool only to check which payment methods (and delivery fee) apply to a delivery you already know. The payload is `{cardId: 0, deliveryGroups: [{deliveryGroupId, deliveryId, parcelShopId, deliveryServicesIds: [], timeFrameId: 0, timeSlotId: 0}]}`, built from the `delivery_options`/`cart` ids. " +
+            "No change to the cart, delivery, or payment selection was observed (2026-10-06), and the call never submits an order. " +
             AUTH_PREREQ,
           inputSchema: {
-            association: jsonObject.describe("The DeliveryPaymentAssociation object copied from the `delivery_options` response for the chosen pickup point."),
+            association: jsonObject.describe("Delivery selection: `{cardId: 0, deliveryGroups: [{deliveryGroupId, deliveryId, parcelShopId, deliveryServicesIds: [], timeFrameId: 0, timeSlotId: 0}]}`, with ids from `delivery_options`/`cart`."),
           },
           annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["select_pickup_point"],
