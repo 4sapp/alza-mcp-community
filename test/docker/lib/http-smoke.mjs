@@ -61,8 +61,17 @@ const locked = await B.client.callTool({ name: "set_toolset", arguments: { id: "
 pass("http-account-locked", locked.isError === true && /locked/i.test(text(locked)), text(locked).slice(0, 160));
 const ts = await B.client.callTool({ name: "list_toolsets", arguments: {} });
 const sets = ts.structuredContent?.toolsets ?? [];
-pass("http-list_toolsets-locked", sets.length > 1 && sets.filter((s) => s.id !== "catalog").every((s) => s.locked),
-  `${sets.filter((s) => s.locked).length}/${sets.length} toolsets locked; unlocked: ${sets.filter((s) => !s.locked).map((s) => s.id).join(",")}`);
+// Policy: only anonymous read-only toolsets may stay unlocked on HTTP. Rather than hard-coding
+// their ids, enable every unlocked toolset in session B and require all its tools to be readOnlyHint.
+const unlocked = sets.filter((s) => !s.locked);
+for (const s of unlocked) await B.client.callTool({ name: "set_toolset", arguments: { id: s.id, enabled: true } });
+const listed = (await B.client.listTools()).tools;
+const writable = listed.filter((t) => unlocked.some((s) => s.tools.includes(t.name)) && t.annotations?.readOnlyHint !== true).map((t) => t.name);
+const mustLock = ["auth", "basket_and_checkout"].filter((id) => sets.some((s) => s.id === id));
+pass("http-list_toolsets-locked", sets.length > 1 && unlocked.some((s) => s.id === "catalog") && writable.length === 0 && mustLock.every((id) => sets.find((s) => s.id === id).locked),
+  `${sets.length - unlocked.length}/${sets.length} toolsets locked; unlocked: ${unlocked.map((s) => s.id).join(",")} (` +
+  (writable.length ? `NOT read-only: ${writable.join(",")}` : `all ${listed.filter((t) => unlocked.some((s) => s.tools.includes(t.name))).length} of their tools are readOnlyHint`) + ")");
+for (const s of unlocked) if (s.id !== "catalog") await B.client.callTool({ name: "set_toolset", arguments: { id: s.id, enabled: false } });
 
 // --- protocol / security edges with raw fetch
 const rpc = (body, headers = {}) =>

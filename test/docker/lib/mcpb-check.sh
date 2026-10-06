@@ -64,8 +64,15 @@ for f in manifest.json dist/index.js node_modules/@modelcontextprotocol/sdk/pack
   [ -e "$f" ] || { check mcpb-contents FAIL "bundle lacks $f"; }
 done
 check mcpb-contents PASS "manifest.json, dist/, node_modules (prod deps) present; $(find . -type f | wc -l) files"
-if [ -f scripts/cf-transport.py ]; then check mcpb-sidecar INFO "scripts/cf-transport.py bundled"
-else check mcpb-sidecar WARN "scripts/cf-transport.py not in the bundle: account/OAuth calls lose the Chrome-fingerprint transport (falls back to plain fetch/browser)"; fi
+# The bundle must ship the Chrome-fingerprint sidecar like the npm package does.
+if [ -f scripts/cf-transport.py ] && [ -f scripts/ensure-cf-venv.sh ]; then
+  check mcpb-sidecar PASS "scripts/cf-transport.py + scripts/ensure-cf-venv.sh bundled"
+else
+  check mcpb-sidecar FAIL "sidecar not in the bundle: account/OAuth calls lose the Chrome-fingerprint transport"
+fi
+pkg_files_missing="$(node -e 'const p=require("./package.json");const fs=require("fs");console.log((p.files||[]).filter(f=>!fs.existsSync(f)).join(" "))')"
+if [ -z "$pkg_files_missing" ]; then check mcpb-package-files PASS "every package.json \"files\" entry is in the bundle"
+else check mcpb-package-files FAIL "missing from bundle: $pkg_files_missing"; fi
 
 [ "$(node -p 'require("./manifest.json").server.entry_point')" = dist/index.js ] && [ -f dist/index.js ] \
   && check mcpb-entry_point PASS "server.entry_point dist/index.js exists" || check mcpb-entry_point FAIL "entry_point missing"

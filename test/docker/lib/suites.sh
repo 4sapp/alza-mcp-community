@@ -59,9 +59,14 @@ suite_mcpb() {
   registry_up || return
   local stage="$OUT/mcpb-src"
   rm -rf "$stage" "$OUT/alza-mcp.mcpb" && mkdir -p "$stage/scripts"
-  cp -a "$SOURCE/dist" "$SOURCE/mcpb" "$SOURCE/package.json" "$SOURCE/package-lock.json" "$SOURCE/LICENSE" "$SOURCE/README.md" "$stage/"
+  # Stage what build-mcpb.sh reads: every package.json "files" entry, the manifest,
+  # package*.json and the build script itself (no node_modules, no repo extras).
+  local f
+  while IFS= read -r f; do
+    mkdir -p "$stage/$(dirname "$f")" && cp -a "$SOURCE/$f" "$stage/$f"
+  done < <(node -e "require('$SOURCE/package.json').files.forEach((f) => console.log(f))")
+  cp -a "$SOURCE/mcpb" "$SOURCE/package.json" "$SOURCE/package-lock.json" "$stage/"
   cp -a "$SOURCE/scripts/build-mcpb.sh" "$stage/scripts/"
-  [ -d "$SOURCE/scripts" ] && cp -a "$SOURCE/scripts/cf-transport.py" "$SOURCE/scripts/ensure-cf-venv.sh" "$stage/scripts/" 2>/dev/null
   docker run --rm "${LABEL[@]}" --name "$P-mcpb-build" --network "$NET" --user node \
     -e PHASE=build -e NPM_CONFIG_REGISTRY="$REGISTRY_URL/" -e HOME=/home/node \
     -v "$stage:/src:ro" -v "$HD/lib:/harness/lib:ro" -v "$OUT:/out" \
