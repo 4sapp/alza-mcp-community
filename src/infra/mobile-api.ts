@@ -28,6 +28,13 @@ export interface MobileApiOptions {
    * fingerprint). Falls back to global fetch when absent.
    */
   fetchImpl?: FetchLike;
+  /**
+   * Auto-load the OAuth token store (ALZA_TOKEN_FILE). Default true (stdio,
+   * single user). The Streamable HTTP transport passes false unless the
+   * operator explicitly opts in, because the store is single-user by design
+   * and must never be shared by every session of a multi-user host.
+   */
+  loadTokenFile?: boolean;
 }
 
 /** fetch-shaped transport (the sidecar adapter satisfies this). */
@@ -87,7 +94,7 @@ export class MobileApi {
     this.browser = opts.browser;
     this.httpFetch = opts.httpFetch;
     this.fetchImpl = opts.fetchImpl;
-    const stored = this.readStoredTokens();
+    const stored = opts.loadTokenFile === false ? undefined : this.readStoredTokens();
     const explicitVisitor = opts.visitorId ?? process.env.ALZA_VISITOR_ID;
     this.visitorId = explicitVisitor ?? stored?.visitor_id ?? randomUUID();
     this.userId = opts.userId;
@@ -381,6 +388,12 @@ export class MobileApi {
     return this.request("/services/restservice.svc/v1/getProductByEANlist", { method: "POST", body: JSON.stringify({ eanList: eans }) });
   }
 
+  /** Search-box suggestions (live-verified 2026-10-06): anonymous webapi GET, no token. */
+  async whisper(searchTerm: string): Promise<unknown> {
+    const q = `country=CZ&visitor=${encodeURIComponent(this.visitorId)}&searchTerm=${encodeURIComponent(searchTerm)}`;
+    return this.request(`https://webapi.alza.cz/api/anonymous/search/whisperer/v1/whisper?${q}`);
+  }
+
   async search(searchTerm: string, page = 0): Promise<unknown> {
     return this.request("/services/restservice.svc/v5/search", { method: "POST", body: JSON.stringify({ searchTerm, id: 0, type: "PRODUCTION", typeId: 0, orderBy: 0, page, availabilityType: 0, selectedBranches: [], params: [], producers: [], sendPrices: false }) });
   }
@@ -460,8 +473,10 @@ export class MobileApi {
   // is SPA-404 on www and policy-403 on webapi; the app actually reads reviews from server-provided
   // hrefs (webapi.alza.cz/api/catalog/commodities/{id}/reviews — live-verified 200, includes the
   // user's own review with a templated userReviewActions form when one exists).
-  async commodityReviews(commodityId: number): Promise<unknown> {
-    return this.request(`https://webapi.alza.cz/api/catalog/commodities/${commodityId}/reviews?country=CZ&limit=5`);
+  async commodityReviews(commodityId: number, opts: { limit?: number; offset?: number } = {}): Promise<unknown> {
+    const limit = opts.limit ?? 5;
+    const offset = opts.offset ? `&offset=${opts.offset}` : "";
+    return this.request(`https://webapi.alza.cz/api/catalog/commodities/${commodityId}/reviews?country=CZ&limit=${limit}${offset}`);
   }
 
   async discussionPosts(commodityId: number, pageStart = 0, options: { parentId?: number; showOnlyWithoutAnswer?: boolean; orderBy?: number } = {}): Promise<unknown> {
@@ -484,7 +499,6 @@ export class MobileApi {
   async addGift(payload: { rangeIdsGiftCodes: Array<{ priceRangeId: number; giftCodes: string[] }> }): Promise<unknown> { return this.request("/services/restservice.svc/v2/addGift", { method: "POST", body: JSON.stringify(payload) }); }
   // Live correction (2026-09-10, row O9): the first path segment binds to orderItemId (Int32) per server ModelState.
   async addOrderService(orderItemId: string | number, enabled: boolean, selected: boolean): Promise<unknown> { return this.request(`/services/restservice.svc/v1/addOrderService/${orderItemId}/${enabled ? 1 : 0}/${selected ? 1 : 0}`); }
-  async setWatchdog(payload: { commodityId: number; email: string; isTrackingStock: boolean; price?: number }): Promise<unknown> { return this.request("/api/watchdog/v1", { method: "POST", body: JSON.stringify(payload) }); }
   async sendFeedback(payload: { text: string; email?: string; info: string }): Promise<unknown> { return this.request("/services/restservice.svc/v1/feedback", { method: "POST", body: JSON.stringify(payload) }); }
 
   async orderHelpdeskQuestions(): Promise<unknown> { return this.request("/api/orders/v1/helpdesk/questions"); }
@@ -785,6 +799,45 @@ export class MobileApi {
       method: "DELETE",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ acknowledgeAndDelete: true }),
+    });
+  }
+
+  /** B9 family (live-verified 2026-10-06): the per-product watchdog dialog
+   * (`productAvailabilityWatchdogDialog`). Carries the create form (POST
+   * `webapi.alza.cz/api/watchdog/v1`, fields commodityId/email/isTrackingStock/
+   * price with `max` = current price, email pre-filled with the login address)
+   * and, once a watchdog exists for the product, a `deleteAction`
+   * (`removeProductAvailabilityWatchdog`, DELETE `.../watchdog/v1/{watchdogId}`). */
+  async watchdogDialog(userId: string, commodityId: number): Promise<unknown> {
+    return this.request(`/api/v1/users/${encodeURIComponent(userId)}/products/${encodeURIComponent(commodityId)}/watchdogDialog?country=CZ`);
+  }
+
+  /** B9a (live-verified 2026-10-06): the user's watchdog list
+   * (`userWatchDogsCommodities`, from the user navigation's `watchDogs` link).
+   * Paged `{emptyInfo, paging, value[]}`; each item carries `updateForm`
+   * (PATCH `.../watchdog/v1/{watchdogId}`) and `deleteAction`. */
+  async watchdogList(userId: string, limit?: number): Promise<unknown> {
+    const q = new URLSearchParams({ country: "CZ" });
+    if (limit !== undefined) q.set("limit", String(limit));
+    return this.request(`/api/users/${encodeURIComponent(userId)}/v1/watchDogs/commodities?${q.toString()}`);
+  }
+
+  /** B9 (live-verified 2026-10-06): create a watchdog — the dialog form's
+   * target. 200 with `{watchdogId, commodityId, isTrackingStock, price, created,
+   * actions:{delete, update}}` (the response also echoes the email). */
+  async watchdogCreate(userId: string, payload: { commodityId: number; email: string; isTrackingStock: boolean; price: number | null }): Promise<unknown> {
+    return this.request(`https://webapi.alza.cz/api/watchdog/v1?country=CZ&commodityClientId=${encodeURIComponent(userId)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /** B9b (live-verified 2026-10-06): delete a watchdog — the dialog's
+   * `deleteAction` target. 2xx with an empty body. */
+  async watchdogDelete(userId: string, watchdogId: string): Promise<unknown> {
+    return this.request(`https://webapi.alza.cz/api/watchdog/v1/${encodeURIComponent(watchdogId)}?country=CZ&commodityClientId=${encodeURIComponent(userId)}`, {
+      method: "DELETE",
     });
   }
 

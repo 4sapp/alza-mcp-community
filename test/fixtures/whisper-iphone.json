@@ -1,0 +1,410 @@
+{
+ "self": {
+  "href": "https://webapi.alza.cz/api/anonymous/search/whisperer/v1/whisper?searchTerm=iphone&country=CZ",
+  "appLink": "whisper",
+  "enabled": true
+ },
+ "articles": [
+  {
+   "clickAction": {
+    "href": "https://www.alza.cz/apple-airpods-5-recenze?evt=ac&pos=1&ste=art",
+    "appLink": "webView",
+    "name": "Apple AirPods 5 mají jeden hlavní cíl: Nechat iPhone v kapse",
+    "enabled": true,
+    "analytics": {
+     "actions": {
+      "onClick": {
+       "data": {
+        "search_term": "iphone",
+        "search_vs_auto": "autocomplete",
+        "search_autosection": "article",
+        "search_variant": "Algolia"
+       },
+       "event": "search",
+       "reportAction": null
+      }
+     }
+    }
+   }
+  },
+  {
+   "clickAction": {
+    "href": "https://www.alza.cz/iphone-duo-recenze?evt=ac&pos=2&ste=art",
+    "appLink": "webView",
+    "name": "iPhone Duo (PREVIEW): První skládací iPhone je konečně tady. Apple čekal dlouho, teď chce ukázat, že to mělo smysl",
+    "enabled": true,
+    "analytics": {
+     "actions": {
+      "onClick": {
+       "data": {
+        "search_term": "iphone",
+        "search_vs_auto": "autocomplete",
+        "search_autosection": "article",
+        "search_variant": "Algolia"
+       },
+       "event": "search",
+       "reportAction": null
+      }
+     }
+    }
+   }
+  },
+  {
+   "clickAction": {
+    "href": "https://www.alza.cz/iphone-18-pro-recenze?evt=ac&pos=3&ste=art",
+    "appLink": "webView",
+    "name": "iPhone 18 Pro dostává rekordně dlouhou výdrž, 2nm čip A20 Pro, variabilní clonu a také mírně zdražuje",
+    "enabled": true,
+    "analytics": {
+     "actions": {
+      "onClick": {
+       "data": {
+        "search_term": "iphone",
+        "search_vs_auto": "autocomplete",
+        "search_autosection": "article",
+        "search_variant": "Algolia"
+       },
+       "event": "search",
+       "reportAction": null
+      }
+     }
+    }
+   }
+  }
+ ],
+ "categories": [
+  {
+   "clickAction": {
+    "webLink": "https://www.alza.cz/iphone/18851638.htm?evt=ac&pos=1&ste=cate",
+    "href": "https://www.alza.cz/Services/RestService.svc/v1/category/18851638?T=CATEGORY",
+    "appLink": "catalogCategory",
+    "name": "Mobilní telefony iPhone",
+    "enabled": true,
+    "analytics": {
+     "actions": {
+      "onClick": {
+       "data": {
+        "search_term": "iphone",
+        "search_vs_auto": "autocomplete",
+        "search_autosection": "category",
+        "search_variant": "Algolia"
+       },
+       "event": "search",
+       "reportAction": null
+      }
+     }
+    }
+   }
+  },
+  {
+   "clickAction": {
+    "webLink": "https://www.alza.cz/mobilni-telefony-apple-iphone-17/18918313.htm?evt=ac&pos=2&ste=cate",
+    "href": "https://www.alza.cz/Services/RestService.svc/v1/category/18918313?T=CATEGORY",
+    "appLink": "catalogCategory",
+    "name": "Mobilní telefony Apple iPhone 17",
+    "enabled": true,
+    "analytics": {
+     "actions": {
+      "onClick": {
+       "data": {
+        "search_term": "iphone",
+        "search_vs_auto": "autocomplete",
+        "search_autosection": "category",
+        "search_variant": "Algolia"
+       },
+       "event": "search",
+       "reportAction": null
+      }
+     }
+    }
+   }
+  },
+  {
+   "clickAction": {
+    "webLink": "https://www.alza.cz/iphone-17-pro/18918315.htm?evt=ac&pos=3&ste=cate",
+    "href": "https://www.alza.cz/Services/RestService.svc/v1/category/18918315?T=CATEGORY",
+    "appLink": "catalogCategory",
+    "name": "iPhone 17 Pro",
+    "enabled": true,
+    "analytics": {
+     "actions": {
+      "onClick": {
+       "data": {
+        "search_term": "iphone",
+        "search_vs_auto": "autocomplete",
+        "search_autosection": "category",
+        "search_variant": "Algolia"
+       },
+       "event": "search",
+       "reportAction": null
+      }
+     }
+    }
+   }
+  }
+ ],
+ "commodities": [
+  {
+   "imageUrl": "https://image.alza.cz/products/RI055b3/RI055b3.jpg",
+   "clickAction": {
+    "webLink": "https://www.alza.cz/iphone-17-pro-256gb-stribrna-d13078788.htm?evt=ac&pos=1&ste=com&sqid=Algolia_9f5fb62c65d7e0a770be791353e942b8",
+    "href": "https://www.alza.cz/api/legacy/catalog/v14/external/product/13078788",
+    "appLink": "catalogProductDetail",
+    "name": "iPhone 17 Pro 256GB stříbrná",
+    "enabled": true,
+    "analytics": {
+     "actions": {
+      "onClick": {
+       "data": {
+        "search_term": "iphone",
+        "search_vs_auto": "autocomplete",
+        "search_autosection": "item",
+        "search_variant": "Algolia"
+       },
+       "event": "search",
+       "reportAction": null
+      }
+     }
+    }
+   },
+   "isFavourite": false,
+   "wearDescription": "",
+   "buySomeGetOtherFree": null,
+   "contentFormat": ""
+  },
+  {
+   "imageUrl": "https://image.alza.cz/products/RI055b1/RI055b1.jpg",
+   "clickAction": {
+    "webLink": "https://www.alza.cz/iphone-17-pro-256gb-temne-modra-d13078791.htm?evt=ac&pos=2&ste=com&sqid=Algolia_9f5fb62c65d7e0a770be791353e942b8",
+    "href": "https://www.alza.cz/api/legacy/catalog/v14/external/product/13078791",
+    "appLink": "catalogProductDetail",
+    "name": "iPhone 17 Pro 256GB temně modrá",
+    "enabled": true,
+    "analytics": {
+     "actions": {
+      "onClick": {
+       "data": {
+        "search_term": "iphone",
+        "search_vs_auto": "autocomplete",
+        "search_autosection": "item",
+        "search_variant": "Algolia"
+       },
+       "event": "search",
+       "reportAction": null
+      }
+     }
+    }
+   },
+   "isFavourite": false,
+   "wearDescription": "",
+   "buySomeGetOtherFree": null,
+   "contentFormat": ""
+  },
+  {
+   "imageUrl": "https://image.alza.cz/products/RI055b2/RI055b2.jpg",
+   "clickAction": {
+    "webLink": "https://www.alza.cz/iphone-17-pro-256gb-kosmicky-oranzova-d13078787.htm?evt=ac&pos=3&ste=com&sqid=Algolia_9f5fb62c65d7e0a770be791353e942b8",
+    "href": "https://www.alza.cz/api/legacy/catalog/v14/external/product/13078787",
+    "appLink": "catalogProductDetail",
+    "name": "iPhone 17 Pro 256GB kosmicky oranžová",
+    "enabled": true,
+    "analytics": {
+     "actions": {
+      "onClick": {
+       "data": {
+        "search_term": "iphone",
+        "search_vs_auto": "autocomplete",
+        "search_autosection": "item",
+        "search_variant": "Algolia"
+       },
+       "event": "search",
+       "reportAction": null
+      }
+     }
+    }
+   },
+   "isFavourite": false,
+   "wearDescription": "",
+   "buySomeGetOtherFree": null,
+   "contentFormat": ""
+  }
+ ],
+ "phrases": [
+  {
+   "clickAction": {
+    "webLink": "https://www.alza.cz/search.htm?exps=iphone",
+    "href": "https://www.alza.cz/Services/RestService.svc/v5/search",
+    "appLink": "catalogSearch",
+    "name": "iphone",
+    "form": {
+     "method": "POST",
+     "value": [
+      {
+       "name": "searchTerm",
+       "value": "iphone",
+       "itemType": "string",
+       "isEnabled": true
+      }
+     ],
+     "rel": [
+      "query-form"
+     ],
+     "href": "https://www.alza.cz/Services/RestService.svc/v5/search"
+    },
+    "enabled": true,
+    "analytics": {
+     "actions": {
+      "onClick": {
+       "data": {
+        "search_term": "iphone",
+        "search_vs_auto": "autocomplete",
+        "search_autosection": "phrase",
+        "search_variant": "Algolia"
+       },
+       "event": "search",
+       "reportAction": null
+      }
+     }
+    }
+   }
+  },
+  {
+   "clickAction": {
+    "webLink": "https://www.alza.cz/search.htm?exps=iphone+18",
+    "href": "https://www.alza.cz/Services/RestService.svc/v5/search",
+    "appLink": "catalogSearch",
+    "name": "iphone 18",
+    "form": {
+     "method": "POST",
+     "value": [
+      {
+       "name": "searchTerm",
+       "value": "iphone 18",
+       "itemType": "string",
+       "isEnabled": true
+      }
+     ],
+     "rel": [
+      "query-form"
+     ],
+     "href": "https://www.alza.cz/Services/RestService.svc/v5/search"
+    },
+    "enabled": true,
+    "analytics": {
+     "actions": {
+      "onClick": {
+       "data": {
+        "search_term": "iphone",
+        "search_vs_auto": "autocomplete",
+        "search_autosection": "phrase",
+        "search_variant": "Algolia"
+       },
+       "event": "search",
+       "reportAction": null
+      }
+     }
+    }
+   }
+  },
+  {
+   "clickAction": {
+    "webLink": "https://www.alza.cz/search.htm?exps=iphone+17",
+    "href": "https://www.alza.cz/Services/RestService.svc/v5/search",
+    "appLink": "catalogSearch",
+    "name": "iphone 17",
+    "form": {
+     "method": "POST",
+     "value": [
+      {
+       "name": "searchTerm",
+       "value": "iphone 17",
+       "itemType": "string",
+       "isEnabled": true
+      }
+     ],
+     "rel": [
+      "query-form"
+     ],
+     "href": "https://www.alza.cz/Services/RestService.svc/v5/search"
+    },
+    "enabled": true,
+    "analytics": {
+     "actions": {
+      "onClick": {
+       "data": {
+        "search_term": "iphone",
+        "search_vs_auto": "autocomplete",
+        "search_autosection": "phrase",
+        "search_variant": "Algolia"
+       },
+       "event": "search",
+       "reportAction": null
+      }
+     }
+    }
+   }
+  }
+ ],
+ "producers": [
+  {
+   "clickAction": {
+    "webLink": "https://www.alza.cz/v1627.htm",
+    "href": "https://www.alza.cz/Services/RestService.svc/v1/category/0?T=PRODUCER&P=1627",
+    "appLink": "catalogCategory",
+    "name": "Apple",
+    "enabled": true,
+    "analytics": {
+     "actions": {
+      "onClick": {
+       "data": {
+        "search_term": "iphone",
+        "search_vs_auto": "autocomplete",
+        "search_autosection": "brand",
+        "search_variant": "Algolia"
+       },
+       "event": "search",
+       "reportAction": null
+      }
+     }
+    }
+   },
+   "urlImage": "https://image.alza.cz/Foto/vyrobci/apple_6.png"
+  }
+ ],
+ "allResultsAction": {
+  "webLink": "https://www.alza.cz/search.htm?exps=iphone",
+  "href": "https://www.alza.cz/Services/RestService.svc/v5/search",
+  "appLink": "catalogSearch",
+  "name": "Zobrazit všechny výsledky",
+  "form": {
+   "method": "POST",
+   "value": [
+    {
+     "name": "searchTerm",
+     "value": "iphone",
+     "itemType": "string",
+     "isEnabled": true
+    }
+   ],
+   "rel": [
+    "query-form"
+   ],
+   "href": "https://www.alza.cz/Services/RestService.svc/v5/search"
+  },
+  "enabled": true,
+  "analytics": {
+   "actions": {
+    "onClick": {
+     "data": {
+      "search_term": "iphone",
+      "search_vs_auto": "search",
+      "search_autosection": null,
+      "search_variant": "Algolia"
+     },
+     "event": "search",
+     "reportAction": null
+    }
+   }
+  }
+ }
+}

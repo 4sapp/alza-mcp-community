@@ -9,7 +9,7 @@ import { buildServer } from "../src/server.js";
  * annotation matrix as served on the wire (no network — tools/list is local).
  */
 
-async function listTools(): Promise<{ name: string; annotations: Record<string, unknown> | undefined }[]> {
+async function listTools(): Promise<{ name: string; annotations: Record<string, unknown> | undefined; inputSchema: { properties?: Record<string, { enum?: string[] }> } }[]> {
   const built = buildServer();
   const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "annotation-contract", version: "0" });
@@ -26,6 +26,7 @@ async function listTools(): Promise<{ name: string; annotations: Record<string, 
     return res.tools.map((t) => ({
       name: t.name,
       annotations: t.annotations as Record<string, unknown> | undefined,
+      inputSchema: t.inputSchema as { properties?: Record<string, { enum?: string[] }> },
     }));
   } finally {
     await client.close();
@@ -33,7 +34,7 @@ async function listTools(): Promise<{ name: string; annotations: Record<string, 
   }
 }
 
-const CATALOG = ["search_products", "get_product", "get_product_reviews", "find_pickup_points", "list_categories"];
+const CATALOG = ["search_products", "get_product", "compare_products", "get_product_reviews", "recommend_alternatives", "find_pickup_points", "list_categories", "get_deals", "autocomplete"];
 
 const DESTRUCTIVE = new Set([
   "place_order",
@@ -51,15 +52,15 @@ const DESTRUCTIVE = new Set([
 const NO_OPEN_WORLD = new Set(["account_status", "prepare_mutation", "list_toolsets", "set_toolset"]);
 
 describe("tool annotation contract", () => {
-  it("serves exactly 58 tools with bare, snake_case names (56 domain tools + list_toolsets + set_toolset, all toolsets enabled)", async () => {
+  it("serves exactly 65 tools with bare, snake_case names (63 domain tools + list_toolsets + set_toolset, all toolsets enabled)", async () => {
     const tools = await listTools();
-    expect(tools).toHaveLength(58);
+    expect(tools).toHaveLength(65);
     for (const t of tools) {
       expect(t.name).toMatch(/^[a-z][a-z0-9_]*$/);
     }
   });
 
-  it("marks all 5 catalog tools R+I+O, never destructive", async () => {
+  it("marks all 9 catalog tools R+I+O, never destructive", async () => {
     const tools = await listTools();
     for (const name of CATALOG) {
       const a = tools.find((t) => t.name === name)?.annotations ?? {};
@@ -90,13 +91,14 @@ describe("tool annotation contract", () => {
     }
   });
 
-  it("marks readOnlyHint on every tool except the 23 mutating ones", async () => {
-    // The 25 mutating tools: OAuth handshake (auth_start/auth_exchange),
+  it("marks readOnlyHint on every tool except the mutating ones", async () => {
+    // The 27 mutating tools: OAuth handshake (auth_start/auth_exchange),
     // whitelisted low-risk mutate_list, cart/checkout/registration/payment
     // writes, the chat send, order cancellation (OR11), the A14–A18
     // account credential/identity mutations (change_password, two_factor_set,
     // phone_change, email_change, delete_account — all one-time-token gated,
-    // 2026-09-22/23), and set_toolset (changes server-exposed capability,
+    // 2026-09-22/23), the native watchdog writes (watchdog_set,
+    // watchdog_delete — one-time-token gated, 2026-10-06), and set_toolset (changes server-exposed capability,
     // even though it has no Alza-side effect).
     const mutating = new Set([
       "auth_start", "auth_exchange", "mutate_list", "add_to_cart",
@@ -106,6 +108,7 @@ describe("tool annotation contract", () => {
       "subscription_update_installment", "upload_attachment", "web_place_order",
       "cancel_order",
       "change_password", "two_factor_set", "phone_change", "email_change", "delete_account",
+      "watchdog_set", "watchdog_delete",
       "set_toolset",
     ]);
     const tools = await listTools();
@@ -117,5 +120,14 @@ describe("tool annotation contract", () => {
         expect(a.readOnlyHint).toBe(true);
       }
     }
+  });
+
+  it("lets prepare_mutation issue a token for every typed mutation, and mutate_list no longer offers the dead set_watchdog", async () => {
+    const tools = await listTools();
+    const prepare = tools.find((t) => t.name === "prepare_mutation")!.inputSchema.properties!.action!.enum!;
+    expect(prepare).toEqual(expect.arrayContaining(["cancel_order", "watchdog_set", "watchdog_delete", "web_place_order"]));
+    expect(prepare).not.toContain("set_watchdog");
+    const mutate = tools.find((t) => t.name === "mutate_list")!.inputSchema.properties!.action!.enum!;
+    expect(mutate).not.toContain("set_watchdog");
   });
 });

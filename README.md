@@ -77,16 +77,17 @@ That's the agent calling four MCP tools across two parallel searches and synthes
 
 ## What it does
 
-With 56 domain tools (58 including `list_toolsets` and `set_toolset`), listing every tool on every `tools/list` call would front-load an agent's context with dozens of tools it may never touch in a given conversation. So they're grouped into **toolsets**, and only two are enabled by default, exposing 11 domain tools plus the two toolset controls:
+With 63 domain tools (65 including `list_toolsets` and `set_toolset`), listing every tool on every `tools/list` call would front-load an agent's context with dozens of tools it may never touch in a given conversation. So they're grouped into **toolsets**, and only two are enabled by default, exposing 12 domain tools plus the two toolset controls:
 
 | Toolset | Enabled by default? | Covers |
 |---|---|---|
-| `catalog` | ✅ | Search, product detail, reviews, categories, pickup-point lookup |
+| `catalog` | ✅ | Search, product detail, side-by-side comparison, reviews, categories, pickup-point lookup |
 | `auth` | ✅ | OAuth handshake, account status, the mutation-token issuer |
 | `basket_and_checkout` | — | Cart, delivery/pickup selection, checkout, order placement & cancellation |
 | `account_management` | — | Profile, contacts, addresses, registration, credential/identity changes |
 | `orders_and_payments` | — | Order history, payment methods, after-order payments, claims, documents |
 | `reviews_and_subscriptions` | — | Reviews, complaints, AlzaSubscription, attachments, EAN lookup |
+| `watchdogs` | — | Alza's native price-drop / back-in-stock watchdog (list, set, delete) |
 | `chat` | — | Alza's in-app chatbot |
 | `pc_builder` | — | Compatibility-checked PC parts lists: `pc_build_check`, `pc_build_suggest` |
 | `advanced_raw` | — | `mobile_read`, the untyped escape hatch |
@@ -99,10 +100,14 @@ Catalog tools:
 |---|---|
 | **`search_products`** | Keyword search, price/stock/screen-size filters, and bounded client-side sorting; brand/attribute filters use category pages and ignore `query` |
 | **`get_product`** | Full detail for one product — price, availability, brand, image, URL |
-| **`get_product_reviews`** | Aggregate rating + review count |
-| **`find_pickup_points`** | Nearest brick-and-mortar AlzaShop showrooms by postal code |
-| **`list_category_filters`** | Category brands (`brands[].valueId`) and attribute facets with live ids/counts — use `producer_ids` or `filters` with `category_id`; unsupported URL filters return an error |
+| **`compare_products`** | 2–6 products side by side — one aligned table of price, availability, rating and every spec row; optional `summarize: true` verdict via MCP sampling when the client supports it |
+| **`get_product_reviews`** | Aggregate rating + review count + individual reviews (author, date, rating, body, pros/cons) via the reviews API |
+| **`recommend_alternatives`** | Cheaper / better-rated / same-brand alternatives to a product (Alza's own alternatives list, same-category search fallback) |
+| **`find_pickup_points`** | Nearest AlzaBox lockers and AlzaShop showrooms by postal code, merged by distance, with opening hours, no cart needed. It can't tell whether a specific product fits an AlzaBox; use `delivery_options` for that |
+| **`list_category_filters`** | Category brands (`brands[].valueId`) and attribute facets with live ids/counts — use `producer_ids` or `filters` with `category_id` (`{param_id, value_id}` for checkbox facets, `{param_id, min?, max?}` for slider ranges such as screen size or refresh rate); unsupported URL filters return an error |
+| **`get_deals`** | Discounted products (alza.cz only) with current/original price and discount % computed from observed prices — scans category listing pages for a `category_id`, or popular categories when omitted |
 | **`list_categories`** | Top-level categories, or real subcategories when `parent_id` is supplied — feed the returned ids into `search_products` |
+| **`autocomplete`** | Search-box suggestions over plain HTTP (no page render): phrases, categories, brands and products with ids/codes — refine a messy Czech query before `search_products` |
 | **`product_by_ean`** | Looks up catalog products by barcode/EAN (the app's camera barcode-scan API, AT3; read-only, no account required; enable `reviews_and_subscriptions`) |
 
 PC builder tools (enable `pc_builder`):
@@ -126,7 +131,7 @@ Account and checkout tools:
 | **`cart`** | Reads the current cart and total |
 | **`add_to_cart`** | Adds a product by Alza code |
 | **`delivery_options`** | Reads delivery + AlzaBox/pickup options from the APK `getDeliveryPaymentGroups` endpoint |
-| **`select_pickup_point`** | POSTs the APK `DeliveryPaymentAssociation` payload (taken from the current delivery response) to `getDeliveryAssociations` |
+| **`select_pickup_point`** | Despite the name, returns the delivery → payment associations from `getDeliveryAssociations` (which payments fit a delivery, and the delivery fee under each). It does not pick a pickup point: re-tested on an authenticated cart on 2026-10-06. To choose an AlzaBox, use `web_pickup_places` → `web_place_order` with `parcel_shop_id`. |
 | **`checkout_preview`** | Previews checkout and returns a one-time confirmation token |
 | **`cancel_order`** | Cancels an order part using its cancel form, a reason, and a one-time `prepare_mutation` token |
 | **`place_order`** | Runs the mobile API order sequence only when supplied the preview token and required API payloads |
@@ -168,6 +173,9 @@ User-management, payments, orders, and post-purchase tools:
 | **`phone_change`** | Changes the contact phone number (A16; one-time token) |
 | **`email_change`** | Changes the contact email (A16 sibling; one-time token) |
 | **`delete_account`** | Deletes the account (A18; one-time token; **irreversible — disposable accounts only**) |
+| **`watchdog_list`** | Lists the account's Alza watchdogs: price-drop and back-in-stock alerts (B9a; read-only; no email in the output) |
+| **`watchdog_set`** | Sets a watchdog on a product (`max_price` and/or `track_stock`). Alza emails the account when the condition is met (B9; one-time token) |
+| **`watchdog_delete`** | Deletes a watchdog by `watchdog_id` or `commodity_id` (B9b; one-time token) |
 
 High-impact mutations require one-time confirmation tokens (`checkout_preview` for mobile `place_order`, `prepare_mutation` for the other guarded mutations); the full route inventory, exposure decisions, and verification labels live in [docs/mobile-endpoint-coverage.md](docs/mobile-endpoint-coverage.md).
 
@@ -210,6 +218,39 @@ All optional — `alza-mcp` works out of the box.
 
 ---
 
+## Running over HTTP (Streamable HTTP)
+
+stdio is the default and what the install snippets above use. To serve the same server over [MCP Streamable HTTP](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#streamable-http) instead, for example for a client that only takes a URL:
+
+```bash
+npx -y alza-mcp --http --port 3000          # or: ALZA_TRANSPORT=http ALZA_HTTP_PORT=3000 npx -y alza-mcp
+# → MCP endpoint http://127.0.0.1:3000/mcp, health check http://127.0.0.1:3000/healthz
+
+claude mcp add --transport http alza http://127.0.0.1:3000/mcp
+```
+
+On HTTP the server is stricter than on stdio, because a network endpoint can be reached by more than one client:
+
+- **Catalog only by default.** Only the read-only, anonymous toolsets are usable: `catalog` (on) and `pc_builder` (enable with `set_toolset`). Every other toolset (`auth`, basket/checkout, account, orders/payments, reviews/subscriptions, chat, `advanced_raw`) is **locked**: `list_toolsets` shows it with the reason, and `set_toolset` refuses to enable it. These tools sign in to and act on a real Alza account (orders, payments, credentials), so a shared endpoint must not offer them by accident. Set `ALZA_HTTP_ENABLE_ACCOUNT=1` to unlock them.
+- **One server per MCP session.** Each `Mcp-Session-Id` gets its own server instance: its own toolset state, OAuth tokens and one-time confirmation tokens. With `ALZA_HTTP_ENABLE_ACCOUNT=1`, each session also gets its own browser context and Chrome-fingerprint sidecar, because both keep Alza cookies. Sessions expire after 30 idle minutes.
+- **No token file.** `ALZA_TOKEN_FILE` (`~/.alza-mcp/tokens.json`) holds one person's login, so HTTP mode does not load it. Each session signs in with `auth_start` → `auth_exchange`. For a single-user localhost setup you can set `ALZA_HTTP_ALLOW_TOKEN_FILE=1` (together with `ALZA_HTTP_ENABLE_ACCOUNT=1`); every session then starts signed in as that account, so never do this on a shared host. All sessions start from the same refresh token and Alza rotates it on refresh, so the first session that refreshes invalidates the copy the others hold (they then need `auth_start` → `auth_exchange`); keep to one active session in this mode.
+- **Localhost only by default.** It binds `127.0.0.1` and rejects requests whose `Host` or `Origin` is not a loopback name (DNS-rebinding protection). There is no built-in authentication or TLS. If you bind elsewhere (`--host 0.0.0.0`), put it behind a reverse proxy that does both, and set `ALZA_HTTP_ALLOWED_HOSTS`.
+
+| Env var / flag | Default | Purpose |
+|---|---|---|
+| `--http`, `ALZA_TRANSPORT=http` | stdio | Serve over Streamable HTTP |
+| `--port N`, `ALZA_HTTP_PORT` (or `PORT`) | `3000` | Listen port (`0` picks a free one) |
+| `--host H`, `ALZA_HTTP_HOST` | `127.0.0.1` | Bind address |
+| `ALZA_HTTP_ALLOWED_HOSTS` | loopback names when bound to loopback, otherwise no check | Comma-separated hostnames accepted in `Host`/`Origin` |
+| `ALZA_HTTP_ENABLE_ACCOUNT` | off | Unlock the auth/account/checkout/order/payment toolsets (per-session logins) |
+| `ALZA_HTTP_ALLOW_TOKEN_FILE` | off | Also load `ALZA_TOKEN_FILE` into every session (single-user only; needs `ALZA_HTTP_ENABLE_ACCOUNT`) |
+| `ALZA_HTTP_MAX_SESSIONS` | `50` | Concurrent session cap (HTTP 503 beyond it) |
+| `ALZA_HTTP_SESSION_IDLE_MS` | `1800000` | Close a session after this long without a request (a session holding an open GET/SSE stream is not closed) |
+
+**Hosting is not supported yet.** A hosted endpoint (Vercel `mcp-handler`, Fly, Railway, …) is a follow-up. The main obstacle is Cloudflare, not the transport: Alza is behind Cloudflare Bot Management, and both the headless browser and the `curl_cffi` sidecar get through it from a residential IP (live-verified) but are far more likely to be challenged from a datacenter IP. A hosted instance will probably need a residential proxy or a browser-as-a-service (for example Browserbase via `ALZA_CDP_URL`). The daily canary's GitHub-hosted runs show this: they get Cloudflare's interactive challenge. Other things a host needs: Chromium and Python with `curl_cffi` in the image, enough memory for one browser per account session, sticky routing (sessions live in one process's memory), and authentication in front of the endpoint. Keep the account toolsets locked on any multi-user host.
+
+---
+
 ## Pi agent integration
 
 Register the local build in pi's global MCP config (`~/.pi/agent/mcp.json`):
@@ -223,7 +264,7 @@ Register the local build in pi's global MCP config (`~/.pi/agent/mcp.json`):
 }
 ```
 
-Run `/reload` (or `mcp connect alza` — the gateway respawns the stdio process, so a freshly built `dist/` takes effect without `/reload`). The gateway exposes the tools (54 domain tools plus `list_toolsets`/`set_toolset`; only the `catalog` and `auth` toolsets are enabled until you call `set_toolset`) under the `alza_` prefix (`alza_search_products`, `alza_get_product`, `alza_cart`, …). Auth auto-loads from `~/.alza-mcp/tokens.json`. Verified in both modes: (a) in-session through the gateway — search/filter/detail, authenticated add-to-cart, bogus-coupon round-trip → server-side `err:1` envelope ([docs/live-evidence/pi-integration-2026-09-10.md](docs/live-evidence/pi-integration-2026-09-10.md)); and (b) **headless** (`pi -p` one-shot prompt), where the agent discovers the `alza_*` tools, calls `search_products` with the right args, and reports the correct cheapest in-stock product ([docs/live-evidence/headless-pi-2026-09-12.json](docs/live-evidence/headless-pi-2026-09-12.json)); the 2026-09-13 re-run adds three more headless scenarios — catalog search with price-ascending sort, the authenticated account stack (`account_status` + `cart`), and the one-time mutation token flow (`prepare_mutation`) — all captured in [docs/live-evidence/headless-pi-2026-09-13.json](docs/live-evidence/headless-pi-2026-09-13.json).
+Run `/reload` (or `mcp connect alza` — the gateway respawns the stdio process, so a freshly built `dist/` takes effect without `/reload`). The gateway exposes the tools (55 domain tools plus `list_toolsets`/`set_toolset`; only the `catalog` and `auth` toolsets are enabled until you call `set_toolset`) under the `alza_` prefix (`alza_search_products`, `alza_get_product`, `alza_cart`, …). Auth auto-loads from `~/.alza-mcp/tokens.json`. Verified in both modes: (a) in-session through the gateway — search/filter/detail, authenticated add-to-cart, bogus-coupon round-trip → server-side `err:1` envelope ([docs/live-evidence/pi-integration-2026-09-10.md](docs/live-evidence/pi-integration-2026-09-10.md)); and (b) **headless** (`pi -p` one-shot prompt), where the agent discovers the `alza_*` tools, calls `search_products` with the right args, and reports the correct cheapest in-stock product ([docs/live-evidence/headless-pi-2026-09-12.json](docs/live-evidence/headless-pi-2026-09-12.json)); the 2026-09-13 re-run adds three more headless scenarios — catalog search with price-ascending sort, the authenticated account stack (`account_status` + `cart`), and the one-time mutation token flow (`prepare_mutation`) — all captured in [docs/live-evidence/headless-pi-2026-09-13.json](docs/live-evidence/headless-pi-2026-09-13.json).
 
 ---
 
@@ -302,6 +343,7 @@ STOP_BEFORE_ORDER=1 npm run live:e2e   # dry run: stop right before order submis
 ALLOW_ANON=1 STOP_BEFORE_ORDER=1 npm run live:e2e
                              # anonymous dry run; ALLOW_ANON alone does not prevent ordering
 node dist/index.js          # run the server (waits for stdio MCP messages)
+node dist/index.js --http   # or serve MCP Streamable HTTP on http://127.0.0.1:3000/mcp
 ```
 
 **Further reading:**
@@ -315,9 +357,7 @@ node dist/index.js          # run the server (waits for stdio MCP messages)
 
 `main` already covers catalog, filtering, cart, checkout, order placement/cancellation and account management (see [What it does](#what-it-does) and the known limitations in [docs/gap-analysis.md](docs/gap-analysis.md)). Next up:
 
-- **Standalone AlzaBox locker discovery** ([#8](https://github.com/lukabudik/alza-mcp/issues/8)), **review bodies** ([#9](https://github.com/lukabudik/alza-mcp/issues/9)), **slider-type filters** ([#10](https://github.com/lukabudik/alza-mcp/issues/10))
-- **Compare / recommend / deals / autocomplete** tools ([#11](https://github.com/lukabudik/alza-mcp/issues/11)–[#14](https://github.com/lukabudik/alza-mcp/issues/14))
-- **PC builder** ([#15](https://github.com/lukabudik/alza-mcp/issues/15)) and **Streamable HTTP transport** ([#16](https://github.com/lukabudik/alza-mcp/issues/16))
+- **PC builder** ([#15](https://github.com/lukabudik/alza-mcp/issues/15)) and a **hosted HTTP endpoint** (follow-up to [#16](https://github.com/lukabudik/alza-mcp/issues/16); local `--http` mode is shipped)
 
 Priorities live in [ROADMAP.md](ROADMAP.md); everything is tracked in [issues](https://github.com/lukabudik/alza-mcp/issues) — [`good first issue`](https://github.com/lukabudik/alza-mcp/labels/good%20first%20issue) is the place to start.
 

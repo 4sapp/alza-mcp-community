@@ -22,7 +22,8 @@ The **fourth approach — drive a real browser via Playwright — is what we shi
 
 ```
 src/
-  index.ts             stdio entrypoint, signal handling
+  index.ts             entrypoint: stdio (default) or --http, signal handling
+  http.ts              Streamable HTTP transport — one McpServer per session, account toolsets locked unless opted in
   server.ts            buildServer() — wires deps, registers tools/resources/prompts
   infra/
     browser.ts         Playwright facade — lazy launch, page pool, CDP attach

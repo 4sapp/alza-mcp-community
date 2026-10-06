@@ -191,6 +191,52 @@ export const WEB_PICKUP_PLACES = z
   })
   .passthrough();
 
+/** `watchdog_list` result (B9a, 2026-10-06) — normalised, no account email. */
+export const WATCHDOG_LIST = z
+  .object({
+    count: z.number(),
+    has_more: z.boolean(),
+    empty_message: z.union([z.string(), z.null()]),
+    items: z.array(
+      z
+        .object({
+          watchdog_id: z.union([z.string(), z.null()]),
+          commodity_id: z.union([z.number(), z.null()]),
+          name: z.union([z.string(), z.null()]),
+          url: z.union([z.string(), z.null()]),
+          current_price: z.union([z.number(), z.null()]),
+          availability: z.union([z.string(), z.null()]),
+          is_tracking_stock: z.union([z.boolean(), z.null()]),
+          max_price: z.union([z.number(), z.null()]),
+        })
+        .passthrough(),
+    ),
+  })
+  .passthrough()
+  .describe("The account's Alza watchdogs (price-drop / back-in-stock alerts).");
+
+/** `watchdog_set` result (B9, 2026-10-06). */
+export const WATCHDOG_SET = z
+  .object({
+    created: z.boolean(),
+    watchdog_id: z.union([z.string(), z.null()]),
+    commodity_id: z.number(),
+    is_tracking_stock: z.boolean(),
+    max_price: z.union([z.number(), z.null()]),
+    created_at: z.union([z.string(), z.null()]),
+    notification: z.string(),
+  })
+  .passthrough();
+
+/** `watchdog_delete` result (B9b, 2026-10-06). */
+export const WATCHDOG_DELETE = z
+  .object({
+    deleted: z.boolean(),
+    watchdog_id: z.string(),
+    commodity_id: z.number().optional(),
+  })
+  .passthrough();
+
 /* ---------------- Catalog domain shapes ---------------- */
 
 const PRODUCT_PARAM = z
@@ -225,11 +271,78 @@ export const SEARCH_PRODUCTS_OUTPUT = z
     products: z.array(PRODUCT),
     /** Present when a client-side price/rating sort swept multiple pages. */
     candidatesScanned: z.number().optional(),
+    /** Slider (range) filters Alza applied, snapped to real facet steps. */
+    appliedRanges: z
+      .array(
+        z
+          .object({
+            paramId: z.number(),
+            name: z.string().optional(),
+            from: z.number().optional(),
+            to: z.number().optional(),
+            empty: z.boolean().optional(),
+            fromScreenInches: z.boolean().optional(),
+          })
+          .passthrough(),
+      )
+      .optional(),
+  })
+  .passthrough();
+
+export const GET_DEALS_OUTPUT = z
+  .object({
+    categoryIds: z.array(z.number()),
+    candidatesScanned: z.number(),
+    total: z.number(),
+    deals: z.array(
+      PRODUCT.extend({
+        price: z.number(),
+        originalPrice: z.number(),
+        savings: z.number(),
+        discountPercent: z.number(),
+      }),
+    ),
   })
   .passthrough();
 
 export const GET_PRODUCT_OUTPUT = z
   .object({ product: PRODUCT })
+  .passthrough();
+
+export const RECOMMEND_ALTERNATIVES_OUTPUT = z
+  .object({
+    source: PRODUCT,
+    mode: z.enum(["cheaper", "better-specs", "same-brand"]).optional(),
+    poolSource: z.enum(["alza-alternatives", "category-search"]),
+    candidatesConsidered: z.number(),
+    alternatives: z.array(PRODUCT),
+  })
+  .passthrough();
+
+export const COMPARE_PRODUCTS_OUTPUT = z
+  .object({
+    products: z.array(
+      z
+        .object({
+          code: z.string(),
+          ok: z.boolean(),
+          name: z.string().optional(),
+          url: z.string().optional(),
+          error: z.string().optional(),
+        })
+        .passthrough(),
+    ),
+    rows: z.array(z.object({ name: z.string(), values: z.array(z.string().nullable()) }).passthrough()),
+    summary: z
+      .object({
+        status: z.enum(["generated", "unavailable", "failed"]),
+        text: z.string().optional(),
+        model: z.string().optional(),
+        reason: z.string().optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
   .passthrough();
 
 export const GET_PRODUCT_REVIEWS_OUTPUT = z
@@ -244,9 +357,27 @@ export const GET_PRODUCT_REVIEWS_OUTPUT = z
           date: z.string().optional(),
           rating: z.number().optional(),
           body: z.string().optional(),
+          pros: z.array(z.string()).optional(),
+          cons: z.array(z.string()).optional(),
+          verifiedPurchase: z.boolean().optional(),
+          variant: z.string().optional(),
+          helpfulCount: z.number().optional(),
         })
         .passthrough(),
     ),
+  })
+  .passthrough();
+
+export const AUTOCOMPLETE_OUTPUT = z
+  .object({
+    query: z.string(),
+    suggestions: z.array(z.string()),
+    categories: z.array(z.object({ id: z.number(), name: z.string(), url: z.string() }).passthrough()),
+    products: z.array(
+      z.object({ id: z.number(), code: z.string().optional(), name: z.string(), url: z.string(), image: z.string().optional() }).passthrough(),
+    ),
+    brands: z.array(z.object({ id: z.number(), name: z.string(), url: z.string() }).passthrough()),
+    articles: z.array(z.object({ name: z.string(), url: z.string() }).passthrough()),
   })
   .passthrough();
 
@@ -282,9 +413,12 @@ export const FIND_PICKUP_POINTS_OUTPUT = z
           distanceKm: z.number().optional(),
           openingHours: z.string().optional(),
           note: z.string().optional(),
+          parcelShopId: z.number().optional(),
+          deliveryId: z.number().optional(),
         })
         .passthrough(),
     ),
+    warnings: z.array(z.string()).optional(),
   })
   .passthrough();
 
@@ -299,12 +433,14 @@ export const LIST_CATEGORY_FILTERS_OUTPUT = z
           name: z.string(),
           renderType: z.string(),
           filterable: z.boolean(),
+          filterMode: z.enum(["value", "range"]).optional(),
           values: z.array(
             z
               .object({
                 valueId: z.number(),
                 description: z.string(),
                 count: z.number().optional(),
+                value: z.number().optional(),
               })
               .passthrough(),
           ),
@@ -369,10 +505,14 @@ export const OUTPUT_SCHEMAS: Record<string, z.AnyZodObject> = {
   // Catalog (typed domain shapes)
   search_products: SEARCH_PRODUCTS_OUTPUT,
   get_product: GET_PRODUCT_OUTPUT,
+  compare_products: COMPARE_PRODUCTS_OUTPUT,
   get_product_reviews: GET_PRODUCT_REVIEWS_OUTPUT,
+  recommend_alternatives: RECOMMEND_ALTERNATIVES_OUTPUT,
   list_categories: LIST_CATEGORIES_OUTPUT,
+  autocomplete: AUTOCOMPLETE_OUTPUT,
   find_pickup_points: FIND_PICKUP_POINTS_OUTPUT,
   list_category_filters: LIST_CATEGORY_FILTERS_OUTPUT,
+  get_deals: GET_DEALS_OUTPUT,
   // Account (typed)
   auth_start: AUTH_START,
   prepare_mutation: PREPARE_MUTATION,
@@ -425,6 +565,10 @@ export const OUTPUT_SCHEMAS: Record<string, z.AnyZodObject> = {
   phone_change: ACCOUNT_MUTATION,
   email_change: ACCOUNT_MUTATION,
   delete_account: ACCOUNT_MUTATION,
+  // native price/stock watchdog (2026-10-06, issue #17)
+  watchdog_list: WATCHDOG_LIST,
+  watchdog_set: WATCHDOG_SET,
+  watchdog_delete: WATCHDOG_DELETE,
   // PC builder (issue #15, 2026-10-06)
   pc_build_check: PC_BUILD_OUTPUT,
   pc_build_suggest: PC_BUILD_OUTPUT,

@@ -292,7 +292,7 @@ async function run(): Promise<void> {
     {
       name: "find_pickup_points (Praha)",
       fn: async () => {
-        const points = await pickup.findPickupPoints({ postalCode: "11000", limit: 5 });
+        const { points } = await pickup.findPickupPoints({ postalCode: "11000", limit: 5 });
         assert(points.length > 0, "no points");
         return points[0];
       },
