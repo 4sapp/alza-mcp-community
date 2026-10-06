@@ -63,6 +63,10 @@ When Alza changes an endpoint shape:
 2. Open an "Endpoint broken" issue.
 3. Bonus: include a HAR file or a curl snippet showing the new shape.
 
+## Releasing
+
+`server.json` (the official MCP Registry manifest) is bumped together with `package.json`: set both its top-level `version` and `packages[0].version` to the new package version in the same commit as `npm version`. The release workflow (`.github/workflows/publish.yml`) fails before `npm publish` if they differ, then publishes to the registry via `mcp-publisher` (OIDC login) after the npm publish. Keep `description` at 100 characters or fewer (registry limit).
+
 ## Code of conduct
 
 Be kind. This is a hobby project run by volunteers.

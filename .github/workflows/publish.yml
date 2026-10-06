@@ -43,9 +43,37 @@ jobs:
             exit 1
           fi
 
+      - name: Verify server.json versions match package.json
+        run: |
+          node -e '
+            const pkg = require("./package.json");
+            const srv = require("./server.json");
+            const bad = [];
+            if (srv.version !== pkg.version) bad.push(`server.json version ${srv.version}`);
+            const p0 = srv.packages && srv.packages[0];
+            if (!p0 || p0.version !== pkg.version) bad.push(`server.json packages[0].version ${p0 && p0.version}`);
+            if (srv.name !== pkg.mcpName) bad.push(`server.json name ${srv.name} != package.json mcpName ${pkg.mcpName}`);
+            if (bad.length) { console.error(`Mismatch with package.json ${pkg.version}: ` + bad.join("; ")); process.exit(1); }
+          '
+
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
 
       - run: npm publish --access public --provenance
+
+      # Official MCP Registry listing (runs only after npm publish succeeded,
+      # because the registry verifies the npm package + mcpName exist).
+      # CLI install and commands: https://github.com/modelcontextprotocol/registry
+      # (docs/modelcontextprotocol-io/github-actions.mdx). The io.github.lukabudik/*
+      # namespace is authorised by GitHub OIDC from this repository.
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      - name: Authenticate to MCP Registry (GitHub OIDC)
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish server to MCP Registry
+        run: ./mcp-publisher publish
