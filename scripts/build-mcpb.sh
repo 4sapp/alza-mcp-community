@@ -12,8 +12,14 @@ fi
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 mkdir -p build
-cp -r dist "$stage/dist"
-cp mcpb/manifest.json package.json package-lock.json LICENSE README.md "$stage/"
+# Stage exactly what the npm package ships ("files" in package.json): dist plus
+# the Chrome-fingerprint sidecar (scripts/cf-transport.py), its venv helper,
+# the Chromium postinstall hook and the auth-login scripts.
+node -e "require('./package.json').files.forEach((f) => console.log(f))" | while IFS= read -r f; do
+  mkdir -p "$stage/$(dirname "$f")"
+  cp -r "$f" "$stage/$f"
+done
+cp mcpb/manifest.json package.json package-lock.json "$stage/"
 (cd "$stage" && npm ci --omit=dev --ignore-scripts --no-audit --no-fund)
 npx --yes @anthropic-ai/mcpb validate "$stage/manifest.json"
 npx --yes @anthropic-ai/mcpb pack "$stage" "build/alza-mcp-$version.mcpb"
