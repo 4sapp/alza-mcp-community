@@ -514,3 +514,9 @@ about *how* the working tools relate to each other:
   product-page-level signal to build this from; `delivery_options` against a
   live cart remains the only way to learn AlzaBox eligibility. Not promoted
   to a numbered G-item — closed as a dead end, not deferred.
+
+### Streamable HTTP transport ([#16](https://github.com/lukabudik/alza-mcp/issues/16)): local mode shipped, hosting deferred (2026-10-06)
+
+- **Shipped:** `alza-mcp --http [--port N]` / `ALZA_TRANSPORT=http` (`src/http.ts`). There is one `McpServer` per MCP session, and only the `catalog` toolset is usable unless `ALZA_HTTP_ENABLE_ACCOUNT=1`. `ALZA_TOKEN_FILE` is loaded only with `ALZA_HTTP_ALLOW_TOKEN_FILE=1`. The local transport, catalog search over HTTP, the toolset lock, per-session toolset/OAuth isolation and per-session sidecars are **live-verified**: see [live-evidence/streamable-http-2026-10-06.md](live-evidence/streamable-http-2026-10-06.md).
+- **Why the account toolsets are locked on HTTP:** they sign in to and act on a real Alza account (orders, payments, credential changes). A network endpoint can be reached by more than one client and has no built-in authentication, so these tools are opt-in on HTTP. The operations themselves are unchanged and stay documented: `list_toolsets` shows every locked group and why it is locked.
+- **Hosting (Vercel `mcp-handler`, Fly, Railway): unresolved, follow-up.** Alza's Cloudflare Bot Management lets the headless browser and the `curl_cffi` sidecar through from a residential IP. From datacenter IPs they are far more likely to be challenged, as the GitHub-hosted canary runs already show. A hosted instance probably needs a residential proxy or a browser-as-a-service (`ALZA_CDP_URL`), plus sticky sessions and authentication in front of the endpoint. None of this was attempted.

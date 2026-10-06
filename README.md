@@ -202,6 +202,39 @@ All optional — `alza-mcp` works out of the box.
 
 ---
 
+## Running over HTTP (Streamable HTTP)
+
+stdio is the default and what the install snippets above use. To serve the same server over [MCP Streamable HTTP](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#streamable-http) instead, for example for a client that only takes a URL:
+
+```bash
+npx -y alza-mcp --http --port 3000          # or: ALZA_TRANSPORT=http ALZA_HTTP_PORT=3000 npx -y alza-mcp
+# → MCP endpoint http://127.0.0.1:3000/mcp, health check http://127.0.0.1:3000/healthz
+
+claude mcp add --transport http alza http://127.0.0.1:3000/mcp
+```
+
+On HTTP the server is stricter than on stdio, because a network endpoint can be reached by more than one client:
+
+- **Catalog only by default.** Only the read-only `catalog` toolset is usable. Every other toolset (`auth`, basket/checkout, account, orders/payments, reviews/subscriptions, chat, `advanced_raw`) is **locked**: `list_toolsets` shows it with the reason, and `set_toolset` refuses to enable it. These tools sign in to and act on a real Alza account (orders, payments, credentials), so a shared endpoint must not offer them by accident. Set `ALZA_HTTP_ENABLE_ACCOUNT=1` to unlock them.
+- **One server per MCP session.** Each `Mcp-Session-Id` gets its own server instance: its own toolset state, OAuth tokens and one-time confirmation tokens. With `ALZA_HTTP_ENABLE_ACCOUNT=1`, each session also gets its own browser context and Chrome-fingerprint sidecar, because both keep Alza cookies. Sessions expire after 30 idle minutes.
+- **No token file.** `ALZA_TOKEN_FILE` (`~/.alza-mcp/tokens.json`) holds one person's login, so HTTP mode does not load it. Each session signs in with `auth_start` → `auth_exchange`. For a single-user localhost setup you can set `ALZA_HTTP_ALLOW_TOKEN_FILE=1` (together with `ALZA_HTTP_ENABLE_ACCOUNT=1`); every session then starts signed in as that account, so never do this on a shared host.
+- **Localhost only by default.** It binds `127.0.0.1` and rejects requests whose `Host` or `Origin` is not a loopback name (DNS-rebinding protection). There is no built-in authentication or TLS. If you bind elsewhere (`--host 0.0.0.0`), put it behind a reverse proxy that does both, and set `ALZA_HTTP_ALLOWED_HOSTS`.
+
+| Env var / flag | Default | Purpose |
+|---|---|---|
+| `--http`, `ALZA_TRANSPORT=http` | stdio | Serve over Streamable HTTP |
+| `--port N`, `ALZA_HTTP_PORT` (or `PORT`) | `3000` | Listen port (`0` picks a free one) |
+| `--host H`, `ALZA_HTTP_HOST` | `127.0.0.1` | Bind address |
+| `ALZA_HTTP_ALLOWED_HOSTS` | loopback names when bound to loopback, otherwise no check | Comma-separated hostnames accepted in `Host`/`Origin` |
+| `ALZA_HTTP_ENABLE_ACCOUNT` | off | Unlock the auth/account/checkout/order/payment toolsets (per-session logins) |
+| `ALZA_HTTP_ALLOW_TOKEN_FILE` | off | Also load `ALZA_TOKEN_FILE` into every session (single-user only; needs `ALZA_HTTP_ENABLE_ACCOUNT`) |
+| `ALZA_HTTP_MAX_SESSIONS` | `50` | Concurrent session cap (HTTP 503 beyond it) |
+| `ALZA_HTTP_SESSION_IDLE_MS` | `1800000` | Close a session after this long without a request |
+
+**Hosting is not supported yet.** A hosted endpoint (Vercel `mcp-handler`, Fly, Railway, …) is a follow-up. The main obstacle is Cloudflare, not the transport: Alza is behind Cloudflare Bot Management, and both the headless browser and the `curl_cffi` sidecar get through it from a residential IP (live-verified) but are far more likely to be challenged from a datacenter IP. A hosted instance will probably need a residential proxy or a browser-as-a-service (for example Browserbase via `ALZA_CDP_URL`). The daily canary's GitHub-hosted runs show this: they get Cloudflare's interactive challenge. Other things a host needs: Chromium and Python with `curl_cffi` in the image, enough memory for one browser per account session, sticky routing (sessions live in one process's memory), and authentication in front of the endpoint. Keep the account toolsets locked on any multi-user host.
+
+---
+
 ## Pi agent integration
 
 Register the local build in pi's global MCP config (`~/.pi/agent/mcp.json`):
@@ -294,6 +327,7 @@ STOP_BEFORE_ORDER=1 npm run live:e2e   # dry run: stop right before order submis
 ALLOW_ANON=1 STOP_BEFORE_ORDER=1 npm run live:e2e
                              # anonymous dry run; ALLOW_ANON alone does not prevent ordering
 node dist/index.js          # run the server (waits for stdio MCP messages)
+node dist/index.js --http   # or serve MCP Streamable HTTP on http://127.0.0.1:3000/mcp
 ```
 
 **Further reading:**

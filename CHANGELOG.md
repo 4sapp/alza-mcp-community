@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- Streamable HTTP transport ([#16](https://github.com/lukabudik/alza-mcp/issues/16)): `alza-mcp --http [--port N] [--host H]` or `ALZA_TRANSPORT=http` serves the server at `/mcp` using the SDK's `StreamableHTTPServerTransport`. stdio is still the default. Each MCP session gets its own server instance, so toolset state, OAuth tokens and confirmation tokens are never shared. Only the `catalog` toolset is usable over HTTP; the others are listed as locked unless `ALZA_HTTP_ENABLE_ACCOUNT=1` is set. `ALZA_TOKEN_FILE` is not loaded over HTTP unless `ALZA_HTTP_ALLOW_TOKEN_FILE=1` is also set. Binds `127.0.0.1` with a `Host`/`Origin` allow-list, a session cap and idle expiry. The README covers running it locally and what hosting still needs, including the Cloudflare datacenter-IP problem.
+
 ### Changed
 - `auth_exchange` accepts the full `alza://identity?code=…&state=…` redirect URL as `code` and reads `state` from it. Passing `state` is now optional in that case. The `auth_start` description and README explain the misleading "Při přihlášení došlo k chybě." message on desktop browsers (a client-side timer, not a failed sign-in) and how to get the redirect URL from DevTools ([#29](https://github.com/lukabudik/alza-mcp/issues/29)).
 
