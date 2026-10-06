@@ -100,6 +100,22 @@ describe("Reviews.getProductReviews", () => {
     expect(res.ratingAverage).toBe(4.6);
   });
 
+  it("does not cache the aggregate-only fallback after an endpoint failure", async () => {
+    let fail = true;
+    const commodity = vi.fn(async () => {
+      if (fail) throw new Error("HTTP 503");
+      return { items: [item()], paging: {} };
+    });
+    const reviews = build({ commodity });
+    expect((await reviews.getProductReviews("T5", 5)).reviews).toEqual([]);
+    fail = false;
+    expect((await reviews.getProductReviews("T5", 5)).reviews).toHaveLength(1);
+    expect(commodity).toHaveBeenCalledTimes(2);
+    // A successful result is cached.
+    await reviews.getProductReviews("T5", 5);
+    expect(commodity).toHaveBeenCalledTimes(2);
+  });
+
   it("falls back to aggregate-only when no commodity id can be derived", async () => {
     const commodity = vi.fn();
     const res = await build({ commodity, url: "https://www.alza.cz/plain" }).getProductReviews("T4", 5);

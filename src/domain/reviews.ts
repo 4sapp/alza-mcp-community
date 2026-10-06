@@ -149,7 +149,12 @@ export class Reviews {
     const trimmed = code.trim();
     const cap = Math.min(50, Math.max(1, limit));
 
-    return this.cache.memoize(`${trimmed}::${cap}`, async () => {
+    const key = `${trimmed}::${cap}`;
+    const cached = this.cache.get(key);
+    if (cached) return cached;
+    // A transient reviews-API failure yields an aggregate-only result; don't memoize it for the full TTL.
+    let apiFailed = false;
+    const result = await (async (): Promise<ProductReviews> => {
       const url = await this.catalog.resolveProductUrl(trimmed);
 
       // Aggregate (+ legacy DOM reviews as fallback) from the product page.
@@ -174,6 +179,7 @@ export class Reviews {
         try {
           apiReviews = await this.fetchApiReviews(id, cap);
         } catch (e) {
+          apiFailed = true;
           log.debug("reviews.api failed; falling back to aggregate-only", { code: trimmed, error: String(e) });
         }
       }
@@ -192,6 +198,8 @@ export class Reviews {
         reviewCount: data?.count,
         reviews: apiReviews && apiReviews.length > 0 ? apiReviews : domReviews,
       };
-    });
+    })();
+    if (!apiFailed) this.cache.set(key, result);
+    return result;
   }
 }
