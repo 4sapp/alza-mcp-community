@@ -206,6 +206,12 @@ describe("pickAdditionalProperties", () => {
     ]);
   });
 
+  it("decodes astral numeric references and leaves out-of-range ones untouched", () => {
+    expect(pickAdditionalProperties([{ name: "Ikona", value: "&#128512; &#x1F600; &#99999999;" }])).toEqual([
+      { name: "Ikona", value: "\u{1F600} \u{1F600} &#99999999;" },
+    ]);
+  });
+
   it("drops entries missing a name or value, and handles non-array input", () => {
     expect(pickAdditionalProperties([{ name: "X" }, { value: "Y" }, null, "not an object"])).toEqual([]);
     expect(pickAdditionalProperties(undefined)).toEqual([]);

@@ -777,9 +777,14 @@ function decodeBasicEntities(s: string): string {
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&nbsp;/g, " ")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCharCode(parseInt(n, 16)))
+    .replace(/&#(\d+);/g, (m, n: string) => codePoint(m, Number(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (m, n: string) => codePoint(m, parseInt(n, 16)))
     .replace(/&amp;/g, "&");
+}
+
+/** Numeric reference -> character; an out-of-range reference is left as-is instead of throwing. */
+function codePoint(raw: string, n: number): string {
+  return Number.isInteger(n) && n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : raw;
 }
 
 function pickBreadcrumbs(raw: unknown): string[] {
@@ -814,7 +819,7 @@ function stripSchema(v: string | undefined): string | undefined {
 function stripHtmlEntities(s: string): string {
   return s
     .replace(/&amp;/g, "&")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCharCode(parseInt(n, 16)))
+    .replace(/&#(\d+);/g, (m, n: string) => codePoint(m, Number(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (m, n: string) => codePoint(m, parseInt(n, 16)))
     .replace(/&[a-z]+;/g, "");
 }
