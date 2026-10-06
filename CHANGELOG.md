@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Animated README demo (2026-10-06).** `docs/demo.gif` is rendered from a real `claude -p` session (search → detail → pickup point, catalog toolset only, no account). Reproduce with `scripts/record-demo-session.sh` + `scripts/render-demo-gif.py`; see `docs/demo-recording.md`.
+
 ### Changed
 
 - **Repo cleanup (2026-10-02).** Removed 39 untracked-by-design scratch scripts from `scripts/` (dotfile probes/sweeps, two embedded the OAuth client secret); redacted order access hashes (`?x=…`), real account ids, throwaway email addresses, visitor GUIDs in `docs/live-evidence/`, and two street addresses from evidence and tests. Git history is unchanged and still contains the unredacted values.

@@ -11,7 +11,9 @@
 
 `alza-mcp` is an unofficial **Model Context Protocol** server that gives Claude (or any MCP-aware agent) a mobile-API interface to Alza: search products, pull full detail, read reviews, use anonymous/account data, manage a cart, select delivery/AlzaBox pickup, preview checkout, and submit an order only with an explicit one-time confirmation token.
 
-<p align="center"><img src="docs/demo.svg" alt="A Claude Code session using alza-mcp to find a pro-grade wheel cleaner on Alza and the nearest pickup point" width="780"></p>
+<p align="center"><img src="docs/demo.gif" alt="Animated recording of a real Claude Code session: search_products finds wheel cleaners under 600 Kč, get_product shows price and stock, find_pickup_points lists Prague showrooms" width="780"></p>
+
+<sub align="center">Real session, catalog toolset only, no account. Re-record: [docs/demo-recording.md](docs/demo-recording.md). Static version: [docs/demo.svg](docs/demo.svg).</sub>
 
 Ask: *"Find me the best pro-grade wheel cleaner under 600 Kč and tell me where I can pick it up in Prague."* The agent calls `search_products` → `get_product` → `find_pickup_points` and gives you a real answer with real prices and a real address.
 
