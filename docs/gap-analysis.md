@@ -514,3 +514,36 @@ about *how* the working tools relate to each other:
   product-page-level signal to build this from; `delivery_options` against a
   live cart remains the only way to learn AlzaBox eligibility. Not promoted
   to a numbered G-item — closed as a dead end, not deferred.
+
+### Standalone AlzaBox locker discovery — implemented (2026-10-06, [#8](https://github.com/lukabudik/alza-mcp/issues/8))
+
+- **The gap:** `find_pickup_points` returned showrooms only. AlzaBoxes were
+  reachable only through a live cart (`add_to_cart` → `delivery_options` →
+  `web_pickup_places`), because `personalPickup/v1/places` is cart-scoped
+  (HTTP 400 without `orderId`/`groupId`, re-confirmed 2026-10-06).
+- **Resolution:** the public locker map at `https://www.alza.cz/alzabox` (the
+  `alzabox.htm` URL from the issue is a 404) loads its data from a separate
+  cart-free family: `GET /api/salesNetwork/v1/places?types%5B0%5D=1&latitude=&longitude=&ordering=0&limit=100`.
+  It needs no login or cart, sorts all 4015 AlzaBoxes by distance, and returns
+  name, address, GPS, `parcelShopId` and `deliveryId` (2680). The upstream
+  caps `limit` at 100. `find_pickup_points` now makes one request per
+  uncached geocoded centre and caches the parsed list for 12 h. It applies
+  radius and limit locally and merges lockers with the curated showroom list
+  by distance. `types: ["alzabox"]` returns lockers only. If the locker
+  request fails while showrooms were also requested, the tool returns
+  showrooms with a `warnings[]` entry. Coverage rows SN1–SN4 in
+  `docs/mobile-endpoint-coverage.md`.
+- **Evidence:** `live-verified` 2026-10-06 through the built MCP server
+  (anonymous, `ALZA_TOKEN_FILE=none`, CF sidecar): `500 02` + `["alzabox"]` →
+  5 lockers 0.2–1.1 km in 741 ms. The repeat query was a cache hit (0 ms, no
+  upstream call). `170 00` with default types → the Holešovice showroom
+  merged at 0.4 km between lockers. Full record:
+  `docs/live-evidence/alzabox-lockers-2026-10-06.md`. Fixture test:
+  `test/pickup.test.ts` with `test/fixtures/sales-network-places.json`.
+- **Still open:** the list can't say whether a given product fits a locker.
+  Oversized items (34"+ monitors, 2026-09-26 above) skip the whole network,
+  and only the cart flow knows. The tool description says this. Locker
+  opening hours are only in the per-place detail (SN3), which isn't fetched.
+  The `icon-2-xl` vs `icon-2` image split might mark XL lockers, but that is
+  `unresolved`. Only alza.cz was live-verified; other locales use the same
+  route on their own origin.

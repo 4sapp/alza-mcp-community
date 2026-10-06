@@ -67,7 +67,8 @@ web rows are labeled with their exposure state (documented vs. typed-tool candid
   `change_password` (A14), `two_factor_set` (A15), `phone_change` (A16), `email_change`
   (A16 sibling), `delete_account` (A18) — account credential/identity mutations, one-time
   tokens, 2026-09-23; `order_archive` (OR7, read) + `product_by_ean` (AT3, read, no
-  account) — 2026-09-24.
+  account) — 2026-09-24; `find_pickup_points` AlzaBox lockers via the public
+  sales-network place list (SN2, no cart) — 2026-10-06.
 - **Whitelists**:
   - `alza_mobile_read` — 39 read operations: `search`, `category`, `facets`, `legacy_product`,
     `router_product`, `alternatives`, `ean_lookup`, `hierarchical_filter`, `url_info`,
@@ -215,6 +216,10 @@ web rows are labeled with their exposure state (documented vs. typed-tool candid
 | D4 | City branches | GET | `/api/branches/v1/cityBranches?latitude=&longitude=` | coordinates | branches | none | none | Whitelist `branches` | `live-verified` |
 | D5 | Zip codes | GET | `/services/restservice.svc/v1/getZipCodes?deliveryId=0[&search=]` | optional search | zips | none | none | Whitelist `zip_codes`; the EShopService WCF twin `POST /Services/EShopService.svc/GetZipCodes {Search}` is the `web_zip_codes` whitelist op (2026-09-09: only the PascalCase `Search` body field binds; the response `Value` is an HTML snippet of `zip-item` divs; `ErrorLevel:14` when nothing matches) | `live-verified` (`p2-implementation-2026-09-09.md`) |
 | D6 | Delivery time/variants forms | dynamic | P7/P8 action families | form values | time frames | address | persists choice | `blocked` — dynamic forms (see P7/P8); **dated rationale (2026-09-24)**: inherits P7's reachability gate (0 of 64 live basket deliveries expose a time-frame form, 2026-09-24); static read typed (`alza_delivery_options`); re-test target recorded (record `docs/live-evidence/task6b-remaining-candidates-2026-09-24.md`) | `blocked` |
+| SN1 | Sales-network form (public locker map) | GET | `/api/salesNetwork/v1/salesNetworkForm[?types=1]` | optional type filter | `{self (appLink "pickupPlaceForm"), deliveryCardGroups[], checkMarks[], types[{type, name, count (Alzabox type 1 = 4017), groupId}], pointsForm, placesForm, searchForm}` (HATEOAS forms point to SN2–SN4) | none (anonymous, no cart) | none | Documented (entry point used to find SN2) | `live-verified` (2026-10-06, `docs/live-evidence/alzabox-lockers-2026-10-06.md`) |
+| SN2 | Sales-network place list | GET | `/api/salesNetwork/v1/places?types%5B0%5D=1&latitude=&longitude=&ordering=0&limit=&offset=` | type filter (1 = AlzaBox), geo centre, `limit` 0–100 (400 above), offset; `radius` accepted but not applied | `{self, pickupPlaces:{paging{size (4015 AlzaBoxes), next, last}, value[{id "{parcelShopId}-{deliveryId}", deliveryId 2680, parcelShopId, typeText "AlzaBox", type 1, state, name, addressText, gpsPosition{latitude, longitude}}]}}`, sorted by distance | none (anonymous, no cart; unlike W13 it needs no `orderId`/`groupId`) | none | Typed `find_pickup_points` (`types: ["alzabox"]`; one request with `limit=100`, cached 12 h per centre) | `live-verified` (2026-10-06, MCP tool path) |
+| SN3 | Sales-network place detail | GET | `/api/salesNetwork/v1/places/{deliveryId}/{parcelShopId}` | ids from SN2 | SN2 fields plus `detail{openingHours[{label, intervals[{label "Nonstop"…}]}], services[], imgUrl}`, `articleUrl` | none | none | Documented (not fetched by `find_pickup_points`, so it stays one request per query) | `live-verified` (2026-10-06, parcelShopId 1141354) |
+| SN4 | Sales-network map points | GET | `/api/salesNetwork/v1/points?types%5B0%5D=1&latitude=&longitude=&leftLongitude=&rightLongitude=&topLatitude=&bottomLatitude=&zoomLevel=` | bbox + zoom | `{self, points[{id, gpsPosition, imgUrl, detailAction (SN2 form)}], lines, hint}` (no name or address; whole-country bbox at zoom 18 = 4015 points, about 7 MB) | none | none | Documented (not used: no names or addresses, and a heavy payload) | `live-verified` (2026-10-06) |
 
 ## 9. Checkout
 
