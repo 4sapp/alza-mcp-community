@@ -244,6 +244,11 @@ export const GET_PRODUCT_REVIEWS_OUTPUT = z
           date: z.string().optional(),
           rating: z.number().optional(),
           body: z.string().optional(),
+          pros: z.array(z.string()).optional(),
+          cons: z.array(z.string()).optional(),
+          verifiedPurchase: z.boolean().optional(),
+          variant: z.string().optional(),
+          helpfulCount: z.number().optional(),
         })
         .passthrough(),
     ),

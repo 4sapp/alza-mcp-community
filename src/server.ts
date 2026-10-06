@@ -38,7 +38,6 @@ export interface BuildResult {
 export function buildServer(opts: BuildOptions = {}): BuildResult {
   const browser = new AlzaBrowser({ baseUrl: opts.baseUrl, cdpUrl: opts.cdpUrl });
   const catalog = new Catalog(browser);
-  const reviews = new Reviews(browser, catalog);
   const pickup = new Pickup(browser.locale);
   // Chrome-fingerprint sidecar (curl_cffi) — tried FIRST for the account stack:
   // it bypasses the Cloudflare bot wall without a browser (verified 2026-09-15).
@@ -54,6 +53,7 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
     fetchImpl: cfTransport.available ? cfFetch(cfTransport) : undefined,
   });
   const mobileAccount = new MobileAccount(mobileApi);
+  const reviews = new Reviews(browser, catalog, mobileApi);
   const deps = { catalog, reviews, pickup, mobileAccount };
 
   const server = new McpServer(

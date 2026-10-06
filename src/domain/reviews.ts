@@ -1,7 +1,9 @@
 import type { AlzaBrowser } from "../infra/browser.js";
 import { TtlCache } from "../infra/cache.js";
+import type { MobileApi } from "../infra/mobile-api.js";
+import { log } from "../infra/logger.js";
 import type { Catalog } from "./catalog.js";
-import type { ProductReviews } from "./types.js";
+import type { ProductReview, ProductReviews } from "./types.js";
 
 const REVIEW_EXTRACTOR = `(function() {
   // 1. Aggregate values from JSON-LD Product (the canonical source).
@@ -75,13 +77,73 @@ interface ExtractedReviews {
   }>;
 }
 
+/** Page size Alza's reviews endpoint accepts (live-verified 2026-10-06: limit=50 -> 200). */
+const API_PAGE_SIZE = 50;
+/** Hard bound on pages fetched per call (cap is 50 reviews, so 1 page; guards a misbehaving `next`). */
+const MAX_PAGES = 3;
+
+/** Commodity id from a product URL: `...-d12999617.htm` or the variant form `/name?dq=7927612`. */
+export function commodityIdFromUrl(url: string): number | undefined {
+  const m = /[-/]d(\d+)\.htm/.exec(url) ?? /[?&]dq=(\d+)/.exec(url);
+  return m ? Number(m[1]) : undefined;
+}
+
+const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+const strList = (v: unknown): string[] | undefined => {
+  if (!Array.isArray(v)) return undefined;
+  const out = v.map(str).filter((x): x is string => x !== undefined);
+  return out.length ? out : undefined;
+};
+
+/** Map one `items[]` entry of the commodity reviews endpoint to a ProductReview. */
+export function mapApiReview(raw: unknown): ProductReview | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as Record<string, unknown>;
+  // `reviewDetail` reads "Hodnoceno 12.09.2026, varianta iPhone 15 128GB cerna".
+  const detail = str(r.reviewDetail);
+  const dm = detail ? /(\d{1,2})\.(\d{1,2})\.(\d{4})(?:,\s*varianta\s+(.+))?/.exec(detail) : null;
+  const date = dm ? `${dm[3]}-${dm[2]!.padStart(2, "0")}-${dm[1]!.padStart(2, "0")}` : undefined;
+  return {
+    author: str(r.name),
+    date,
+    rating: typeof r.rating === "number" ? r.rating : undefined,
+    body: str(r.description),
+    pros: strList(r.positives),
+    cons: strList(r.negatives),
+    verifiedPurchase: typeof r.verifiedPurchase === "boolean" ? r.verifiedPurchase : undefined,
+    variant: dm?.[4]?.trim() || undefined,
+    helpfulCount: typeof r.likeCount === "number" ? r.likeCount : undefined,
+  };
+}
+
 export class Reviews {
   private readonly cache = new TtlCache<string, ProductReviews>(15 * 60 * 1000);
 
   constructor(
     private readonly browser: AlzaBrowser,
-    private readonly catalog: Catalog
+    private readonly catalog: Catalog,
+    private readonly api?: Pick<MobileApi, "commodityReviews">
   ) {}
+
+  /** Page through the reviews endpoint until `cap` reviews or no `next` link. */
+  private async fetchApiReviews(commodityId: number, cap: number): Promise<ProductReview[]> {
+    const out: ProductReview[] = [];
+    let offset = 0;
+    for (let page = 0; page < MAX_PAGES && out.length < cap; page++) {
+      const res = (await this.api!.commodityReviews(commodityId, {
+        limit: Math.min(API_PAGE_SIZE, cap - out.length),
+        offset,
+      })) as { items?: unknown[]; paging?: { next?: unknown } } | null;
+      const items = res && Array.isArray(res.items) ? res.items : [];
+      for (const it of items) {
+        const mapped = mapApiReview(it);
+        if (mapped) out.push(mapped);
+      }
+      if (items.length === 0 || !res?.paging?.next) break;
+      offset += items.length;
+    }
+    return out.slice(0, cap);
+  }
 
   async getProductReviews(code: string, limit = 10): Promise<ProductReviews> {
     const trimmed = code.trim();
@@ -90,22 +152,45 @@ export class Reviews {
     return this.cache.memoize(`${trimmed}::${cap}`, async () => {
       const url = await this.catalog.resolveProductUrl(trimmed);
 
-      const data = await this.browser.withPage(async (p) => {
-        await p.goto(url, { waitUntil: "commit", timeout: 30_000 });
-        await p.waitForLoadState("load", { timeout: 30_000 }).catch(() => {});
-        return (await p.evaluate(REVIEW_EXTRACTOR)) as ExtractedReviews;
-      });
+      // Aggregate (+ legacy DOM reviews as fallback) from the product page.
+      let data: ExtractedReviews | undefined;
+      let pageUrl = url;
+      let pageError: unknown;
+      try {
+        data = await this.browser.withPage(async (p) => {
+          await p.goto(url, { waitUntil: "commit", timeout: 30_000 });
+          await p.waitForLoadState("load", { timeout: 30_000 }).catch(() => {});
+          pageUrl = p.url();
+          return (await p.evaluate(REVIEW_EXTRACTOR)) as ExtractedReviews;
+        });
+      } catch (e) {
+        pageError = e;
+      }
 
+      // Individual reviews from the mobile reviews endpoint; any failure falls back to aggregate-only.
+      let apiReviews: ProductReview[] | undefined;
+      const id = commodityIdFromUrl(url) ?? commodityIdFromUrl(pageUrl);
+      if (this.api && id !== undefined) {
+        try {
+          apiReviews = await this.fetchApiReviews(id, cap);
+        } catch (e) {
+          log.debug("reviews.api failed; falling back to aggregate-only", { code: trimmed, error: String(e) });
+        }
+      }
+
+      if (!data && !apiReviews) throw pageError ?? new Error(`could not load reviews for ${trimmed}`);
+
+      const domReviews: ProductReview[] = (data?.reviews ?? []).slice(0, cap).map((r) => ({
+        author: r.author ?? undefined,
+        date: r.date ?? undefined,
+        body: r.body ?? undefined,
+        rating: r.rating ?? undefined,
+      }));
       return {
         code: trimmed,
-        ratingAverage: data.average,
-        reviewCount: data.count,
-        reviews: data.reviews.slice(0, cap).map((r) => ({
-          author: r.author ?? undefined,
-          date: r.date ?? undefined,
-          body: r.body ?? undefined,
-          rating: r.rating ?? undefined,
-        })),
+        ratingAverage: data?.average,
+        reviewCount: data?.count,
+        reviews: apiReviews && apiReviews.length > 0 ? apiReviews : domReviews,
       };
     });
   }

@@ -98,7 +98,7 @@ Catalog tools:
 |---|---|
 | **`search_products`** | Keyword search with filters — price range, sort, category, in-stock |
 | **`get_product`** | Full detail for one product — price, availability, brand, image, URL |
-| **`get_product_reviews`** | Aggregate rating + review count |
+| **`get_product_reviews`** | Aggregate rating + review count + individual reviews (author, date, rating, body, pros/cons) via the reviews API |
 | **`find_pickup_points`** | Nearest brick-and-mortar AlzaShop showrooms by postal code |
 | **`list_category_filters`** | Real per-category attribute filters (brand, contrast, panel type, resolution, interfaces, …) with live values/counts — feed the results into `search_products`'s `filters`/`producer_ids` |
 | **`list_categories`** | 20 top-level Alza categories with ids — feed `category_id` to `search_products` to narrow |
