@@ -98,11 +98,25 @@ export const TOOLSET_DEFS: ToolsetDef[] = [
   },
 ];
 
+/**
+ * Toolsets a deployment refuses to expose at all, keyed by toolset id, with the
+ * human-readable reason. A locked toolset starts disabled, `set_toolset` refuses
+ * to enable it (returning the reason), and `list_toolsets` reports the reason —
+ * so the operations stay discoverable/documented (AGENTS.md) without being
+ * callable. Used by the Streamable HTTP transport (src/http.ts) to keep the
+ * account/checkout stack off a shared instance unless explicitly opted in.
+ */
+export type LockedToolsets = Readonly<Record<string, string>>;
+
 export function registerToolsets(
   server: McpServer,
   errorWrap: (name: string, fn: () => Promise<ToolResult>) => Promise<ToolResult>,
-  allTools: RegisterableTool[]
+  allTools: RegisterableTool[],
+  locked: LockedToolsets = {}
 ): void {
+  for (const id of Object.keys(locked)) {
+    if (!TOOLSET_DEFS.some((d) => d.id === id)) throw new Error(`toolset config error: cannot lock unknown toolset "${id}"`);
+  }
   const groupByTool = new Map<string, ToolsetDef>();
   for (const def of TOOLSET_DEFS) {
     for (const name of def.tools) {
@@ -125,7 +139,7 @@ export function registerToolsets(
     registered.set(tool.name, tool.register(server, errorWrap));
   }
   for (const [name, def] of groupByTool) {
-    if (!def.defaultEnabled) registered.get(name)!.disable();
+    if (!def.defaultEnabled || locked[def.id] !== undefined) registered.get(name)!.disable();
   }
 
   const toolsetIds = TOOLSET_DEFS.map((d) => d.id);
@@ -147,6 +161,7 @@ export function registerToolsets(
             description: z.string(),
             enabled: z.boolean(),
             tools: z.array(z.string()),
+            locked: z.string().optional().describe("Present when this deployment refuses to enable the toolset; the reason why."),
           })
         ),
       },
@@ -160,8 +175,9 @@ export function registerToolsets(
           description: def.description,
           enabled: def.tools.every((name) => registered.get(name)!.enabled),
           tools: def.tools,
+          ...(locked[def.id] !== undefined ? { locked: locked[def.id] } : {}),
         }));
-        const lines = toolsets.map((t) => `- \`${t.id}\` (${t.enabled ? "enabled" : "disabled"}): ${t.title} — ${t.tools.join(", ")}`);
+        const lines = toolsets.map((t) => `- \`${t.id}\` (${t.locked !== undefined ? `locked: ${t.locked}` : t.enabled ? "enabled" : "disabled"}): ${t.title} — ${t.tools.join(", ")}`);
         return {
           content: [{ type: "text", text: `Toolsets:\n${lines.join("\n")}` }],
           structuredContent: { toolsets },
@@ -192,8 +208,14 @@ export function registerToolsets(
       errorWrap("set_toolset", async () => {
         const defs = args.id === "all" ? TOOLSET_DEFS : TOOLSET_DEFS.filter((d) => d.id === args.id);
         if (defs.length === 0) throw new Error(`Unknown toolset id: ${args.id}`);
+        if (args.enabled && args.id !== "all" && locked[args.id] !== undefined) {
+          throw new Error(`Toolset "${args.id}" is locked on this deployment: ${locked[args.id]}`);
+        }
         const affected: string[] = [];
+        const skipped: string[] = [];
         for (const def of defs) {
+          // `all` + enabled skips locked groups instead of failing the whole call.
+          if (args.enabled && locked[def.id] !== undefined) { skipped.push(def.id); continue; }
           for (const name of def.tools) {
             const t = registered.get(name)!;
             if (args.enabled) t.enable(); else t.disable();
@@ -201,7 +223,11 @@ export function registerToolsets(
           }
         }
         return {
-          content: [{ type: "text", text: `${args.enabled ? "Enabled" : "Disabled"} ${affected.length} tool(s) in "${args.id}".` }],
+          content: [{
+            type: "text",
+            text: `${args.enabled ? "Enabled" : "Disabled"} ${affected.length} tool(s) in "${args.id}".` +
+              (skipped.length ? ` Skipped locked toolset(s): ${skipped.join(", ")} (see list_toolsets).` : ""),
+          }],
           structuredContent: { id: args.id, enabled: args.enabled, tools_affected: affected },
         };
       })

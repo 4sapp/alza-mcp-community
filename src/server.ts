@@ -17,7 +17,7 @@ import { createListCategoryFiltersTool } from "./tools/list-category-filters.js"
 import { createSearchProductsTool } from "./tools/search-products.js";
 import { createAccountTools } from "./tools/account.js";
 import { createAdvancedTools } from "./tools/advanced.js";
-import { registerToolsets } from "./tools/toolsets.js";
+import { registerToolsets, type LockedToolsets } from "./tools/toolsets.js";
 import { MobileApi } from "./infra/mobile-api.js";
 import { ImpersonateTransport, cfFetch } from "./infra/impersonate-transport.js";
 import type { ToolResult } from "./tools/types.js";
@@ -27,6 +27,17 @@ const VERSION = "0.3.1";
 export interface BuildOptions {
   baseUrl?: string;
   cdpUrl?: string;
+  /** Reuse an existing browser instead of creating one (HTTP catalog-only mode
+   * shares one across sessions). A shared browser is NOT closed by `close()`. */
+  browser?: AlzaBrowser;
+  /** Reuse an existing Chrome-fingerprint sidecar (same ownership rule as `browser`). */
+  cfTransport?: ImpersonateTransport;
+  /** Toolsets this deployment refuses to enable, with the reason (see toolsets.ts). */
+  lockedToolsets?: LockedToolsets;
+  /** Auto-load ALZA_TOKEN_FILE (default true; see MobileApiOptions.loadTokenFile). */
+  loadTokenFile?: boolean;
+  /** Extra sentence appended to the server instructions (e.g. the HTTP-mode note). */
+  instructionsNote?: string;
 }
 
 export interface BuildResult {
@@ -36,7 +47,7 @@ export interface BuildResult {
 }
 
 export function buildServer(opts: BuildOptions = {}): BuildResult {
-  const browser = new AlzaBrowser({ baseUrl: opts.baseUrl, cdpUrl: opts.cdpUrl });
+  const browser = opts.browser ?? new AlzaBrowser({ baseUrl: opts.baseUrl, cdpUrl: opts.cdpUrl });
   const catalog = new Catalog(browser);
   const reviews = new Reviews(browser, catalog);
   const pickup = new Pickup(browser.locale);
@@ -44,7 +55,7 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
   // it bypasses the Cloudflare bot wall without a browser (verified 2026-09-15).
   // Optional by design: no interpreter with curl_cffi → the transport is dead
   // and the existing chain (plain fetch → browser fallback) applies unchanged.
-  const cfTransport = new ImpersonateTransport();
+  const cfTransport = opts.cfTransport ?? new ImpersonateTransport();
   // The browser transport backs the catalog AND the account stack's bot-challenge fallback
   // (same-origin /services/restservice.svc routes are JS-challenge-gated for plain fetch).
   const mobileApi = new MobileApi({
@@ -52,6 +63,7 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
     browser,
     httpFetch: cfTransport.available ? cfFetch(cfTransport) : undefined,
     fetchImpl: cfTransport.available ? cfFetch(cfTransport) : undefined,
+    loadTokenFile: opts.loadTokenFile,
   });
   const mobileAccount = new MobileAccount(mobileApi);
   const deps = { catalog, reviews, pickup, mobileAccount };
@@ -71,7 +83,8 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
         "Account & checkout (enable `basket_and_checkout`; OAuth token auto-loads from ~/.alza-mcp/tokens.json; check `account_status`): `cart`, `add_to_cart`, `delivery_options`, `select_pickup_point`, `checkout_preview` → `place_order` (mobile API), or the legacy web WCF path `web_add_to_cart` → `web_cart` → `web_pickup_places` → `web_place_order`. " +
         "Order submission currently works via the legacy web WCF path (`web_place_order`); the mobile `place_order` (sendOrder3) returns HTTP 500 (docs/gap-analysis.md G1/G5). Cancel with `cancel_order`. " +
         "Credentials are never collected by the MCP. High-impact mutations (payment, registration, address, review, subscription, attachment, order) require a one-time token from `prepare_mutation` (in the always-on `auth` toolset) — confirm with the user before calling them. " +
-        "`mobile_read` (toolset `advanced_raw`) is the raw read-only escape hatch for mobile API operations without a dedicated tool.",
+        "`mobile_read` (toolset `advanced_raw`) is the raw read-only escape hatch for mobile API operations without a dedicated tool." +
+        (opts.instructionsNote ? ` ${opts.instructionsNote}` : ""),
     }
   );
 
@@ -94,7 +107,7 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
     createListCategoriesTool(deps),
     ...createAccountTools(deps),
     ...createAdvancedTools(deps),
-  ]);
+  ], opts.lockedToolsets);
 
   const productResource = createProductResource(catalog);
   server.registerResource(
@@ -116,9 +129,9 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
 
   return {
     server,
-    close: () => {
-      cfTransport.close();
-      return browser.close();
+    close: async () => {
+      if (!opts.cfTransport) cfTransport.close();
+      if (!opts.browser) await browser.close();
     },
   };
 }
