@@ -1,0 +1,20 @@
+setup     pack                         PASS    alza-mcp-0.3.1.tgz (265 KB, 145 files)
+setup     registry                     PASS    registry now serves alza-mcp dist-tags={"latest":"0.3.1"} versions=0.3.1
+http      server                       PASS    npx -y alza-mcp --http on :3000 (0.0.0.0), :3001 (default bind), :3002 (env-only, account mode)
+http      loopback-in-container        PASS    default-bind server answers /healthz on 127.0.0.1 inside its container
+http      http-healthz                 PASS    {"ok":true,"transport":"streamable-http","sessions":0,"account":false}
+http      http-initialize              PASS    server alza-mcp@0.3.1, session 6b691d03…, protocol 2025-11-25
+http      http-tools/list              PASS    12 tools: autocomplete, compare_products, find_pickup_points, get_deals, get_product, get_product_reviews, list_categories, list_category_filters, list_toolsets, recommend_alternatives, search_products, set_toolset
+http      http-two-sessions            PASS    A=6b691d03… B=f7fbf038…
+http      http-session-count           PASS    /healthz sessions=2
+http      http-isolation-disable       PASS    A disabled catalog -> A has 2 tools (search_products: false), B has 12 (search_products: true)
+http      http-account-locked          PASS    Error: Toolset "basket_and_checkout" is locked on this deployment: Disabled on the Streamable HTTP transport: a networked MCP endpoint can be reached by more th
+http      http-list_toolsets-locked    PASS    8/10 toolsets locked; unlocked: catalog,pc_builder (all 12 of their tools are readOnlyHint)
+http      http-unknown-session         PASS    unknown Mcp-Session-Id -> HTTP 404
+http      http-missing-session         PASS    non-initialize without session -> HTTP 400
+http      http-origin-check            PASS    Origin: http://evil.example -> HTTP 403
+http      http-host-check              PASS    Host: evil.example -> HTTP 403; Host: alza-http:3000 -> HTTP 200
+http      http-delete-session          PASS    after DELETE: reuse -> HTTP 404, /healthz sessions=1
+http      http-account-isolation       PASS    ALZA_HTTP_ENABLE_ACCOUNT=1: X enabled basket_and_checkout -> X 17->29 tools, Y stays 17
+http      http-account-no-tokenfile    PASS    account_status authenticated: X=false Y=false (no token file on HTTP)
+http      http-default-loopback        PASS    server started without --host, reached from another container: refused (ECONNREFUSED)
