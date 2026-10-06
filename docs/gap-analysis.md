@@ -514,3 +514,16 @@ about *how* the working tools relate to each other:
   product-page-level signal to build this from; `delivery_options` against a
   live cart remains the only way to learn AlzaBox eligibility. Not promoted
   to a numbered G-item — closed as a dead end, not deferred.
+
+### PC builder (#15): implemented 2026-10-06, with three catalog findings
+
+- **What shipped:** `pc_build_check` and `pc_build_suggest` live in the new `pc_builder` toolset, which is off by default. The compatibility rules are pure functions in `src/domain/pc-build.ts`. They cover socket, RAM generation / DIMM type / slots, RAM ↔ CPU, PSU wattage + headroom, GPU length, cooler height or radiator size, cooler socket, motherboard and PSU form factor, and display output. The spec names come from a Czech per-component map. Live evidence is in `docs/live-evidence/2026-10-06-pc-builder.md`.
+- **`blocked`: socket / memory-type / form-factor URL filters in CPU and motherboard categories.** `list_category_filters` reports them as checkbox facets (CPU `Socket` 432, motherboard `Socket` 408 / `Formát základní desky` 411 / `Typ paměti` 414). Alza 30x-redirects every such `-par…` URL to the unfiltered category (live 2026-10-06), and `search_products` errors as designed. The builder narrows candidates on the client instead: first chipset/DDR/wattage name hints on the listing cards, then the detail page's `params`. RAM uses the dedicated DDR5 and DDR4 categories. Only the brand facet (`producer_ids`) is used as a URL filter. Re-test target: a different URL encoding for these facets.
+- **`live-verified` (negative): `/search.htm?idc={category}` is not category-scoped.** "psu" scoped to the PSU category returned dog food. `pc_build_suggest` browses the category listing page `/{categoryId}.htm` instead, through the internal `SearchOptions.browse`.
+- **`get_product`'s 30-row spec cap:** a GPU's `TDP` was row 29 of 30. `Catalog.getProductSpecs` keeps up to 80 rows for the builder from the same page load and cache. The public `get_product` contract (≤ 30 rows) is unchanged.
+- **Spec-table render race, fixed:** one live run got a PSU page (`AAnagp2a4`) with no spec rows at the `load` event. A read a minute later had the full table. `getProduct`/`getProductSpecs` now wait up to 4 s for the table and read the page again whenever both spec sources are empty.
+- **Remaining limits (`unresolved`):**
+  - Alza does not publish power figures for every GPU. When `TDP` is missing, the draw is derived from `Doporučený výkon zdroje` (× 0.4). If neither row exists, a fallback of 250 W is assumed and the rule warns.
+  - The CPU boost allowance is TDP × 1.35. That matches AMD's PPT, but Intel's PL2 can be higher.
+  - Suggest candidates are the first listing page (Alza's own order) of each category, not the whole catalog.
+  - Storage has no compatibility rule. M.2 slot and PCIe generation checks are not modelled.
