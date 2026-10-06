@@ -37,6 +37,9 @@ const HIGH_IMPACT_ACTIONS = [
   "change_password", "two_factor_set", "phone_change", "email_change", "delete_account",
 ] as const;
 
+/** Typed account writes outside the high-impact set (native watchdog, 2026-10-06). */
+const TYPED_LOW_RISK_ACTIONS = ["watchdog_set", "watchdog_delete"] as const;
+
 const READ_OPERATIONS = [
   "url_info", "legacy_product", "router_product", "quick_order_summary", "user_review",
   "discussion_posts", "premium_trial", "validate_login_name", "o3_info", "validate_isic",
@@ -150,11 +153,11 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           title: "Prepare an Alza mutation",
           description:
             "Start a two-step mutation by returning a one-time confirmation token bound to exactly one action. This call itself sends nothing to Alza. " +
-            "Use it before the high-impact typed mutations — `register` (action `register`), `address_upsert` (`address_create` or `address_edit`), `address_delete` (`address_delete`), `pay_after_order` (`after_order_payment`), `web_place_order` (`web_place_order`), `web_pay_after_order` (`web_after_order_payment`), `review_submit` (`review_submit`), `subscription_activate` (`subscription_activate`), `subscription_update_installment` (`subscription_update_installment`), `upload_attachment` (`attachment_upload`) — and before any low-risk `mutate_list` action (" + LOW_RISK_ACTIONS.map((a) => "`" + a + "`").join(", ") + "). " +
+            "Use it before the high-impact typed mutations — `register` (action `register`), `address_upsert` (`address_create` or `address_edit`), `address_delete` (`address_delete`), `pay_after_order` (`after_order_payment`), `web_place_order` (`web_place_order`), `web_pay_after_order` (`web_after_order_payment`), `review_submit` (`review_submit`), `subscription_activate` (`subscription_activate`), `subscription_update_installment` (`subscription_update_installment`), `upload_attachment` (`attachment_upload`), `watchdog_set` (`watchdog_set`), `watchdog_delete` (`watchdog_delete`) — and before any low-risk `mutate_list` action (" + LOW_RISK_ACTIONS.map((a) => "`" + a + "`").join(", ") + "). " +
             "Pass the returned token as `confirmation_token` on the matching call; the token is single-use and only valid for the exact action you prepared. " +
             "Do not use for read-only tools, and not for `add_to_cart` (which is a low-risk cart write that needs no token).",
           inputSchema: {
-            action: z.enum([...LOW_RISK_ACTIONS, ...HIGH_IMPACT_ACTIONS]).describe("Which mutation you are about to perform; the token will only be accepted by that action's tool."),
+            action: z.enum([...LOW_RISK_ACTIONS, ...HIGH_IMPACT_ACTIONS, ...TYPED_LOW_RISK_ACTIONS]).describe("Which mutation you are about to perform; the token will only be accepted by that action's tool."),
           },
           annotations: { readOnlyHint: true, idempotentHint: false, destructiveHint: false, openWorldHint: false },
           outputSchema: OUTPUT_SCHEMAS["prepare_mutation"],

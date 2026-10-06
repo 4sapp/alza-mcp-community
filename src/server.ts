@@ -17,6 +17,7 @@ import { createListCategoryFiltersTool } from "./tools/list-category-filters.js"
 import { createSearchProductsTool } from "./tools/search-products.js";
 import { createAccountTools } from "./tools/account.js";
 import { createAdvancedTools } from "./tools/advanced.js";
+import { createWatchdogTools } from "./tools/watchdog.js";
 import { registerToolsets } from "./tools/toolsets.js";
 import { MobileApi } from "./infra/mobile-api.js";
 import { ImpersonateTransport, cfFetch } from "./infra/impersonate-transport.js";
@@ -94,6 +95,7 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
     createListCategoriesTool(deps),
     ...createAccountTools(deps),
     ...createAdvancedTools(deps),
+    ...createWatchdogTools(deps),
   ]);
 
   const productResource = createProductResource(catalog);

@@ -51,9 +51,9 @@ const DESTRUCTIVE = new Set([
 const NO_OPEN_WORLD = new Set(["account_status", "prepare_mutation", "list_toolsets", "set_toolset"]);
 
 describe("tool annotation contract", () => {
-  it("serves exactly 56 tools with bare, snake_case names (54 domain tools + list_toolsets + set_toolset, all toolsets enabled)", async () => {
+  it("serves exactly 59 tools with bare, snake_case names (57 domain tools + list_toolsets + set_toolset, all toolsets enabled)", async () => {
     const tools = await listTools();
-    expect(tools).toHaveLength(56);
+    expect(tools).toHaveLength(59);
     for (const t of tools) {
       expect(t.name).toMatch(/^[a-z][a-z0-9_]*$/);
     }
@@ -91,12 +91,13 @@ describe("tool annotation contract", () => {
   });
 
   it("marks readOnlyHint on every tool except the 23 mutating ones", async () => {
-    // The 25 mutating tools: OAuth handshake (auth_start/auth_exchange),
+    // The 27 mutating tools: OAuth handshake (auth_start/auth_exchange),
     // whitelisted low-risk mutate_list, cart/checkout/registration/payment
     // writes, the chat send, order cancellation (OR11), the A14–A18
     // account credential/identity mutations (change_password, two_factor_set,
     // phone_change, email_change, delete_account — all one-time-token gated,
-    // 2026-09-22/23), and set_toolset (changes server-exposed capability,
+    // 2026-09-22/23), the native watchdog writes (watchdog_set,
+    // watchdog_delete — one-time-token gated, 2026-10-06), and set_toolset (changes server-exposed capability,
     // even though it has no Alza-side effect).
     const mutating = new Set([
       "auth_start", "auth_exchange", "mutate_list", "add_to_cart",
@@ -106,6 +107,7 @@ describe("tool annotation contract", () => {
       "subscription_update_installment", "upload_attachment", "web_place_order",
       "cancel_order",
       "change_password", "two_factor_set", "phone_change", "email_change", "delete_account",
+      "watchdog_set", "watchdog_delete",
       "set_toolset",
     ]);
     const tools = await listTools();
