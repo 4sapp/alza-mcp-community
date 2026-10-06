@@ -13,6 +13,7 @@ import { createFindPickupPointsTool } from "./tools/find-pickup-points.js";
 import { createGetProductTool } from "./tools/get-product.js";
 import { createGetProductReviewsTool } from "./tools/get-product-reviews.js";
 import { createListCategoriesTool } from "./tools/list-categories.js";
+import { createGetDealsTool } from "./tools/get-deals.js";
 import { createListCategoryFiltersTool } from "./tools/list-category-filters.js";
 import { createSearchProductsTool } from "./tools/search-products.js";
 import { createAccountTools } from "./tools/account.js";
@@ -92,6 +93,7 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
     createFindPickupPointsTool(deps),
     createListCategoryFiltersTool(deps),
     createListCategoriesTool(deps),
+    createGetDealsTool(deps),
     ...createAccountTools(deps),
     ...createAdvancedTools(deps),
   ]);
