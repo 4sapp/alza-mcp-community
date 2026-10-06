@@ -183,7 +183,23 @@ export class MobileApi {
     return v === "" ? undefined : v;
   }
 
-  async exchangeOAuthCode(code: string, state: string): Promise<{ authenticated: true; expiresIn?: number }> {
+  /** Accepts either a bare authorization code or the whole `alza://identity?code=…&state=…`
+   * redirect. Desktop browsers cannot open the `alza://` scheme, so users copy that URL out of
+   * DevTools; pasting it as-is avoids a manual split. A state inside the URL must agree with
+   * an explicitly passed one. */
+  static parseOAuthRedirect(codeOrUrl: string, state?: string): { code: string; state?: string } {
+    const raw = codeOrUrl.trim();
+    if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) && !raw.includes("code=")) return { code: raw, state };
+    const query = new URLSearchParams(raw.includes("?") ? raw.slice(raw.indexOf("?") + 1) : raw);
+    const code = query.get("code");
+    if (!code) throw new Error("The pasted redirect URL does not contain a `code` parameter");
+    const urlState = query.get("state") ?? undefined;
+    if (state && urlState && state !== urlState) throw new Error("OAuth state in the redirect URL does not match the `state` argument");
+    return { code, state: state ?? urlState };
+  }
+
+  async exchangeOAuthCode(codeOrUrl: string, explicitState?: string): Promise<{ authenticated: true; expiresIn?: number }> {
+    const { code, state } = MobileApi.parseOAuthRedirect(codeOrUrl, explicitState);
     const pending = this.pendingOAuth;
     if (!pending || pending.state !== state) throw new Error("OAuth state is missing or does not match");
     const verifier = this.pendingCodeVerifier;
