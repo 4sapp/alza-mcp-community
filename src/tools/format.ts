@@ -69,6 +69,8 @@ export function formatReviews(r: ProductReviews): string {
       .join(" · ");
     lines.push(`### ${head}`);
     if (rev.body) lines.push(rev.body);
+    if (rev.pros?.length) lines.push(`+ ${rev.pros.join("; ")}`);
+    if (rev.cons?.length) lines.push(`- ${rev.cons.join("; ")}`);
     lines.push("");
   }
   return lines.join("\n");

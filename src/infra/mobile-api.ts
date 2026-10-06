@@ -460,8 +460,10 @@ export class MobileApi {
   // is SPA-404 on www and policy-403 on webapi; the app actually reads reviews from server-provided
   // hrefs (webapi.alza.cz/api/catalog/commodities/{id}/reviews — live-verified 200, includes the
   // user's own review with a templated userReviewActions form when one exists).
-  async commodityReviews(commodityId: number): Promise<unknown> {
-    return this.request(`https://webapi.alza.cz/api/catalog/commodities/${commodityId}/reviews?country=CZ&limit=5`);
+  async commodityReviews(commodityId: number, opts: { limit?: number; offset?: number } = {}): Promise<unknown> {
+    const limit = opts.limit ?? 5;
+    const offset = opts.offset ? `&offset=${opts.offset}` : "";
+    return this.request(`https://webapi.alza.cz/api/catalog/commodities/${commodityId}/reviews?country=CZ&limit=${limit}${offset}`);
   }
 
   async discussionPosts(commodityId: number, pageStart = 0, options: { parentId?: number; showOnlyWithoutAnswer?: boolean; orderBy?: number } = {}): Promise<unknown> {
