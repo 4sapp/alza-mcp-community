@@ -101,6 +101,7 @@ Catalog tools:
 | **`get_product_reviews`** | Aggregate rating + review count |
 | **`find_pickup_points`** | Nearest brick-and-mortar AlzaShop showrooms by postal code |
 | **`list_category_filters`** | Real per-category attribute filters (brand, contrast, panel type, resolution, interfaces, …) with live values/counts — feed the results into `search_products`'s `filters`/`producer_ids` |
+| **`get_deals`** | Discounted products (alza.cz only) with current/original price and discount % computed from observed prices — scans category listing pages for a `category_id`, or popular categories when omitted |
 | **`list_categories`** | 20 top-level Alza categories with ids — feed `category_id` to `search_products` to narrow |
 | **`product_by_ean`** | Looks up catalog products by barcode/EAN (the app's camera barcode-scan API, AT3; read-only, no account required) |
 
