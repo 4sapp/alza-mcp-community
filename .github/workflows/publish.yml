@@ -80,12 +80,16 @@ jobs:
       - run: npm install -g npm@latest
 
       - name: Publish to npm (skipped if this version is already published)
+        shell: bash  # pipefail, so a failed npm publish is not masked by tee
         run: |
           version=$(node -p "require('./package.json').version")
           if npm view "alza-mcp@$version" version >/dev/null 2>&1; then
             echo "alza-mcp@$version is already on npm; skipping npm publish."
-          else
-            npm publish --access public --provenance
+          elif ! npm publish --access public --provenance 2>&1 | tee npm-publish.log; then
+            # A version npm accepted moments ago can be invisible to `npm view` but
+            # still answer 409 "previously staged/published version": already done.
+            grep -q "E409" npm-publish.log || exit 1
+            echo "alza-mcp@$version was already published (409); continuing."
           fi
 
       # The registry validates that the npm version exists, and a fresh publish can
