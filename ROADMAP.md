@@ -8,6 +8,7 @@ Rough priority order. Every item is a GitHub issue — comment there before star
 - **Discovery tools** — `compare_products` (side-by-side spec table with an optional MCP-sampling summary), `recommend_alternatives`, `get_deals`, `autocomplete`.
 - **Account & checkout** — OAuth PKCE sign-in, cart, delivery/AlzaBox selection, checkout preview, order placement (legacy web WCF path) and cancellation, after-order payments, order history/documents, claims, subscriptions, profile/addresses and credential changes — all high-impact mutations behind one-time confirmation tokens.
 - **Progressive disclosure** — tools grouped into toolsets; only `catalog` and `auth` are enabled by default.
+- **Streamable HTTP transport** — `alza-mcp --http` for local multi-session use (catalog-only unless account access is opted in).
 - **Distribution** — published on npm as `alza-mcp`, CI on Node 20/22, trusted publishing on tag push; `server.json` and `smithery.yaml` in the repo.
 
 ## Near-term
@@ -25,6 +26,6 @@ Rough priority order. Every item is a GitHub issue — comment there before star
 ## Long-term
 
 - [#15](https://github.com/lukabudik/alza-mcp/issues/15) PC builder — socket / RAM / wattage / clearance compatibility engine
-- [#16](https://github.com/lukabudik/alza-mcp/issues/16) Streamable HTTP transport and a path to a hosted endpoint
+- Hosted HTTP endpoint (follow-up to [#16](https://github.com/lukabudik/alza-mcp/issues/16); local `--http` mode shipped — Cloudflare blocks datacenter IPs, see docs/gap-analysis.md)
 
 Known limitations and dead ends (with dated evidence) live in [docs/gap-analysis.md](docs/gap-analysis.md). Ideas not listed here: open a [feature request](https://github.com/lukabudik/alza-mcp/issues/new/choose).

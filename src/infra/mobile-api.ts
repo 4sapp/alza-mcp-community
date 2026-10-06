@@ -28,6 +28,13 @@ export interface MobileApiOptions {
    * fingerprint). Falls back to global fetch when absent.
    */
   fetchImpl?: FetchLike;
+  /**
+   * Auto-load the OAuth token store (ALZA_TOKEN_FILE). Default true (stdio,
+   * single user). The Streamable HTTP transport passes false unless the
+   * operator explicitly opts in, because the store is single-user by design
+   * and must never be shared by every session of a multi-user host.
+   */
+  loadTokenFile?: boolean;
 }
 
 /** fetch-shaped transport (the sidecar adapter satisfies this). */
@@ -87,7 +94,7 @@ export class MobileApi {
     this.browser = opts.browser;
     this.httpFetch = opts.httpFetch;
     this.fetchImpl = opts.fetchImpl;
-    const stored = this.readStoredTokens();
+    const stored = opts.loadTokenFile === false ? undefined : this.readStoredTokens();
     const explicitVisitor = opts.visitorId ?? process.env.ALZA_VISITOR_ID;
     this.visitorId = explicitVisitor ?? stored?.visitor_id ?? randomUUID();
     this.userId = opts.userId;
