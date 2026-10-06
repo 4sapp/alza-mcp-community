@@ -6,7 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- Price and stock watchdog tools: `watchdog_list`, `watchdog_set`, and `watchdog_delete`, in the new `watchdogs` toolset ([#17](https://github.com/lukabudik/alza-mcp/issues/17)). They wrap Alza's own watchdog, which emails the account address, so the MCP stores nothing. `watchdog_set` and `watchdog_delete` need a one-time `prepare_mutation` token, and no output includes the account email. The list and delete routes come from the user navigation and the per-product `watchdogDialog`. Create and delete were tested live on 2026-10-06 and no watchdog was left behind (rows B9/B9a/B9b, `docs/live-evidence/watchdog-b9-2026-10-06.md`).
+
 ### Changed
+- `select_pickup_point` description ([#23](https://github.com/lukabudik/alza-mcp/issues/23)). A re-test on an authenticated cart on 2026-10-06 found no `beforeSelectAction`/`afterSelectAction` on any delivery. `getDeliveryAssociations` returns delivery → payment associations, not pickup points. The description now says this and points to `web_pickup_places` → `web_place_order` with `parcel_shop_id` for choosing an AlzaBox (`docs/live-evidence/select-pickup-point-auth-retest-2026-10-06.md`).
 - `auth_exchange` accepts the full `alza://identity?code=…&state=…` redirect URL as `code` and reads `state` from it. Passing `state` is now optional in that case. The `auth_start` description and README explain the misleading "Při přihlášení došlo k chybě." message on desktop browsers (a client-side timer, not a failed sign-in) and how to get the redirect URL from DevTools ([#29](https://github.com/lukabudik/alza-mcp/issues/29)).
 
 ### Fixed

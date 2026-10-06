@@ -77,7 +77,7 @@ That's the agent calling four MCP tools across two parallel searches and synthes
 
 ## What it does
 
-With 54 domain tools (56 including `list_toolsets` and `set_toolset`), listing every tool on every `tools/list` call would front-load an agent's context with dozens of tools it may never touch in a given conversation. So they're grouped into **toolsets**, and only two are enabled by default, exposing 11 domain tools plus the two toolset controls:
+With 57 domain tools (59 including `list_toolsets` and `set_toolset`), listing every tool on every `tools/list` call would front-load an agent's context with dozens of tools it may never touch in a given conversation. So they're grouped into **toolsets**, and only two are enabled by default, exposing 11 domain tools plus the two toolset controls:
 
 | Toolset | Enabled by default? | Covers |
 |---|---|---|
@@ -87,6 +87,7 @@ With 54 domain tools (56 including `list_toolsets` and `set_toolset`), listing e
 | `account_management` | — | Profile, contacts, addresses, registration, credential/identity changes |
 | `orders_and_payments` | — | Order history, payment methods, after-order payments, claims, documents |
 | `reviews_and_subscriptions` | — | Reviews, complaints, AlzaSubscription, attachments, EAN lookup |
+| `watchdogs` | — | Alza's native price-drop / back-in-stock watchdog (list, set, delete) |
 | `chat` | — | Alza's in-app chatbot |
 | `advanced_raw` | — | `mobile_read`, the untyped escape hatch |
 
@@ -118,7 +119,7 @@ Account and checkout tools:
 | **`cart`** | Reads the current cart and total |
 | **`add_to_cart`** | Adds a product by Alza code |
 | **`delivery_options`** | Reads delivery + AlzaBox/pickup options from the APK `getDeliveryPaymentGroups` endpoint |
-| **`select_pickup_point`** | POSTs the APK `DeliveryPaymentAssociation` payload (taken from the current delivery response) to `getDeliveryAssociations` |
+| **`select_pickup_point`** | Despite the name, returns the delivery → payment associations from `getDeliveryAssociations` (which payments fit a delivery, and the delivery fee under each). It does not pick a pickup point: re-tested on an authenticated cart on 2026-10-06. To choose an AlzaBox, use `web_pickup_places` → `web_place_order` with `parcel_shop_id`. |
 | **`checkout_preview`** | Previews checkout and returns a one-time confirmation token |
 | **`cancel_order`** | Cancels an order part using its cancel form, a reason, and a one-time `prepare_mutation` token |
 | **`place_order`** | Runs the mobile API order sequence only when supplied the preview token and required API payloads |
@@ -160,6 +161,9 @@ User-management, payments, orders, and post-purchase tools:
 | **`phone_change`** | Changes the contact phone number (A16; one-time token) |
 | **`email_change`** | Changes the contact email (A16 sibling; one-time token) |
 | **`delete_account`** | Deletes the account (A18; one-time token; **irreversible — disposable accounts only**) |
+| **`watchdog_list`** | Lists the account's Alza watchdogs: price-drop and back-in-stock alerts (B9a; read-only; no email in the output) |
+| **`watchdog_set`** | Sets a watchdog on a product (`max_price` and/or `track_stock`). Alza emails the account when the condition is met (B9; one-time token) |
+| **`watchdog_delete`** | Deletes a watchdog by `watchdog_id` or `commodity_id` (B9b; one-time token) |
 
 High-impact mutations require one-time confirmation tokens (`checkout_preview` for mobile `place_order`, `prepare_mutation` for the other guarded mutations); the full route inventory, exposure decisions, and verification labels live in [docs/mobile-endpoint-coverage.md](docs/mobile-endpoint-coverage.md).
 
