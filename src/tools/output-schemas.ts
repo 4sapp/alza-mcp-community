@@ -250,6 +250,19 @@ export const GET_PRODUCT_REVIEWS_OUTPUT = z
   })
   .passthrough();
 
+export const AUTOCOMPLETE_OUTPUT = z
+  .object({
+    query: z.string(),
+    suggestions: z.array(z.string()),
+    categories: z.array(z.object({ id: z.number(), name: z.string(), url: z.string() }).passthrough()),
+    products: z.array(
+      z.object({ id: z.number(), code: z.string().optional(), name: z.string(), url: z.string(), image: z.string().optional() }).passthrough(),
+    ),
+    brands: z.array(z.object({ id: z.number(), name: z.string(), url: z.string() }).passthrough()),
+    articles: z.array(z.object({ name: z.string(), url: z.string() }).passthrough()),
+  })
+  .passthrough();
+
 export const LIST_CATEGORIES_OUTPUT = z
   .object({
     categories: z.array(
@@ -321,6 +334,7 @@ export const OUTPUT_SCHEMAS: Record<string, z.AnyZodObject> = {
   get_product: GET_PRODUCT_OUTPUT,
   get_product_reviews: GET_PRODUCT_REVIEWS_OUTPUT,
   list_categories: LIST_CATEGORIES_OUTPUT,
+  autocomplete: AUTOCOMPLETE_OUTPUT,
   find_pickup_points: FIND_PICKUP_POINTS_OUTPUT,
   list_category_filters: LIST_CATEGORY_FILTERS_OUTPUT,
   // Account (typed)

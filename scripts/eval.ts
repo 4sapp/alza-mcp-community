@@ -41,7 +41,7 @@ const outPath = resolve(evidenceDir, `eval-${today}.json`);
 
 const CANONICAL_ORDER = [
   // catalog (server.ts order)
-  "search_products", "get_product", "get_product_reviews", "find_pickup_points", "list_category_filters", "list_categories",
+  "search_products", "get_product", "get_product_reviews", "find_pickup_points", "list_category_filters", "list_categories", "autocomplete",
   // account.ts order
   "auth_discovery", "auth_start", "auth_exchange", "mobile_read", "prepare_mutation", "mutate_list",
   "account_status", "cart", "add_to_cart", "delivery_options", "select_pickup_point",
@@ -136,13 +136,13 @@ async function run(): Promise<void> {
 
   scenarios.push(await scenario("registration-surface", false, async (c) => {
     const tools = session.tools;
-    check(c, "tool count is 56 (54 domain tools + list_toolsets + set_toolset)", tools.length === 56, String(tools.length));
+    check(c, "tool count is 57 (55 domain tools + list_toolsets + set_toolset)", tools.length === 57, String(tools.length));
     check(c, "registration order is deterministic", JSON.stringify(tools.map((t) => t.name)) === JSON.stringify(CANONICAL_ORDER), JSON.stringify(tools.map((t) => t.name)));
     const missing = tools.filter((t) => !t.title || !t.description || t.description.length < 40);
     check(c, "every tool has a ≥40-char description and a title", missing.length === 0, missing.map((t) => t.name).join(","));
     const noOut = tools.filter((t) => !t.outputSchema || (t.outputSchema as Record<string, unknown>).type !== "object");
     check(c, "every tool publishes an object outputSchema", noOut.length === 0, noOut.map((t) => t.name).join(","));
-    check(c, "outputSchema map covers all 54 domain-tool names", Object.keys(OUTPUT_SCHEMAS).length === 54, String(Object.keys(OUTPUT_SCHEMAS).length));
+    check(c, "outputSchema map covers all 55 domain-tool names", Object.keys(OUTPUT_SCHEMAS).length === 55, String(Object.keys(OUTPUT_SCHEMAS).length));
     const readOnly = tools.filter((t) => t.annotations?.readOnlyHint === true).map((t) => t.name);
     const destructive = tools.filter((t) => t.annotations?.destructiveHint === true).map((t) => t.name);
     const mutating = tools.filter((t) => t.annotations?.readOnlyHint === false).map((t) => t.name);

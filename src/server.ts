@@ -12,6 +12,8 @@ import { createProductResource } from "./resources/product.js";
 import { createFindPickupPointsTool } from "./tools/find-pickup-points.js";
 import { createGetProductTool } from "./tools/get-product.js";
 import { createGetProductReviewsTool } from "./tools/get-product-reviews.js";
+import { createAutocompleteTool } from "./tools/autocomplete.js";
+import { Autocomplete } from "./domain/autocomplete.js";
 import { createListCategoriesTool } from "./tools/list-categories.js";
 import { createListCategoryFiltersTool } from "./tools/list-category-filters.js";
 import { createSearchProductsTool } from "./tools/search-products.js";
@@ -54,7 +56,8 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
     fetchImpl: cfTransport.available ? cfFetch(cfTransport) : undefined,
   });
   const mobileAccount = new MobileAccount(mobileApi);
-  const deps = { catalog, reviews, pickup, mobileAccount };
+  const autocomplete = new Autocomplete(mobileApi);
+  const deps = { catalog, reviews, pickup, mobileAccount, autocomplete };
 
   const server = new McpServer(
     { name: "alza-mcp", title: "Alza (unofficial)", version: VERSION },
@@ -92,6 +95,7 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
     createFindPickupPointsTool(deps),
     createListCategoryFiltersTool(deps),
     createListCategoriesTool(deps),
+    createAutocompleteTool(deps),
     ...createAccountTools(deps),
     ...createAdvancedTools(deps),
   ]);
