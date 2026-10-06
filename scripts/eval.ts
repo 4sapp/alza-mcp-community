@@ -146,7 +146,7 @@ async function run(): Promise<void> {
     const readOnly = tools.filter((t) => t.annotations?.readOnlyHint === true).map((t) => t.name);
     const destructive = tools.filter((t) => t.annotations?.destructiveHint === true).map((t) => t.name);
     const mutating = tools.filter((t) => t.annotations?.readOnlyHint === false).map((t) => t.name);
-    check(c, "readOnlyHint true on exactly 31", readOnly.length === 31, String(readOnly.length));
+    check(c, "readOnlyHint true on exactly 32", readOnly.length === 32, String(readOnly.length));
     check(c, "destructiveHint true on exactly 10", destructive.length === 10, String(destructive.length));
     check(c, "readOnlyHint false (mutating) on exactly 25", mutating.length === 25, String(mutating.length));
   }));
