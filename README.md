@@ -105,6 +105,7 @@ Catalog tools:
 | **`list_category_filters`** | Category brands (`brands[].valueId`) and attribute facets with live ids/counts — use `producer_ids` or `filters` with `category_id`; unsupported URL filters return an error |
 | **`get_deals`** | Discounted products (alza.cz only) with current/original price and discount % computed from observed prices — scans category listing pages for a `category_id`, or popular categories when omitted |
 | **`list_categories`** | Top-level categories, or real subcategories when `parent_id` is supplied — feed the returned ids into `search_products` |
+| **`autocomplete`** | Search-box suggestions over plain HTTP (no page render): phrases, categories, brands and products with ids/codes — refine a messy Czech query before `search_products` |
 | **`product_by_ean`** | Looks up catalog products by barcode/EAN (the app's camera barcode-scan API, AT3; read-only, no account required; enable `reviews_and_subscriptions`) |
 
 Account and checkout tools:
