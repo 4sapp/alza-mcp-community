@@ -228,6 +228,22 @@ export const SEARCH_PRODUCTS_OUTPUT = z
   })
   .passthrough();
 
+export const GET_DEALS_OUTPUT = z
+  .object({
+    categoryIds: z.array(z.number()),
+    candidatesScanned: z.number(),
+    total: z.number(),
+    deals: z.array(
+      PRODUCT.extend({
+        price: z.number(),
+        originalPrice: z.number(),
+        savings: z.number(),
+        discountPercent: z.number(),
+      }),
+    ),
+  })
+  .passthrough();
+
 export const GET_PRODUCT_OUTPUT = z
   .object({ product: PRODUCT })
   .passthrough();
@@ -367,6 +383,7 @@ export const OUTPUT_SCHEMAS: Record<string, z.AnyZodObject> = {
   list_categories: LIST_CATEGORIES_OUTPUT,
   find_pickup_points: FIND_PICKUP_POINTS_OUTPUT,
   list_category_filters: LIST_CATEGORY_FILTERS_OUTPUT,
+  get_deals: GET_DEALS_OUTPUT,
   // Account (typed)
   auth_start: AUTH_START,
   prepare_mutation: PREPARE_MUTATION,
