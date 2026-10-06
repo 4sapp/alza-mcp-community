@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- `compare_products` (catalog toolset, read-only): 2–6 product codes side by side as one aligned spec table (price, availability, rating, then every spec row in any product). Pages load two at a time through the product cache; a bad code is reported in its own column instead of failing the call ([#11](https://github.com/lukabudik/alza-mcp/issues/11)). Optional `summarize: true` asks the client's LLM for a short verdict via MCP sampling, grounded only in the table, capped at 400 tokens; clients without sampling get the table and `summary.status: "unavailable"` ([#18](https://github.com/lukabudik/alza-mcp/issues/18)).
+
 ### Changed
 - `auth_exchange` accepts the full `alza://identity?code=…&state=…` redirect URL as `code` and reads `state` from it. Passing `state` is now optional in that case. The `auth_start` description and README explain the misleading "Při přihlášení došlo k chybě." message on desktop browsers (a client-side timer, not a failed sign-in) and how to get the redirect URL from DevTools ([#29](https://github.com/lukabudik/alza-mcp/issues/29)).
 

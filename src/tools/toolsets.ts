@@ -31,9 +31,9 @@ export const TOOLSET_DEFS: ToolsetDef[] = [
   {
     id: "catalog",
     title: "Catalog & discovery",
-    description: "Search, product detail, reviews, categories, and AlzaShop pickup-point lookup. Read-only, no account needed.",
+    description: "Search, product detail, side-by-side comparison, reviews, categories, and AlzaShop pickup-point lookup. Read-only, no account needed.",
     defaultEnabled: true,
-    tools: ["search_products", "get_product", "get_product_reviews", "find_pickup_points", "list_categories", "list_category_filters"],
+    tools: ["search_products", "get_product", "compare_products", "get_product_reviews", "find_pickup_points", "list_categories", "list_category_filters"],
   },
   {
     id: "auth",

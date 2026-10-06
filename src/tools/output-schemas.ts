@@ -232,6 +232,32 @@ export const GET_PRODUCT_OUTPUT = z
   .object({ product: PRODUCT })
   .passthrough();
 
+export const COMPARE_PRODUCTS_OUTPUT = z
+  .object({
+    products: z.array(
+      z
+        .object({
+          code: z.string(),
+          ok: z.boolean(),
+          name: z.string().optional(),
+          url: z.string().optional(),
+          error: z.string().optional(),
+        })
+        .passthrough(),
+    ),
+    rows: z.array(z.object({ name: z.string(), values: z.array(z.string().nullable()) }).passthrough()),
+    summary: z
+      .object({
+        status: z.enum(["generated", "unavailable", "failed"]),
+        text: z.string().optional(),
+        model: z.string().optional(),
+        reason: z.string().optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
 export const GET_PRODUCT_REVIEWS_OUTPUT = z
   .object({
     code: z.string(),
@@ -320,6 +346,7 @@ export const OUTPUT_SCHEMAS: Record<string, z.AnyZodObject> = {
   // Catalog (typed domain shapes)
   search_products: SEARCH_PRODUCTS_OUTPUT,
   get_product: GET_PRODUCT_OUTPUT,
+  compare_products: COMPARE_PRODUCTS_OUTPUT,
   get_product_reviews: GET_PRODUCT_REVIEWS_OUTPUT,
   list_categories: LIST_CATEGORIES_OUTPUT,
   find_pickup_points: FIND_PICKUP_POINTS_OUTPUT,
