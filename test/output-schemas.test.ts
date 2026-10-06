@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { Catalog } from "../src/domain/catalog.js";
+import { describe, expect, it, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { buildServer } from "../src/server.js";
@@ -27,9 +28,9 @@ async function clientAndServer() {
 }
 
 describe("per-tool outputSchema (N-1)", () => {
-  it("covers all 55 tools in the shared map", () => {
+  it("covers all 56 tools in the shared map", () => {
     const names = Object.keys(OUTPUT_SCHEMAS);
-    expect(names).toHaveLength(55);
+    expect(names).toHaveLength(56);
     for (const n of names) expect(OUTPUT_SCHEMAS[n]).toBeTruthy();
   });
 
@@ -37,7 +38,7 @@ describe("per-tool outputSchema (N-1)", () => {
     const { client, built } = await clientAndServer();
     try {
       const res = await client.listTools();
-      expect(res.tools).toHaveLength(57); // 55 domain tools + list_toolsets + set_toolset
+      expect(res.tools).toHaveLength(58); // 56 domain tools + list_toolsets + set_toolset
       for (const t of res.tools) {
         const os = t.outputSchema as Record<string, unknown> | undefined;
         expect(os, `missing outputSchema on ${t.name}`).toBeTruthy();
@@ -75,6 +76,22 @@ describe("per-tool outputSchema (N-1)", () => {
       expect(typeof sc.apiBaseUrl).toBe("string");
       expect((call.content as { type: string; text: string }[])[0].type).toBe("text");
     } finally {
+      await client.close();
+      await built.close();
+    }
+  });
+
+  it("returns category brands through SDK output validation", async () => {
+    const filters = { categoryId: 18842948, brands: [{ valueId: 1396, description: "Dell", count: 109 }], groups: [] };
+    const mock = vi.spyOn(Catalog.prototype, "getCategoryFilters").mockResolvedValueOnce(filters);
+    const { client, built } = await clientAndServer();
+    try {
+      const call = await client.callTool({ name: "list_category_filters", arguments: { category_id: filters.categoryId } });
+      expect(call.isError).toBeFalsy();
+      expect(call.structuredContent).toEqual({ category_id: filters.categoryId, brands: filters.brands, groups: [] });
+      expect(mock).toHaveBeenCalledWith(filters.categoryId);
+    } finally {
+      mock.mockRestore();
       await client.close();
       await built.close();
     }
