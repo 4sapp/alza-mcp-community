@@ -74,6 +74,7 @@ export class ImpersonateTransport {
   private dead = false;
   private spawnPromise: Promise<boolean> | null = null;
   private stderrTail = "";
+  private closed = false;
 
   constructor(
     private readonly opts: {
@@ -111,6 +112,11 @@ export class ImpersonateTransport {
         if (child.exitCode !== null) {
           log.warn("cf-transport: sidecar exited at startup", { py, code: child.exitCode, stderr: this.stderrTail.slice(-300) });
           continue;
+        }
+        if (this.closed) {
+          // close() ran while we were spawning — do not leak the child.
+          child.kill();
+          return false;
         }
         this.child = child;
         log.info("cf-transport: sidecar ready", { py, pid: child.pid });
@@ -214,6 +220,7 @@ export class ImpersonateTransport {
   }
 
   close(): void {
+    this.closed = true;
     this.killAll(new TransportUnavailableError("transport closed"));
     this.child?.kill();
     this.child = null;
