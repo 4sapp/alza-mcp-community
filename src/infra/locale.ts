@@ -47,7 +47,10 @@ const LOCALES: Record<string, Locale> = {
 const DEFAULT_BASE_URL = "https://www.alza.cz";
 
 export function resolveLocale(baseUrl?: string): Locale {
-  const url = (baseUrl ?? process.env.ALZA_BASE_URL ?? DEFAULT_BASE_URL).replace(/\/$/, "");
+  // An empty value means "not set": MCP hosts substitute optional user settings as
+  // empty strings (e.g. a cleared `base_url` in the Claude Desktop .mcpb settings).
+  const pick = (v: string | undefined) => (v && v.trim() ? v.trim() : undefined);
+  const url = (pick(baseUrl) ?? pick(process.env.ALZA_BASE_URL) ?? DEFAULT_BASE_URL).replace(/\/$/, "");
   const locale = LOCALES[url];
   if (!locale) {
     throw new Error(
