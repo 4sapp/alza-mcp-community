@@ -243,8 +243,60 @@ export const SEARCH_PRODUCTS_OUTPUT = z
   })
   .passthrough();
 
+export const GET_DEALS_OUTPUT = z
+  .object({
+    categoryIds: z.array(z.number()),
+    candidatesScanned: z.number(),
+    total: z.number(),
+    deals: z.array(
+      PRODUCT.extend({
+        price: z.number(),
+        originalPrice: z.number(),
+        savings: z.number(),
+        discountPercent: z.number(),
+      }),
+    ),
+  })
+  .passthrough();
+
 export const GET_PRODUCT_OUTPUT = z
   .object({ product: PRODUCT })
+  .passthrough();
+
+export const RECOMMEND_ALTERNATIVES_OUTPUT = z
+  .object({
+    source: PRODUCT,
+    mode: z.enum(["cheaper", "better-specs", "same-brand"]).optional(),
+    poolSource: z.enum(["alza-alternatives", "category-search"]),
+    candidatesConsidered: z.number(),
+    alternatives: z.array(PRODUCT),
+  })
+  .passthrough();
+
+export const COMPARE_PRODUCTS_OUTPUT = z
+  .object({
+    products: z.array(
+      z
+        .object({
+          code: z.string(),
+          ok: z.boolean(),
+          name: z.string().optional(),
+          url: z.string().optional(),
+          error: z.string().optional(),
+        })
+        .passthrough(),
+    ),
+    rows: z.array(z.object({ name: z.string(), values: z.array(z.string().nullable()) }).passthrough()),
+    summary: z
+      .object({
+        status: z.enum(["generated", "unavailable", "failed"]),
+        text: z.string().optional(),
+        model: z.string().optional(),
+        reason: z.string().optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
   .passthrough();
 
 export const GET_PRODUCT_REVIEWS_OUTPUT = z
@@ -259,9 +311,27 @@ export const GET_PRODUCT_REVIEWS_OUTPUT = z
           date: z.string().optional(),
           rating: z.number().optional(),
           body: z.string().optional(),
+          pros: z.array(z.string()).optional(),
+          cons: z.array(z.string()).optional(),
+          verifiedPurchase: z.boolean().optional(),
+          variant: z.string().optional(),
+          helpfulCount: z.number().optional(),
         })
         .passthrough(),
     ),
+  })
+  .passthrough();
+
+export const AUTOCOMPLETE_OUTPUT = z
+  .object({
+    query: z.string(),
+    suggestions: z.array(z.string()),
+    categories: z.array(z.object({ id: z.number(), name: z.string(), url: z.string() }).passthrough()),
+    products: z.array(
+      z.object({ id: z.number(), code: z.string().optional(), name: z.string(), url: z.string(), image: z.string().optional() }).passthrough(),
+    ),
+    brands: z.array(z.object({ id: z.number(), name: z.string(), url: z.string() }).passthrough()),
+    articles: z.array(z.object({ name: z.string(), url: z.string() }).passthrough()),
   })
   .passthrough();
 
@@ -297,9 +367,12 @@ export const FIND_PICKUP_POINTS_OUTPUT = z
           distanceKm: z.number().optional(),
           openingHours: z.string().optional(),
           note: z.string().optional(),
+          parcelShopId: z.number().optional(),
+          deliveryId: z.number().optional(),
         })
         .passthrough(),
     ),
+    warnings: z.array(z.string()).optional(),
   })
   .passthrough();
 
@@ -337,10 +410,14 @@ export const OUTPUT_SCHEMAS: Record<string, z.AnyZodObject> = {
   // Catalog (typed domain shapes)
   search_products: SEARCH_PRODUCTS_OUTPUT,
   get_product: GET_PRODUCT_OUTPUT,
+  compare_products: COMPARE_PRODUCTS_OUTPUT,
   get_product_reviews: GET_PRODUCT_REVIEWS_OUTPUT,
+  recommend_alternatives: RECOMMEND_ALTERNATIVES_OUTPUT,
   list_categories: LIST_CATEGORIES_OUTPUT,
+  autocomplete: AUTOCOMPLETE_OUTPUT,
   find_pickup_points: FIND_PICKUP_POINTS_OUTPUT,
   list_category_filters: LIST_CATEGORY_FILTERS_OUTPUT,
+  get_deals: GET_DEALS_OUTPUT,
   // Account (typed)
   auth_start: AUTH_START,
   prepare_mutation: PREPARE_MUTATION,

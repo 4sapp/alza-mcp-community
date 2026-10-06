@@ -207,6 +207,19 @@ describe("pickAdditionalProperties", () => {
     ]);
   });
 
+  it("decodes HTML entities in JSON-LD values (live 2026-10-06: `27 &quot; (68,58 cm)`)", () => {
+    expect(pickAdditionalProperties([{ name: "Úhlopříčka", value: "27 &quot; (68,58 cm)" }, { name: "A &amp; B", value: "&lt;1 ms&gt;" }])).toEqual([
+      { name: "Úhlopříčka", value: '27 " (68,58 cm)' },
+      { name: "A & B", value: "<1 ms>" },
+    ]);
+  });
+
+  it("decodes astral numeric references and leaves out-of-range ones untouched", () => {
+    expect(pickAdditionalProperties([{ name: "Ikona", value: "&#128512; &#x1F600; &#99999999;" }])).toEqual([
+      { name: "Ikona", value: "\u{1F600} \u{1F600} &#99999999;" },
+    ]);
+  });
+
   it("drops entries missing a name or value, and handles non-array input", () => {
     expect(pickAdditionalProperties([{ name: "X" }, { value: "Y" }, null, "not an object"])).toEqual([]);
     expect(pickAdditionalProperties(undefined)).toEqual([]);

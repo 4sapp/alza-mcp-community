@@ -1,0 +1,134 @@
+{
+  "self": {
+    "href": "https://www.alza.cz/api/salesNetwork/v1/places/2680/1009720",
+    "appLink": "pickupPlaceDetail",
+    "enabled": true
+  },
+  "id": "1009720-2680",
+  "deliveryId": 2680,
+  "parcelShopId": 1009720,
+  "typeText": "AlzaBox",
+  "articleUrl": "https://www.alza.cz/alzabox-brno-(pasaz-rozkvet)-1009720-ps.htm",
+  "detailAction": {
+    "href": "https://www.alza.cz/alzabox-brno-(pasaz-rozkvet)-1009720-ps.htm",
+    "appLink": "webView",
+    "name": "Podrobnosti",
+    "enabled": true
+  },
+  "state": 0,
+  "detail": {
+    "self": {
+      "href": "https://www.alza.cz/api/salesNetwork/v1/places/2680/1009720",
+      "appLink": "pickupPlaceDetail",
+      "enabled": true
+    },
+    "imgUrl": "https://image.alza.cz/Foto/ImgGalery/boxes/AB578..jpg",
+    "openingHoursLabel": "Otevírací doba",
+    "openingHours": [
+      {
+        "label": "Dnes, 6. 10.",
+        "intervals": [
+          {
+            "label": "09:00 - 21:00",
+            "openingHoursType": 1,
+            "displayType": 0
+          }
+        ],
+        "note": "",
+        "displayType": 4
+      },
+      {
+        "label": "Zítra, 7. 10.",
+        "intervals": [
+          {
+            "label": "09:00 - 21:00",
+            "openingHoursType": 1,
+            "displayType": 0
+          }
+        ],
+        "note": "",
+        "displayType": 0
+      },
+      {
+        "label": "Čtvrtek, 8. 10.",
+        "intervals": [
+          {
+            "label": "09:00 - 21:00",
+            "openingHoursType": 1,
+            "displayType": 0
+          }
+        ],
+        "note": "",
+        "displayType": 0
+      },
+      {
+        "label": "Pátek, 9. 10.",
+        "intervals": [
+          {
+            "label": "09:00 - 21:00",
+            "openingHoursType": 1,
+            "displayType": 0
+          }
+        ],
+        "note": "",
+        "displayType": 0
+      },
+      {
+        "label": "Sobota, 10. 10.",
+        "intervals": [
+          {
+            "label": "09:00 - 21:00",
+            "openingHoursType": 1,
+            "displayType": 0
+          }
+        ],
+        "note": "",
+        "displayType": 0
+      },
+      {
+        "label": "Neděle, 11. 10.",
+        "intervals": [
+          {
+            "label": "09:00 - 21:00",
+            "openingHoursType": 1,
+            "displayType": 0
+          }
+        ],
+        "note": "",
+        "displayType": 0
+      },
+      {
+        "label": "Pondělí, 12. 10.",
+        "intervals": [
+          {
+            "label": "09:00 - 21:00",
+            "openingHoursType": 1,
+            "displayType": 0
+          }
+        ],
+        "note": "",
+        "displayType": 0
+      }
+    ],
+    "services": [
+      0,
+      7,
+      6
+    ],
+    "detailAction": {
+      "href": "https://www.alza.cz/alzabox-brno-(pasaz-rozkvet)-1009720-ps.htm",
+      "appLink": "webView",
+      "name": "Podrobnosti",
+      "enabled": true
+    }
+  },
+  "gpsPosition": {
+    "latitude": 49.19375,
+    "longitude": 16.608444
+  },
+  "type": 1,
+  "title": "Alzabox",
+  "name": "Brno (Pasáž Rozkvět)",
+  "addressText": "Náměstí Svobody 85/16, 60200 Brno",
+  "image": "https://image.alza.cz/Foto/Domains/Logistics/PersonalPickup/svg/icon-2.svg"
+}

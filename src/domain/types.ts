@@ -71,6 +71,14 @@ export interface ProductReview {
   date?: string;
   rating?: number;
   body?: string;
+  /** Positive points the reviewer listed, when present. */
+  pros?: string[];
+  /** Negative points the reviewer listed, when present. */
+  cons?: string[];
+  verifiedPurchase?: boolean;
+  /** Reviewed variant label, e.g. "iPhone 15 128GB cerna". */
+  variant?: string;
+  helpfulCount?: number;
 }
 
 export interface ProductReviews {
@@ -137,4 +145,8 @@ export interface PickupPoint {
   openingHours?: string;
   /** Free-form note (e.g. "24/7", "self-service"). */
   note?: string;
+  /** AlzaBox only: Alza's parcel-shop id (the `parcelShopId` used in checkout). */
+  parcelShopId?: number;
+  /** AlzaBox only: Alza's delivery-option id for the locker network (e.g. 2680). */
+  deliveryId?: number;
 }
