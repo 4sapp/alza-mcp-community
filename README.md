@@ -221,7 +221,7 @@ On HTTP the server is stricter than on stdio, because a network endpoint can be 
 
 - **Catalog only by default.** Only the read-only `catalog` toolset is usable. Every other toolset (`auth`, basket/checkout, account, orders/payments, reviews/subscriptions, chat, `advanced_raw`) is **locked**: `list_toolsets` shows it with the reason, and `set_toolset` refuses to enable it. These tools sign in to and act on a real Alza account (orders, payments, credentials), so a shared endpoint must not offer them by accident. Set `ALZA_HTTP_ENABLE_ACCOUNT=1` to unlock them.
 - **One server per MCP session.** Each `Mcp-Session-Id` gets its own server instance: its own toolset state, OAuth tokens and one-time confirmation tokens. With `ALZA_HTTP_ENABLE_ACCOUNT=1`, each session also gets its own browser context and Chrome-fingerprint sidecar, because both keep Alza cookies. Sessions expire after 30 idle minutes.
-- **No token file.** `ALZA_TOKEN_FILE` (`~/.alza-mcp/tokens.json`) holds one person's login, so HTTP mode does not load it. Each session signs in with `auth_start` → `auth_exchange`. For a single-user localhost setup you can set `ALZA_HTTP_ALLOW_TOKEN_FILE=1` (together with `ALZA_HTTP_ENABLE_ACCOUNT=1`); every session then starts signed in as that account, so never do this on a shared host.
+- **No token file.** `ALZA_TOKEN_FILE` (`~/.alza-mcp/tokens.json`) holds one person's login, so HTTP mode does not load it. Each session signs in with `auth_start` → `auth_exchange`. For a single-user localhost setup you can set `ALZA_HTTP_ALLOW_TOKEN_FILE=1` (together with `ALZA_HTTP_ENABLE_ACCOUNT=1`); every session then starts signed in as that account, so never do this on a shared host. All sessions start from the same refresh token and Alza rotates it on refresh, so the first session that refreshes invalidates the copy the others hold (they then need `auth_start` → `auth_exchange`); keep to one active session in this mode.
 - **Localhost only by default.** It binds `127.0.0.1` and rejects requests whose `Host` or `Origin` is not a loopback name (DNS-rebinding protection). There is no built-in authentication or TLS. If you bind elsewhere (`--host 0.0.0.0`), put it behind a reverse proxy that does both, and set `ALZA_HTTP_ALLOWED_HOSTS`.
 
 | Env var / flag | Default | Purpose |
@@ -233,7 +233,7 @@ On HTTP the server is stricter than on stdio, because a network endpoint can be 
 | `ALZA_HTTP_ENABLE_ACCOUNT` | off | Unlock the auth/account/checkout/order/payment toolsets (per-session logins) |
 | `ALZA_HTTP_ALLOW_TOKEN_FILE` | off | Also load `ALZA_TOKEN_FILE` into every session (single-user only; needs `ALZA_HTTP_ENABLE_ACCOUNT`) |
 | `ALZA_HTTP_MAX_SESSIONS` | `50` | Concurrent session cap (HTTP 503 beyond it) |
-| `ALZA_HTTP_SESSION_IDLE_MS` | `1800000` | Close a session after this long without a request |
+| `ALZA_HTTP_SESSION_IDLE_MS` | `1800000` | Close a session after this long without a request (a session holding an open GET/SSE stream is not closed) |
 
 **Hosting is not supported yet.** A hosted endpoint (Vercel `mcp-handler`, Fly, Railway, …) is a follow-up. The main obstacle is Cloudflare, not the transport: Alza is behind Cloudflare Bot Management, and both the headless browser and the `curl_cffi` sidecar get through it from a residential IP (live-verified) but are far more likely to be challenged from a datacenter IP. A hosted instance will probably need a residential proxy or a browser-as-a-service (for example Browserbase via `ALZA_CDP_URL`). The daily canary's GitHub-hosted runs show this: they get Cloudflare's interactive challenge. Other things a host needs: Chromium and Python with `curl_cffi` in the image, enough memory for one browser per account session, sticky routing (sessions live in one process's memory), and authentication in front of the endpoint. Keep the account toolsets locked on any multi-user host.
 
@@ -345,7 +345,7 @@ node dist/index.js --http   # or serve MCP Streamable HTTP on http://127.0.0.1:3
 
 `main` already covers catalog, filtering, cart, checkout, order placement/cancellation and account management (see [What it does](#what-it-does) and the known limitations in [docs/gap-analysis.md](docs/gap-analysis.md)). Next up:
 
-- **PC builder** ([#15](https://github.com/lukabudik/alza-mcp/issues/15)) and **Streamable HTTP transport** ([#16](https://github.com/lukabudik/alza-mcp/issues/16))
+- **PC builder** ([#15](https://github.com/lukabudik/alza-mcp/issues/15)) and a **hosted HTTP endpoint** (follow-up to [#16](https://github.com/lukabudik/alza-mcp/issues/16); local `--http` mode is shipped)
 
 Priorities live in [ROADMAP.md](ROADMAP.md); everything is tracked in [issues](https://github.com/lukabudik/alza-mcp/issues) — [`good first issue`](https://github.com/lukabudik/alza-mcp/labels/good%20first%20issue) is the place to start.
 
