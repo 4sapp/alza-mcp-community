@@ -100,7 +100,7 @@ Catalog tools:
 | **`get_product`** | Full detail for one product — price, availability, brand, image, URL |
 | **`get_product_reviews`** | Aggregate rating + review count |
 | **`find_pickup_points`** | Nearest brick-and-mortar AlzaShop showrooms by postal code |
-| **`list_category_filters`** | Category brands (`brands[].valueId`) and attribute facets with live ids/counts — use `producer_ids` or `filters` with `category_id`; unsupported URL filters return an error |
+| **`list_category_filters`** | Category brands (`brands[].valueId`) and attribute facets with live ids/counts — use `producer_ids` or `filters` with `category_id` (`{param_id, value_id}` for checkbox facets, `{param_id, min?, max?}` for slider ranges such as screen size or refresh rate); unsupported URL filters return an error |
 | **`list_categories`** | Top-level categories, or real subcategories when `parent_id` is supplied — feed the returned ids into `search_products` |
 | **`product_by_ean`** | Looks up catalog products by barcode/EAN (the app's camera barcode-scan API, AT3; read-only, no account required; enable `reviews_and_subscriptions`) |
 

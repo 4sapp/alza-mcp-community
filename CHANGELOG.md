@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- Slider (range) attribute filters ([#10](https://github.com/lukabudik/alza-mcp/issues/10), live-verified 2026-10-06). `search_products`'s `filters` now also takes `{param_id, min?, max?}` for Slider facets: screen size, refresh rate, brightness, response time, weight, dimensions, port counts, RAM, and so on. `list_category_filters` marks those groups `filterable: true, filterMode: "range"` and gives each step's raw `value`. A real mouse drag showed that Alza's category page keeps slider state in the URL hash (`#f&…&par{paramId}={from}--{to}`) and its JS then POSTs `/Services/EShopService.svc/Filter`. The MCP loads the hash URL, reads the page's own `Filter` reply, and returns the applied, step-snapped ranges as `appliedRanges`. With `category_id`, `min_screen_inches`/`max_screen_inches` now use the category's real diagonal slider (millimetres on monitors and laptops, inches on TVs). The product-name heuristic is only the fallback. See `docs/gap-analysis.md`.
+
 ### Changed
 - `auth_exchange` accepts the full `alza://identity?code=…&state=…` redirect URL as `code` and reads `state` from it. Passing `state` is now optional in that case. The `auth_start` description and README explain the misleading "Při přihlášení došlo k chybě." message on desktop browsers (a client-side timer, not a failed sign-in) and how to get the redirect URL from DevTools ([#29](https://github.com/lukabudik/alza-mcp/issues/29)).
 

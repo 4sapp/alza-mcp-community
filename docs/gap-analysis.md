@@ -427,7 +427,7 @@ about *how* the working tools relate to each other:
   places a real AlzaBox order without needing `select_pickup_point` at all —
   this is what should be recommended until the above is re-tested.
 
-### Search-time attribute/facet filtering — closed for Checkbox-type facets (2026-09-27)
+### Search-time attribute/facet filtering — closed for Checkbox-type (2026-09-27) and Slider-type (2026-10-06) facets
 
 - **The gap:** Alza's category pages have a rich per-category attribute filter
   system (facets) — e.g. screen diagonal, native contrast, panel technology,
@@ -481,20 +481,55 @@ about *how* the working tools relate to each other:
   `search_products` returned real, correctly-narrowed results. Unit-tested
   (`buildFilteredCategoryUrl`, `parseFacetsResponse` in
   `test/catalog-sort.test.ts`).
-- **Still not filterable**: Slider-type facets (screen diagonal, refresh
-  rate, response time, brightness, port *counts*, width/height/depth/weight,
-  color-gamut %, energy consumption) — confirmed no discoverable URL/API
-  encoding exists for these (the jQuery UI slider fires no XHR on
-  interaction this session could capture). `min_screen_inches`/
-  `max_screen_inches`'s name-parsing heuristic remains the substitute for
-  screen size specifically; other slider attributes have no substitute —
-  compare via `get_product`'s scraped `params` field instead.
-  `list_category_filters` marks these groups `filterable: false` so the
-  distinction is explicit, not silently missing.
-- **Re-test target**: if the slider's XHR can be found (e.g. by capturing
-  network traffic through a full mouse-drag interaction rather than a
-  programmatic click, which this session didn't attempt), a proper
-  server-side range filter could replace the size-parsing heuristic too.
+- **Slider-type facets: closed 2026-10-06 (`live-verified`, issue #10).**
+  (Superseded: the 2026-09-27 note said slider facets had no URL/API encoding.
+  That attempt used a programmatic click, which fires no XHR.) A real Playwright
+  mouse drag (`mouse.down` → 15 × `mouse.move` → `mouse.up`) on the diagonal
+  slider of `/lcd-monitory/18842948.htm` found the mechanism:
+  1. **URL hash**: the page writes
+     `#f&cud=0&pg={page}&prod=&par{paramId}={from}--{to}` (e.g.
+     `par17816=711.2--2667`). Values are the facet's own step values (`v` in the
+     C3 facets API), and there is one `par` entry per slider. The canonical URL and
+     `rel=next` don't change. The pager anchors are rewritten to the hash.
+  2. **XHR**: the page's JS then POSTs `/Services/EShopService.svc/Filter`
+     `{idCategory, producers, parameters:[{typeId, valueFrom, valueTo, orderFrom, orderTo, valueIds}], page, pageTo, sort, searchTerm, …}`.
+     The JSON reply is `{d:{Boxes (result-card HTML), Count, Page, PagerBottom, …}}`.
+  3. **A fresh page load of the hash URL applies it.** The site's JS issues
+     the same `Filter` call. It composes with the existing path segments
+     (`-v{producer}-par{param}-{value}` checkbox filters are copied into the
+     body), and `pg=N` in the hash selects the page.
+  4. Constraints observed live: **both bounds are required**. A missing upper
+     bound collapsed to the slider minimum, which gave 0 results. The page snaps values to real steps and
+     clamps them to the filtered subset's own range. The search page
+     (`/search.htm`) has no sliders and ignores the hash. A `searchTerm` injected
+     into the `Filter` body is ignored, so range filtering is a category-browse
+     feature, like the checkbox filters. **Units differ per category.** The diagonal
+     is millimetres on monitors (`17816`) and laptops (`316`) but inches on TVs
+     (`41706`). Laptop RAM is in MB.
+  - **Implemented**: `search_products`'s `filters` accepts
+    `{param_id, min?, max?}` next to `{param_id, value_id}`.
+    `list_category_filters` marks Slider groups `filterable: true,
+    filterMode: "range"` and exposes each step's raw `value`. `Catalog`
+    snaps the bounds to real steps (`snapRange`) and always sends both. It loads
+    `{filteredCategoryUrl}{buildRangeHash(…)}`, waits for the page's own
+    `Filter` reply, and extracts cards from `d.Boxes`. The DOM isn't used here
+    because it isn't cleared on an empty reply. It also reads the request body
+    back, so it can error out if a range wasn't applied and report the
+    effective ranges as `appliedRanges`. A range with no step inside it returns
+    an empty result (`empty: true`) without fetching a page.
+  - **Screen size**: with `category_id`, `min_screen_inches`/
+    `max_screen_inches` now run through the category's own diagonal slider. The
+    slider is found by its inch-labelled values, so it works with any unit (mm
+    or inches). The name-parsing heuristic is now only the fallback when no
+    `category_id` is given or the category has no diagonal slider.
+  - Live end-to-end through the MCP server (monitors refresh ≥ 240 Hz, spot-checked
+    320 Hz via `get_product`; monitors 42"–45"; TVs 75"–77"; laptops RAM ≥ 64 GB,
+    spot-checked; brand + checkbox + two sliders; page 2; price sort sweep; empty
+    range; misuse error): see
+    [`live-evidence/range-filters-2026-10-06.md`](live-evidence/range-filters-2026-10-06.md).
+    Unit tests: `test/range-filters.test.ts`.
+  - Still open: keyword text cannot be combined with any facet filter (checkbox
+    or range), because Alza's category-browse path has no search-term input.
 
 ### AlzaBox size-eligibility surfaced pre-checkout — closed as infeasible from product data (2026-09-27)
 
