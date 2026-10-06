@@ -268,12 +268,19 @@ export class CfResponseAdapter {
 /** fetch(url, init) via the sidecar. Satisfies both
  * `MobileApiOptions.httpFetch` and `AppActionExecutorOptions.fetchImpl`
  * (the minimal FetchLike contract in app-action.ts).
- * Non-string bodies (FormData/Blob/streams — e.g. multipart upload actions)
- * stay on the native fetch path: the sidecar speaks raw base64 bytes. */
+ * Opaque bodies (FormData/Blob/streams — e.g. multipart upload actions) stay on
+ * the native fetch path: the sidecar speaks raw base64 bytes. `URLSearchParams`
+ * is not opaque — it serialises losslessly to the urlencoded string the sidecar
+ * already sends, and it is what every OAuth token request uses, so routing it to
+ * native fetch would silently put those requests back behind the bot wall. */
 export function cfFetch(transport: ImpersonateTransport) {
   return async (input: string | URL | Request, init: RequestInit = {}): Promise<CfResponseAdapter | Response> => {
     const body = init.body;
-    if (body != null && typeof body !== "string") {
+    const sidecarBody =
+      typeof body === "string" ? body
+      : body instanceof URLSearchParams ? body.toString()
+      : null;
+    if (body != null && sidecarBody === null) {
       return fetch(String(input), init);
     }
     const headers: Record<string, string> = {};
@@ -289,7 +296,7 @@ export function cfFetch(transport: ImpersonateTransport) {
       url: String(input),
       method: init.method,
       headers,
-      body: (typeof body === "string" ? body : null),
+      body: sidecarBody,
     });
     return new CfResponseAdapter(res);
   };

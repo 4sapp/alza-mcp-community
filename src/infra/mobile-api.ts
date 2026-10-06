@@ -105,11 +105,45 @@ export class MobileApi {
     } catch { return undefined; /* no readable token store — remain unauthenticated */ }
   }
 
+  /** identity.alza.cz sits behind the same Cloudflare bot wall as www/webapi, so the
+   * OAuth endpoints need the Chrome-fingerprint transport too — a plain fetch gets a
+   * 403 managed challenge and authentication can never start. Normalises the sidecar
+   * reply to the `{ok, status, json}` shape the OAuth callers already expect. */
+  private async oauthFetch(
+    url: string,
+    init: { method?: string; headers?: Headers | Record<string, string>; body?: string } = {},
+  ): Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }> {
+    if (!this.httpFetch) return fetch(url, init as RequestInit);
+    const headers: Record<string, string> = {};
+    if (init.headers instanceof Headers) {
+      for (const [k, v] of init.headers.entries()) headers[k] = v;
+    } else if (init.headers) {
+      Object.assign(headers, init.headers);
+    }
+    try {
+      const res = await this.httpFetch(url, { method: init.method ?? "GET", headers, body: init.body ?? null });
+      const text = await res.text();
+      return { ok: res.status >= 200 && res.status < 300, status: res.status, json: async () => JSON.parse(text) as unknown };
+    } catch (err) {
+      // Same contract as performRequest: the sidecar is optional (no python3 / curl_cffi,
+      // or it died), so a transport failure degrades to plain fetch instead of failing auth.
+      log.warn("mobile-api: cf transport failed for OAuth, falling back", { url, error: String(err) });
+      return fetch(url, init as RequestInit);
+    }
+  }
+
   async discovery(): Promise<OidcDiscovery> {
     if (this.oidc) return this.oidc;
     const authority = process.env.ALZA_OAUTH_AUTHORITY ?? "https://identity.alza.cz";
-    const response = await fetch(`${authority}/.well-known/openid-configuration`, { headers: { accept: "application/json", "user-agent": "Alza/2026.15.0 (Android)", "accept-language": "cs-CZ,cs;q=0.9,en;q=0.8", "x-correlation-id": randomUUID(), "Balancer-Guid": this.visitorId } });
-    if (!response.ok) throw new Error(`OAuth discovery failed with HTTP ${response.status}`);
+    const response = await this.oauthFetch(`${authority}/.well-known/openid-configuration`, { headers: { accept: "application/json", "user-agent": "Alza/2026.15.0 (Android)", "accept-language": "cs-CZ,cs;q=0.9,en;q=0.8", "x-correlation-id": randomUUID(), "Balancer-Guid": this.visitorId } });
+    if (!response.ok) {
+      // Best-effort, matching scripts/alza-auth-login.mjs: the only values taken from
+      // discovery are the authorize and token endpoints, and both callers already carry
+      // the APK defaults. Throwing here made those fallbacks unreachable, so a
+      // challenged discovery GET killed the whole flow instead of degrading.
+      log.warn("OAuth discovery failed; falling back to APK default endpoints", { status: response.status });
+      return {};
+    }
     this.oidc = await response.json() as OidcDiscovery;
     return this.oidc;
   }
@@ -158,7 +192,7 @@ export class MobileApi {
     const tokenEndpoint = discovery.token_endpoint ?? "https://identity.alza.cz/connect/token";
     const secret = MobileApi.clientSecret();
     const body = new URLSearchParams({ grant_type: "authorization_code", client_id: process.env.ALZA_OAUTH_CLIENT_ID ?? "alza_Android", code, redirect_uri: process.env.ALZA_OAUTH_REDIRECT_URI ?? "alza://identity", code_verifier: verifier, ...(secret ? { client_secret: secret } : {}) });
-    const res = await fetch(tokenEndpoint, { method: "POST", headers: this.mobileHeaders({ "content-type": "application/x-www-form-urlencoded", accept: "application/json" }), body });
+    const res = await this.oauthFetch(tokenEndpoint, { method: "POST", headers: this.mobileHeaders({ "content-type": "application/x-www-form-urlencoded", accept: "application/json" }), body: body.toString() });
     if (!res.ok) throw new Error(`OAuth token exchange failed with HTTP ${res.status}`);
     const json = await res.json() as { access_token?: string; refresh_token?: string; expires_in?: number };
     if (!json.access_token) throw new Error("OAuth response did not contain an access token");
@@ -179,7 +213,7 @@ export class MobileApi {
       refresh_token: this.refreshToken,
       ...(MobileApi.clientSecret() ? { client_secret: MobileApi.clientSecret()! } : {}),
     });
-    const res = await fetch(tokenEndpoint, { method: "POST", headers: this.mobileHeaders({ "content-type": "application/x-www-form-urlencoded", accept: "application/json" }), body });
+    const res = await this.oauthFetch(tokenEndpoint, { method: "POST", headers: this.mobileHeaders({ "content-type": "application/x-www-form-urlencoded", accept: "application/json" }), body: body.toString() });
     if (!res.ok) return false;
     const json = await res.json() as { access_token?: string; refresh_token?: string };
     if (!json.access_token) return false;

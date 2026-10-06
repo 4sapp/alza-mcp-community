@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+- OAuth login from the npm package ([#29](https://github.com/lukabudik/alza-mcp/issues/29), [#30](https://github.com/lukabudik/alza-mcp/pull/30), thanks [@jankryh](https://github.com/jankryh)). `identity.alza.cz` is behind the same Cloudflare check as `www`, and `auth_start`/`auth_exchange` were getting HTTP 403. The package now ships the Chrome-fingerprint sidecar (`scripts/cf-transport.py`, `scripts/ensure-cf-venv.sh`) and the auth scripts, and `postinstall` sets up the `curl_cffi` venv when `python3` is present. OAuth discovery, token exchange and refresh go through the sidecar, and `URLSearchParams` bodies no longer skip it. If the sidecar is unavailable, OAuth uses plain fetch. If discovery fails, it uses the APK default endpoints instead of stopping.
+
 ## [0.3.1] — 2026-10-05
 
 ### Added
