@@ -24,6 +24,14 @@ export interface SearchOptions {
   /** Checkbox-type attribute facet selections (from `list_category_filters`, `filterable: true` groups only). Requires `categoryId`. */
   filters?: Array<{ paramId: number; valueId: number }>;
   /**
+   * Browse the category's own listing page (`/{categoryId}.htm`, Alza's
+   * default "top sellers" order) instead of `/search.htm` — `query` is then
+   * ignored. Requires `categoryId`. Internal (PC builder candidate sourcing):
+   * `/search.htm?idc=` does not restrict to the category (live-verified
+   * 2026-10-06: "psu" in the PSU category returned dog food).
+   */
+  browse?: boolean;
+  /**
    * Slider-type (range) facet selections: `min`/`max` in the facet's own
    * `values[].value` units (from `list_category_filters`). Requires `categoryId`.
    */
@@ -139,6 +147,15 @@ const PAGE_URLS_EXTRACTOR = `(function() {
   return out;
 })()`;
 
+/** Public `get_product` cap on spec rows (unchanged contract). */
+const PRODUCT_PARAMS_CAP = 30;
+/**
+ * Rows scraped per product page. Higher than the public cap so spec-driven
+ * consumers (PC builder) still see rows past the 30th — live-verified
+ * 2026-10-06: a GPU's "TDP" was row 29 of 30, so the old cap was a cliff edge.
+ */
+const PRODUCT_PARAMS_SCRAPE_CAP = 80;
+
 const PRODUCT_PAGE_EXTRACTOR = `(function() {
   var lds = Array.from(document.querySelectorAll('script[type="application/ld+json"]')).map(function(s) {
     try { return JSON.parse(s.textContent || '{}'); } catch (e) { return null; }
@@ -165,7 +182,7 @@ const PRODUCT_PAGE_EXTRACTOR = `(function() {
     h1: (document.querySelector('h1') || {}).textContent || null,
     product: findType('Product'),
     breadcrumb: findType('BreadcrumbList'),
-    params: Array.from(document.querySelectorAll('.paramTbl tr, table.paramTbl tr, .productSpecBox tr')).slice(0, 30).map(function(tr) {
+    params: Array.from(document.querySelectorAll('.paramTbl tr, table.paramTbl tr, .productSpecBox tr')).slice(0, ${PRODUCT_PARAMS_SCRAPE_CAP}).map(function(tr) {
       var th = tr.querySelector('th'), td = tr.querySelector('td');
       return { name: th ? th.textContent.trim().replace(/\\s+/g,' ') : '', value: td ? td.textContent.trim().replace(/\\s+/g,' ') : '' };
     }).filter(function(p) { return p.name && p.value; })
@@ -174,6 +191,7 @@ const PRODUCT_PAGE_EXTRACTOR = `(function() {
 
 export class Catalog {
   private readonly searchCache = new TtlCache<string, SearchResult>(60 * 1000);
+  /** Products with the full (up to PRODUCT_PARAMS_SCRAPE_CAP) spec list. */
   private readonly productCache = new TtlCache<string, Product>(15 * 60 * 1000);
   private readonly productUrlCache = new TtlCache<string, string>(60 * 60 * 1000);
   private readonly categoryCache = new TtlCache<number, Category[]>(24 * 60 * 60 * 1000);
@@ -184,7 +202,7 @@ export class Catalog {
 
   async searchProducts(opts: SearchOptions): Promise<SearchResult> {
     const hasAttrFilters = (opts.producerIds && opts.producerIds.length > 0) || (opts.filters && opts.filters.length > 0);
-    if ((hasAttrFilters || (opts.ranges && opts.ranges.length > 0)) && !opts.categoryId) {
+    if ((hasAttrFilters || opts.browse || (opts.ranges && opts.ranges.length > 0)) && !opts.categoryId) {
       throw new Error("producer_ids/filters require category_id (attribute facets are category-scoped in Alza's system) — get category_id from list_categories, then call list_category_filters to discover valid filter values");
     }
     const limit = clamp(opts.limit ?? 20, 1, 50);
@@ -221,7 +239,7 @@ export class Catalog {
         // Filtered category pages render pagination anchors that drop the
         // -par segments (live-verified 2026-10-03), but `{filteredUrl}-pN.htm`
         // keeps them — so build those URLs instead of following the anchors.
-        let target = hasAttrFilters && n > 1 ? this.buildSearchUrl(opts, 1).replace(/\.htm$/, `-p${n}.htm`) : pageLinks[String(n)];
+        let target = (hasAttrFilters || opts.browse) && n > 1 ? this.buildSearchUrl(opts, 1).replace(/\.htm$/, `-p${n}.htm`) : pageLinks[String(n)];
         if (!target && n > 1) {
           // Resolve links via the first page (one navigation), then continue.
           const first = await this.fetchSearchPage(opts);
@@ -577,6 +595,16 @@ export class Catalog {
   }
 
   async getProduct(code: string): Promise<Product> {
+    const full = await this.getProductSpecs(code);
+    if (!full.params || full.params.length <= PRODUCT_PARAMS_CAP) return full;
+    return { ...full, params: full.params.slice(0, PRODUCT_PARAMS_CAP) };
+  }
+
+  /**
+   * Same as `getProduct` (one page load, shared cache) but keeps up to
+   * PRODUCT_PARAMS_SCRAPE_CAP spec rows instead of the public 30-row cap.
+   */
+  async getProductSpecs(code: string): Promise<Product> {
     const trimmed = code.trim();
     if (!trimmed) throw new NotFoundError("product code");
 
@@ -587,7 +615,16 @@ export class Catalog {
       const data = await this.browser.withPage(async (p) => {
         await p.goto(url, { waitUntil: "commit", timeout: 30_000 });
         await p.waitForLoadState("load", { timeout: 30_000 }).catch(() => {});
-        return (await p.evaluate(PRODUCT_PAGE_EXTRACTOR)) as ProductPageData;
+        const first = (await p.evaluate(PRODUCT_PAGE_EXTRACTOR)) as ProductPageData;
+        // Render race (live 2026-10-06, PSU AAnagp2a4): the spec table can be
+        // missing at "load" and the result would then sit in the cache with no
+        // params. When neither spec source has rows, wait briefly for the table
+        // and read the page once more. Only pages without specs pay for this.
+        if (first.product && first.params.length === 0 && pickAdditionalProperties(first.product.additionalProperty).length === 0) {
+          await p.waitForSelector(".paramTbl tr, .productSpecBox tr", { timeout: 4_000 }).catch(() => null);
+          return (await p.evaluate(PRODUCT_PAGE_EXTRACTOR)) as ProductPageData;
+        }
+        return first;
       });
 
       const ld = data.product;
@@ -603,10 +640,10 @@ export class Catalog {
       // (live-verified 2026-09-27: the DOM .paramTbl table is sometimes
       // entirely absent while additionalProperty carries the real specs).
       // DOM-table rows win on name collisions; extra additionalProperty
-      // rows are appended, capped at 30 total to match the DOM-only cap.
+      // rows are appended (getProduct then caps the public list at 30).
       const seenNames = new Set(data.params.map((p) => p.name));
       const extraParams = pickAdditionalProperties(ld.additionalProperty).filter((p) => !seenNames.has(p.name));
-      const mergedParams = [...data.params, ...extraParams].slice(0, 30);
+      const mergedParams = [...data.params, ...extraParams].slice(0, PRODUCT_PARAMS_SCRAPE_CAP);
 
       return {
         code: ((ld.sku as string) ?? trimmed).trim(),
@@ -738,7 +775,7 @@ export class Catalog {
 
   private buildSearchUrl(opts: SearchOptions, page: number): string {
     const hasAttrFilters = (opts.producerIds && opts.producerIds.length > 0) || (opts.filters && opts.filters.length > 0);
-    if (hasAttrFilters && opts.categoryId) {
+    if ((hasAttrFilters || opts.browse) && opts.categoryId) {
       // Category+attribute-filter browse page (live-verified 2026-09-27):
       // the URL's slug segments are cosmetic (any text, or none, resolves
       // to the canonical page) — only the numeric `{categoryId}[-v{producerId}]

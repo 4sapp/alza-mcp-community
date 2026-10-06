@@ -20,7 +20,8 @@ import { TOOLSET_DEFS, type LockedToolsets } from "./tools/toolsets.js";
  *    (OAuth access/refresh tokens, PKCE verifier) and its own `MobileAccount`
  *    (one-time mutation / checkout confirmation tokens). Nothing account-related
  *    is shared between sessions.
- *  - Only the read-only `catalog` toolset is usable by default. Every other
+ *  - Only the read-only, anonymous `catalog` and `pc_builder` toolsets are usable
+ *    by default (pc_builder only reads public catalog pages). Every other
  *    toolset (auth, basket/checkout, account, orders/payments, reviews/
  *    subscriptions, chat, raw mobile reads) is LOCKED: still listed by
  *    `list_toolsets` with the reason, but `set_toolset` refuses to enable it.
@@ -110,10 +111,13 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-/** Locked toolsets for an HTTP deployment: everything but `catalog` unless opted in. */
+/** Toolsets that only read public catalog data and never touch an account. */
+export const ANONYMOUS_TOOLSETS: ReadonlySet<string> = new Set(["catalog", "pc_builder"]);
+
+/** Locked toolsets for an HTTP deployment: everything but the anonymous read-only toolsets unless opted in. */
 export function httpLockedToolsets(allowAccount: boolean): LockedToolsets {
   if (allowAccount) return {};
-  return Object.fromEntries(TOOLSET_DEFS.filter((d) => d.id !== "catalog").map((d) => [d.id, ACCOUNT_LOCK_REASON]));
+  return Object.fromEntries(TOOLSET_DEFS.filter((d) => !ANONYMOUS_TOOLSETS.has(d.id)).map((d) => [d.id, ACCOUNT_LOCK_REASON]));
 }
 
 export async function startHttpServer(opts: HttpServerOptions = {}): Promise<RunningHttpServer> {
@@ -143,7 +147,7 @@ export async function startHttpServer(opts: HttpServerOptions = {}): Promise<Run
   const instructionsNote = allowAccount
     ? "Served over Streamable HTTP: this MCP session has its own isolated OAuth login and confirmation tokens" +
       (allowTokenFile ? " (pre-loaded from the operator's ALZA_TOKEN_FILE)." : "; sign in with `auth_start` → `auth_exchange`.")
-    : "Served over Streamable HTTP: only the read-only `catalog` toolset is available on this deployment; the auth, account, basket/checkout, order and payment toolsets are locked (see `list_toolsets`).";
+    : "Served over Streamable HTTP: only the read-only `catalog` toolset (on by default) and `pc_builder` (enable with `set_toolset`) are available on this deployment; the auth, account, basket/checkout, order and payment toolsets are locked (see `list_toolsets`).";
 
   const sessions = new Map<string, Session>();
 

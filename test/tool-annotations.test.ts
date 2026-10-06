@@ -52,9 +52,9 @@ const DESTRUCTIVE = new Set([
 const NO_OPEN_WORLD = new Set(["account_status", "prepare_mutation", "list_toolsets", "set_toolset"]);
 
 describe("tool annotation contract", () => {
-  it("serves exactly 63 tools with bare, snake_case names (61 domain tools + list_toolsets + set_toolset, all toolsets enabled)", async () => {
+  it("serves exactly 65 tools with bare, snake_case names (63 domain tools + list_toolsets + set_toolset, all toolsets enabled)", async () => {
     const tools = await listTools();
-    expect(tools).toHaveLength(63);
+    expect(tools).toHaveLength(65);
     for (const t of tools) {
       expect(t.name).toMatch(/^[a-z][a-z0-9_]*$/);
     }
