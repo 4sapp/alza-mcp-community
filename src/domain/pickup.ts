@@ -26,9 +26,12 @@ import type { PickupPoint } from "./types.js";
  * tool's `limit` (max 50). That list is cached per geocoded centre for
  * {@link LOCKER_TTL_MS}, so repeated queries for the same postal code don't
  * hit Alza again, and no call ever pages through the whole ~4000-locker
- * network. The list carries name, address and GPS but not opening hours
- * (those live in the per-place detail, `/places/{deliveryId}/{parcelShopId}`,
- * which isn't fetched to keep this at one request).
+ * network. The list carries name, address and GPS but not opening hours.
+ * Those live in the per-place detail, `/places/{deliveryId}/{parcelShopId}`
+ * (SN3): hours vary per locker (e.g. "Nonstop" vs mall hours "09:00 - 21:00"),
+ * so they are looked up best-effort for the returned lockers only, at most
+ * {@link MAX_HOURS_LOOKUPS} sequential requests per call, cached for
+ * {@link HOURS_TTL_MS}.
  *
  * Product fit: the list says nothing about whether a given product fits a
  * locker. Alza routes large items (observed: 34"+ monitors) away from the
@@ -63,6 +66,12 @@ export const LOCKER_TTL_MS = 12 * 60 * 60 * 1000;
 /** Upstream page-size cap on `/api/salesNetwork/v1/places`. */
 const LOCKER_PAGE = 100;
 const ALZABOX_TYPE = 1;
+/** Per-call cap on locker detail lookups for opening hours (politeness). */
+export const MAX_HOURS_LOOKUPS = 10;
+/** Locker detail cache lifetime. Labels are day-relative ("Dnes, 6. 10."), so keep it short. */
+export const HOURS_TTL_MS = 60 * 60 * 1000;
+const LOCKER_NOTE = "Self-service parcel locker.";
+const LOCKER_NOTE_NO_HOURS = "Self-service parcel locker; opening hours were not looked up for this one.";
 
 export interface AlzaBoxLocker {
   id: string;
@@ -79,6 +88,7 @@ export interface AlzaBoxLocker {
 export class Pickup {
   private readonly getJson: JsonGet;
   private readonly lockerCache = new TtlCache<string, AlzaBoxLocker[]>(LOCKER_TTL_MS, 200);
+  private readonly hoursCache = new TtlCache<string, string>(HOURS_TTL_MS, 1000);
 
   constructor(
     private readonly locale: Locale,
@@ -120,7 +130,38 @@ export class Pickup {
     }
 
     results.sort((a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
-    return { points: results.slice(0, limit), warnings };
+    const points = results.slice(0, limit);
+    await this.addLockerHours(points);
+    return { points, warnings };
+  }
+
+  /**
+   * Best-effort: fill `openingHours` for the returned lockers from the
+   * per-place detail (SN3). Only the first {@link MAX_HOURS_LOOKUPS} lockers
+   * are looked up, sequentially, and each result is cached for
+   * {@link HOURS_TTL_MS}. A failed lookup leaves that locker without hours.
+   */
+  private async addLockerHours(points: PickupPoint[]): Promise<void> {
+    let lookups = 0;
+    for (const p of points) {
+      if (p.type !== "alzabox" || p.deliveryId === undefined || p.parcelShopId === undefined) continue;
+      if (lookups >= MAX_HOURS_LOOKUPS) break;
+      lookups++;
+      const key = `${this.locale.baseUrl}|${p.deliveryId}/${p.parcelShopId}`;
+      try {
+        const hours = await this.hoursCache.memoize(key, async () =>
+          parseOpeningHours(
+            await this.getJson(`${this.locale.baseUrl}/api/salesNetwork/v1/places/${p.deliveryId}/${p.parcelShopId}`),
+          ) ?? "",
+        );
+        if (hours) {
+          p.openingHours = hours;
+          p.note = LOCKER_NOTE;
+        }
+      } catch {
+        // Keep the locker without hours; the list itself is still valid.
+      }
+    }
   }
 
   /** The 100 AlzaBoxes nearest to `center`, cached per ~100 m grid cell. */
@@ -240,8 +281,37 @@ function lockerToPoint(l: AlzaBoxLocker, distanceKm: number): PickupPoint {
     distanceKm,
     parcelShopId: l.parcelShopId,
     deliveryId: l.deliveryId,
-    note: "Self-service parcel locker; opening hours are not in Alza's locker list.",
+    note: LOCKER_NOTE_NO_HOURS,
   };
+}
+
+interface RawOpeningDay {
+  label?: unknown;
+  note?: unknown;
+  intervals?: Array<{ label?: unknown }> | null;
+}
+
+/**
+ * Turn a `/api/salesNetwork/v1/places/{deliveryId}/{parcelShopId}` detail into
+ * a one-line opening-hours summary. Alza returns the next 7 days with
+ * day-relative labels ("Dnes, 6. 10.", "Zítra, 7. 10.", "Čtvrtek, 8. 10.").
+ * Identical days collapse to e.g. "Nonstop (all 7 days)"; otherwise each day is
+ * listed. Returns undefined when the detail has no hours.
+ */
+export function parseOpeningHours(json: unknown): string | undefined {
+  const days = (json as { detail?: { openingHours?: unknown } } | null)?.detail?.openingHours;
+  if (!Array.isArray(days) || days.length === 0) return undefined;
+  const parts = (days as RawOpeningDay[]).map((d) => {
+    const intervals = Array.isArray(d.intervals)
+      ? d.intervals.map((i) => (typeof i?.label === "string" ? i.label.trim() : "")).filter(Boolean)
+      : [];
+    const hours = intervals.length > 0 ? intervals.join(", ") : "closed";
+    const note = typeof d.note === "string" && d.note.trim() ? ` (${d.note.trim()})` : "";
+    return { label: typeof d.label === "string" ? d.label.trim() : "", value: `${hours}${note}` };
+  });
+  const first = parts[0]!.value;
+  if (parts.every((p) => p.value === first)) return `${first} (all ${parts.length} days)`;
+  return parts.map((p) => (p.label ? `${p.label}: ${p.value}` : p.value)).join("; ");
 }
 
 async function plainGetJson(url: string): Promise<unknown> {

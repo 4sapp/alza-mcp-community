@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
-- `find_pickup_points` returns AlzaBox lockers without a cart or login ([#8](https://github.com/lukabudik/alza-mcp/issues/8)). They come from Alza's public locker-map API (`/api/salesNetwork/v1/places`), with one request per postal code, cached for 12 h. The default `types` merges lockers and showrooms by distance. Each locker includes its `parcelShopId`. The tool description says a standalone list can't tell whether a given (oversized) product fits.
+- `find_pickup_points` returns AlzaBox lockers without a cart or login ([#8](https://github.com/lukabudik/alza-mcp/issues/8)). They come from Alza's public locker-map API (`/api/salesNetwork/v1/places`), with one request per postal code, cached for 12 h. The default `types` merges lockers and showrooms by distance. Each locker includes its `parcelShopId`, and the first 10 lockers returned get opening hours from the per-locker detail (cached 1 h). The tool description says a standalone list can't tell whether a given (oversized) product fits.
 
 ### Changed
 - `auth_exchange` accepts the full `alza://identity?code=…&state=…` redirect URL as `code` and reads `state` from it. Passing `state` is now optional in that case. The `auth_start` description and README explain the misleading "Při přihlášení došlo k chybě." message on desktop browsers (a client-side timer, not a failed sign-in) and how to get the redirect URL from DevTools ([#29](https://github.com/lukabudik/alza-mcp/issues/29)).

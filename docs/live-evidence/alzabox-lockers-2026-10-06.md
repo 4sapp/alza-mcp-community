@@ -40,8 +40,16 @@ That form response is a HATEOAS document whose `placesForm.href`,
 maximum) around the geocoded postal code. The 100 nearest lockers always cover
 the tool's own `limit` (at most 50). The parsed list is cached for 12 h per
 ~100 m grid cell. Radius and limit are applied locally. The tool never pages
-through the full network, and there's no per-locker detail request, so locker
-opening hours aren't returned.
+through the full network.
+
+Opening hours (added in review, 2026-10-06): hours differ per locker (for
+example parcelShopId 1009720, a shopping-arcade locker, is `09:00 - 21:00`
+every day while 1009901 and 1010402 are `Nonstop`), so they matter. The tool
+fetches the per-place detail (`/places/{deliveryId}/{parcelShopId}`) for the
+first 10 lockers it returns, one at a time, and caches each result for 1 h
+(the day labels are relative, e.g. "Dnes, 6. 10."). If a detail lookup fails,
+that locker is still returned, just without hours. Fixture:
+`test/fixtures/sales-network-place-detail.json` (parcelShopId 1009720).
 
 ## End-to-end MCP run (built `dist/server.js`, in-memory MCP client)
 
@@ -69,6 +77,18 @@ The unit-test fixture `test/fixtures/sales-network-places.json` is the
 recorded `places` response for 50.2092, 15.8328 (Hradec Králové) with
 `limit=3`.
 
+Reviewer re-run with opening hours (built `dist/server.js`, anonymous,
+`ALZA_TOKEN_FILE=none`, CF sidecar, 2026-10-06):
+
+```
+find_pickup_points {"postal_code":"602 00","types":["alzabox"],"limit":4}   isError=false 880 ms  (1 list + 4 detail requests)
+  alzabox 0.5 km | AlzaBox Brno - Střed - Veveří - Lidická | Open: Nonstop (all 7 days) | psid 1009901
+  alzabox 0.5 km | AlzaBox Brno - Střed - Běhounská (OC Typos) | Open: Nonstop (all 7 days) | psid 1010402
+  alzabox 0.6 km | AlzaBox Brno - Veveří - Čápkova | Open: Nonstop (all 7 days) | psid 1110588
+  alzabox 0.7 km | AlzaBox Brno (Pasáž Rozkvět) | Open: 09:00 - 21:00 (all 7 days) | psid 1009720
+same call again                                                              isError=false 1 ms    (list and hours from cache)
+```
+
 ## Still open
 
 - **Product fit:** the locker list can't say whether a given product fits.
@@ -78,7 +98,7 @@ recorded `places` response for 50.2092, 15.8328 (Hradec Králové) with
 - **XL lockers:** of the 100 lockers nearest central Prague, 48 have the
   `icon-2-xl.svg` image and 52 have `icon-2.svg`. That might mark XL-capable
   lockers, but nothing confirms it, so it isn't exposed. Status: `unresolved`.
-- **Opening hours** are only in the per-place detail, which the tool doesn't
-  fetch.
+- **Opening hours** are fetched only for the first 10 lockers returned. Any
+  more lockers in the same call come back without hours.
 - **Other locales** (alza.sk etc.) use the same route on their own origin. Only
   alza.cz was live-verified.

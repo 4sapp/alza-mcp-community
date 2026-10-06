@@ -99,7 +99,7 @@ Catalog tools:
 | **`search_products`** | Keyword search, price/stock/screen-size filters, and bounded client-side sorting; brand/attribute filters use category pages and ignore `query` |
 | **`get_product`** | Full detail for one product — price, availability, brand, image, URL |
 | **`get_product_reviews`** | Aggregate rating + review count |
-| **`find_pickup_points`** | Nearest AlzaBox lockers and AlzaShop showrooms by postal code, merged by distance, no cart needed. It can't tell whether a specific product fits an AlzaBox; use `delivery_options` for that |
+| **`find_pickup_points`** | Nearest AlzaBox lockers and AlzaShop showrooms by postal code, merged by distance, with opening hours, no cart needed. It can't tell whether a specific product fits an AlzaBox; use `delivery_options` for that |
 | **`list_category_filters`** | Category brands (`brands[].valueId`) and attribute facets with live ids/counts — use `producer_ids` or `filters` with `category_id`; unsupported URL filters return an error |
 | **`list_categories`** | Top-level categories, or real subcategories when `parent_id` is supplied — feed the returned ids into `search_products` |
 | **`product_by_ean`** | Looks up catalog products by barcode/EAN (the app's camera barcode-scan API, AT3; read-only, no account required; enable `reviews_and_subscriptions`) |

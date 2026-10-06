@@ -543,7 +543,10 @@ about *how* the working tools relate to each other:
 - **Still open:** the list can't say whether a given product fits a locker.
   Oversized items (34"+ monitors, 2026-09-26 above) skip the whole network,
   and only the cart flow knows. The tool description says this. Locker
-  opening hours are only in the per-place detail (SN3), which isn't fetched.
+  opening hours come from the per-place detail (SN3). The tool fetches it only
+  for the first 10 lockers returned, caches each for 1 h, and skips a locker's
+  hours if its lookup fails. Re-verified live 2026-10-06: `602 00` → 4 lockers,
+  3 `Nonstop` and one shopping-arcade locker `09:00 - 21:00`.
   The `icon-2-xl` vs `icon-2` image split might mark XL lockers, but that is
   `unresolved`. Only alza.cz was live-verified; other locales use the same
   route on their own origin.

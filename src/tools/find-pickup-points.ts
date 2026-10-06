@@ -41,9 +41,9 @@ export function createFindPickupPointsTool(deps: ToolDeps): RegisterableTool {
         {
           title: "Find AlzaBox lockers and Alza showrooms",
           description:
-            "Find AlzaBox parcel lockers and AlzaShop showrooms near a Czech/Slovak postal code: name, address, GPS, and distance, sorted nearest first. Showrooms also include opening hours. " +
+            "Find AlzaBox parcel lockers and AlzaShop showrooms near a Czech/Slovak postal code: name, address, GPS, distance and opening hours, sorted nearest first. " +
             "Use when the user asks where the nearest AlzaBox or Alza store is, or where they could pick up an order. No cart or login needed. " +
-            "Lockers come from Alza's public locker map and are cached; each has a `parcelShopId`. Locker opening hours are not part of that list. " +
+            "Lockers come from Alza's public locker map and are cached; each has a `parcelShopId`. Locker hours vary (many are nonstop, mall lockers follow mall hours) and are looked up for the first 10 lockers returned. " +
             "Important: a standalone locker list can't tell whether a given product fits. Alza excludes large items (observed: 34\"+ monitors) from the whole AlzaBox network and routes them to a few oversized-item pickup points. " +
             "To check a specific product, add it to the cart and read `delivery_options` (or `web_pickup_places`, which is cart-scoped). " +
             "Read-only. Example: `find_pickup_points({postal_code: '500 02', types: ['alzabox'], limit: 5})`",
