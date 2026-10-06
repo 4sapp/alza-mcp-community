@@ -47,7 +47,9 @@ web rows are labeled with their exposure state (documented vs. typed-tool candid
 
 ## Exposure summary
 
-- **Typed tools**: `search_products`, `get_product`, `get_product_reviews`,
+- **Typed tools**: `search_products`, `get_product`, `compare_products` (2–6 × the `get_product`
+  product-page path, live-verified 2026-10-06, `docs/live-evidence/compare-products-2026-10-06.md`),
+  `get_product_reviews`,
   `find_pickup_points`, `list_categories` (browser catalog — registered without the `alza_` prefix);
   `alza_auth_discovery`, `alza_auth_start`, `alza_auth_exchange`, `alza_account_status`
   (auth); `alza_cart`, `alza_add_to_cart`, `alza_delivery_options`, `alza_select_pickup_point`,

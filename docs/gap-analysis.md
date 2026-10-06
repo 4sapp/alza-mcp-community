@@ -404,6 +404,31 @@ about *how* the working tools relate to each other:
   30 rows, unchanged). Unit-tested (`pickAdditionalProperties` in
   `test/catalog-sort.test.ts`).
 
+### `compare_products` side-by-side comparison — added (2026-10-06)
+
+- **The gap ([#11](https://github.com/lukabudik/alza-mcp/issues/11)):** to compare
+  candidates, an agent had to call `get_product` N times and build the table
+  itself, which filled its context with full product payloads.
+- **Fix:** `compare_products({codes: 2–6, summarize?})` (catalog toolset,
+  read-only) fetches through `Catalog.getProduct` (product cache), at most two
+  pages at a time. It returns one aligned table: Price, Availability and Rating
+  first, then every spec name found in any product, matched by exact name. A
+  code that fails gets its own `ok: false` column instead of failing the call.
+  The alignment is a pure function, `buildComparisonTable`, with unit tests.
+- **Sampling ([#18](https://github.com/lukabudik/alza-mcp/issues/18)):**
+  `summarize: true` calls `server.createMessage` only when the client advertises
+  `sampling`. The request uses `includeContext: "none"` and `maxTokens: 400`,
+  and the system prompt limits the model to the table. Without the capability,
+  the call returns `summary.status: "unavailable"` and no error. A sampling
+  failure returns `status: "failed"`.
+- **Verification:** **live-verified** 2026-10-06 with two 27" monitors plus one
+  bogus code. 37 aligned rows came back and the bogus code got its own error
+  column. The sampling round trip was run with a stub sampling client; it was
+  not tested with a real sampling-capable host
+  (`docs/live-evidence/compare-products-2026-10-06.md`). The same run found that
+  JSON-LD spec values were HTML-escaped (`27 &quot;`). `pickAdditionalProperties`
+  now decodes entities.
+
 ### `select_pickup_point` re-test needed against an authenticated session
 
 - **The observation (2026-09-26, anonymous session)**: `delivery_options`'
