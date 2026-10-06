@@ -65,7 +65,7 @@ When Alza changes an endpoint shape:
 
 ## Releasing
 
-`server.json` (the official MCP Registry manifest) is bumped together with `package.json`: set both its top-level `version` and `packages[0].version` to the new package version in the same commit as `npm version`. The release workflow (`.github/workflows/publish.yml`) fails before `npm publish` if they differ, then publishes to the registry via `mcp-publisher` (OIDC login) after the npm publish. Keep `description` at 100 characters or fewer (registry limit).
+`server.json` (the official MCP Registry manifest) and `mcpb/manifest.json` (the Claude Desktop bundle) are bumped together with `package.json`: set `server.json`'s top-level `version` and `packages[0].version`, and `mcpb/manifest.json`'s `version`, to the new package version in the same commit as `npm version`. The release workflow (`.github/workflows/publish.yml`) fails before `npm publish` if any of them differ, then publishes to the registry via `mcp-publisher` (OIDC login) after the npm publish. Keep `description` at 100 characters or fewer (registry limit).
 
 ## Code of conduct
 
