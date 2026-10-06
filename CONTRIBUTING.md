@@ -65,6 +65,10 @@ When Alza changes an endpoint shape:
 2. Open an "Endpoint broken" issue.
 3. Bonus: include a HAR file or a curl snippet showing the new shape.
 
+## Releasing
+
+`server.json` (the official MCP Registry manifest) and `mcpb/manifest.json` (the Claude Desktop bundle) are bumped together with `package.json`: `npm version <patch|minor|major>` runs `scripts/sync-version.cjs` (the npm `version` lifecycle script), which sets `server.json`'s top-level `version` and `packages[0].version` and `mcpb/manifest.json`'s `version` and stages both files into the version commit. `npm run version:check` reports a mismatch without changing anything. The release workflow (`.github/workflows/publish.yml`) fails before `npm publish` if any of them differ, then publishes to the registry via `mcp-publisher` (OIDC login) after the npm publish. Keep `description` at 100 characters or fewer (registry limit).
+
 ## Code of conduct
 
 Be kind. This is a hobby project run by volunteers.
