@@ -44,6 +44,7 @@
     "auth:smoke": "node scripts/alza-auth-smoke.mjs",
     "live:e2e": "node scripts/e2e-order-payment.browser.mjs run",
     "test:contract": "vitest run test/registration-contract.test.ts",
+    "test:docker": "bash scripts/docker-install-tests.sh",
     "live:e2e:node": "node scripts/e2e-order-payment.mjs"
   },
   "keywords": [

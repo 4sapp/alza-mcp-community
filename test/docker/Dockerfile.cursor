@@ -1,0 +1,19 @@
+# Cursor (official Linux AppImage, extracted — no FUSE in containers) + Xvfb, for
+# driving the README "Install in Cursor" deeplink against a brand-new profile.
+# No account is ever signed in to. Runs as the unprivileged `node` user.
+FROM node:22-bookworm-slim
+ARG CURSOR_URL=https://api2.cursor.sh/updates/download/golden/linux-x64/cursor/latest
+RUN set -eux; \
+    apt-get update; \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      ca-certificates curl xvfb xauth x11-utils imagemagick dbus-x11 \
+      libasound2 libgbm1 libgtk-3-0 libnss3 libxkbfile1 libsecret-1-0 libxss1 libatk-bridge2.0-0 \
+      fonts-dejavu-core; \
+    rm -rf /var/lib/apt/lists/*; \
+    cd /opt; curl -fsSL -o cursor.AppImage "$CURSOR_URL"; chmod +x cursor.AppImage; \
+    ./cursor.AppImage --appimage-extract >/dev/null; mv squashfs-root cursor; rm cursor.AppImage; \
+    chmod -R a+rX /opt/cursor; \
+    mkdir -p /opt/driver && cd /opt/driver && npm init -y >/dev/null && npm install --no-audit --no-fund playwright-core@1 >/dev/null; \
+    node -p "require('/opt/cursor/usr/share/cursor/resources/app/product.json').version" || ls /opt/cursor
+USER node
+WORKDIR /home/node

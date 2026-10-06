@@ -16,6 +16,31 @@ npm run build     # compile to dist/
 npm run validate:api  # hits real Alza endpoints — internet required
 ```
 
+### Clean-environment install tests (Docker)
+
+`npm run test:docker` checks the packed package the way users and MCP clients install it, in throwaway containers. It needs Docker and internet access, takes about 10 minutes the first time (most of it image builds and Chromium downloads), and is **not** part of `npm test`.
+
+```bash
+npm run test:docker                          # every suite that applies to this tree
+npm run test:docker -- install smithery      # only some suites
+npm run test:docker -- --live install        # plus ONE live search_products call from a clean container
+bash scripts/docker-install-tests.sh --source ../alza-mcp-other-branch   # test another checkout with this harness
+```
+
+It packs the tree (`npm pack`) and publishes the tarball to a local Verdaccio container, so `npx -y alza-mcp` in every container resolves to the code under test. Other packages are proxied from npmjs. Suites:
+
+| Suite | What it verifies |
+|---|---|
+| `install` | node 20/22/24 images with and without python3 (`npx -y` and `npm install <tgz>`): postinstall runs, `.venv-cf` with `curl_cffi` is created only when python3 + venv exist and is skipped cleanly otherwise, the sidecar files ship, and stdio `initialize` + `tools/list` work. |
+| `badges` | Decodes the README Cursor and VS Code badge links, checks the config is exactly `npx -y alza-mcp` with no env, and follows the https redirects. |
+| `vscode` | Official VS Code `.deb` under Xvfb with a fresh profile: opens the badge's `vscode:mcp/install` URI with `code --open-url`, clicks Install over CDP, asserts the profile's `mcp.json`, launches the installed entry, and takes screenshots. |
+| `cursor` | Cursor AppImage, signed out with a fresh profile: opens the `cursor://` deeplink, reads and confirms the install dialog, asserts `~/.cursor/mcp.json`, and launches the entry. |
+| `mcpb` | Builds the Claude Desktop bundle with `scripts/build-mcpb.sh` and runs `mcpb validate`/`info`. It then unpacks the bundle in a container with no network and launches `manifest.server.mcp_config` with default and empty user settings. |
+| `http` | Runs `npx -y alza-mcp --http` in one container and the SDK Streamable HTTP client in another. Covers sessions, per-session toolset isolation, locked account toolsets, Host/Origin checks, DELETE, and the loopback-only default bind. |
+| `smithery` | Evaluates `smithery.yaml`'s `commandFunction`, checks that every env var it emits is read by `dist/`, and launches the result. |
+
+Suites that do not apply to the tree (no badges, no `mcpb/`, no `--http`) report `BLOCKED`. Logs, decoded URIs, the resulting `mcp.json` files and screenshots go to `test/docker/.out/` (gitignored), with `summary.txt` listing every check. The run exits non-zero if any check fails, and removes every container, image and network it created unless you pass `--keep`.
+
 ## Project layout
 
 ```
