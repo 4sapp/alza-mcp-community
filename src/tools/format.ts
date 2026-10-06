@@ -110,15 +110,19 @@ export function formatCategoryFilters(filters: CategoryFilters): string {
   return lines.join("\n").trim();
 }
 
-export function formatPickupPoints(points: PickupPoint[]): string {
-  if (points.length === 0) return "No pickup points found in the requested radius.";
-  const lines: string[] = [];
+export function formatPickupPoints(points: PickupPoint[], warnings: string[] = []): string {
+  const notes = warnings.map((w) => `> ${w}`).join("\n");
+  if (points.length === 0) {
+    return [notes, "No pickup points found in the requested radius."].filter(Boolean).join("\n\n");
+  }
+  const lines: string[] = notes ? [notes, ""] : [];
   for (const p of points) {
     const head = `**${p.name}** (${p.type === "alzabox" ? "AlzaBox locker" : "showroom"})`;
     const distance = p.distanceKm !== undefined ? ` · ${p.distanceKm} km` : "";
     lines.push(`${head}${distance}`);
     lines.push(`  ${p.address}, ${p.city}${p.postalCode ? ` ${p.postalCode}` : ""}`);
     if (p.openingHours) lines.push(`  Open: ${p.openingHours}`);
+    if (p.parcelShopId !== undefined) lines.push(`  parcelShopId: ${p.parcelShopId}`);
     if (p.note) lines.push(`  ${p.note}`);
     lines.push("");
   }

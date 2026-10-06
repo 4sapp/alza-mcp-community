@@ -101,7 +101,7 @@ Catalog tools:
 | **`compare_products`** | 2–6 products side by side — one aligned table of price, availability, rating and every spec row; optional `summarize: true` verdict via MCP sampling when the client supports it |
 | **`get_product_reviews`** | Aggregate rating + review count + individual reviews (author, date, rating, body, pros/cons) via the reviews API |
 | **`recommend_alternatives`** | Cheaper / better-rated / same-brand alternatives to a product (Alza's own alternatives list, same-category search fallback) |
-| **`find_pickup_points`** | Nearest brick-and-mortar AlzaShop showrooms by postal code |
+| **`find_pickup_points`** | Nearest AlzaBox lockers and AlzaShop showrooms by postal code, merged by distance, with opening hours, no cart needed. It can't tell whether a specific product fits an AlzaBox; use `delivery_options` for that |
 | **`list_category_filters`** | Category brands (`brands[].valueId`) and attribute facets with live ids/counts — use `producer_ids` or `filters` with `category_id`; unsupported URL filters return an error |
 | **`get_deals`** | Discounted products (alza.cz only) with current/original price and discount % computed from observed prices — scans category listing pages for a `category_id`, or popular categories when omitted |
 | **`list_categories`** | Top-level categories, or real subcategories when `parent_id` is supplied — feed the returned ids into `search_products` |
@@ -311,8 +311,7 @@ node dist/index.js          # run the server (waits for stdio MCP messages)
 
 `main` already covers catalog, filtering, cart, checkout, order placement/cancellation and account management (see [What it does](#what-it-does) and the known limitations in [docs/gap-analysis.md](docs/gap-analysis.md)). Next up:
 
-- **Standalone AlzaBox locker discovery** ([#8](https://github.com/lukabudik/alza-mcp/issues/8)), **review bodies** ([#9](https://github.com/lukabudik/alza-mcp/issues/9)), **slider-type filters** ([#10](https://github.com/lukabudik/alza-mcp/issues/10))
-- **Compare / recommend / deals / autocomplete** tools ([#11](https://github.com/lukabudik/alza-mcp/issues/11)–[#14](https://github.com/lukabudik/alza-mcp/issues/14))
+- **Slider-type filters** ([#10](https://github.com/lukabudik/alza-mcp/issues/10))
 - **PC builder** ([#15](https://github.com/lukabudik/alza-mcp/issues/15)) and **Streamable HTTP transport** ([#16](https://github.com/lukabudik/alza-mcp/issues/16))
 
 Priorities live in [ROADMAP.md](ROADMAP.md); everything is tracked in [issues](https://github.com/lukabudik/alza-mcp/issues) — [`good first issue`](https://github.com/lukabudik/alza-mcp/labels/good%20first%20issue) is the place to start.

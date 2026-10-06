@@ -44,7 +44,6 @@ export interface BuildResult {
 export function buildServer(opts: BuildOptions = {}): BuildResult {
   const browser = new AlzaBrowser({ baseUrl: opts.baseUrl, cdpUrl: opts.cdpUrl });
   const catalog = new Catalog(browser);
-  const pickup = new Pickup(browser.locale);
   // Chrome-fingerprint sidecar (curl_cffi) — tried FIRST for the account stack:
   // it bypasses the Cloudflare bot wall without a browser (verified 2026-09-15).
   // Optional by design: no interpreter with curl_cffi → the transport is dead
@@ -59,6 +58,9 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
     fetchImpl: cfTransport.available ? cfFetch(cfTransport) : undefined,
   });
   const mobileAccount = new MobileAccount(mobileApi);
+  // AlzaBox lockers come from the public salesNetwork API, which sits behind the
+  // Cloudflare bot wall: reuse MobileApi's sidecar → fetch → browser chain.
+  const pickup = new Pickup(browser.locale, { getJson: (url) => mobileApi.request(url) });
   const autocomplete = new Autocomplete(mobileApi);
   const reviews = new Reviews(browser, catalog, mobileApi);
   const alternatives = new Alternatives(catalog, mobileApi);
@@ -75,7 +77,7 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
       instructions:
         "Alza.cz catalog and shopping assistant. Unofficial — not affiliated with or endorsed by Alza.cz a.s. " +
         "Tools are grouped into toolsets and only `catalog` + `auth` are enabled by default to keep the visible tool list small — call `list_toolsets` to see every group, then `set_toolset({id, enabled: true})` to turn on the one a task needs (e.g. `basket_and_checkout` before placing an order) before calling its tools. " +
-        "Catalog (always on): `autocomplete` (search-box suggestions to refine a query) → `search_products` (keyword + filters) → `get_product` (detail) → `get_product_reviews` (reviews); `compare_products` (2–6 codes side by side); `recommend_alternatives` for cheaper / better-rated / same-brand alternatives to a product; `get_deals` for discounted products; `list_categories` for category ids; `find_pickup_points` for AlzaShop showrooms near a postal code. " +
+        "Catalog (always on): `autocomplete` (search-box suggestions to refine a query) → `search_products` (keyword + filters) → `get_product` (detail) → `get_product_reviews` (reviews); `compare_products` (2–6 codes side by side); `recommend_alternatives` for cheaper / better-rated / same-brand alternatives to a product; `get_deals` for discounted products; `list_categories` for category ids; `find_pickup_points` for AlzaBox lockers and AlzaShop showrooms near a postal code. " +
         "Account & checkout (enable `basket_and_checkout`; OAuth token auto-loads from ~/.alza-mcp/tokens.json; check `account_status`): `cart`, `add_to_cart`, `delivery_options`, `select_pickup_point`, `checkout_preview` → `place_order` (mobile API), or the legacy web WCF path `web_add_to_cart` → `web_cart` → `web_pickup_places` → `web_place_order`. " +
         "Order submission currently works via the legacy web WCF path (`web_place_order`); the mobile `place_order` (sendOrder3) returns HTTP 500 (docs/gap-analysis.md G1/G5). Cancel with `cancel_order`. " +
         "Credentials are never collected by the MCP. High-impact mutations (payment, registration, address, review, subscription, attachment, order) require a one-time token from `prepare_mutation` (in the always-on `auth` toolset) — confirm with the user before calling them. " +

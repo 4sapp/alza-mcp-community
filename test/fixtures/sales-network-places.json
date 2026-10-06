@@ -1,0 +1,110 @@
+{
+  "self": {
+    "href": "https://www.alza.cz/api/salesNetwork/v1/places?ordering=0&types%5B0%5D=1&longitude=15.8328&latitude=50.2092&limit=3&offset=0",
+    "appLink": "pickupPlaceList",
+    "enabled": true
+  },
+  "pickupPlaces": {
+    "self": {
+      "href": "https://www.alza.cz/api/salesNetwork/v1/places?ordering=0&types%5b0%5d=1&longitude=15.8328&latitude=50.2092&radius=10000&limit=3",
+      "appLink": "pickupPlaceList",
+      "enabled": true
+    },
+    "paging": {
+      "limit": 3,
+      "size": 4015,
+      "first": {
+        "href": "https://www.alza.cz/api/salesNetwork/v1/places?ordering=0&types%5b0%5d=1&longitude=15.8328&latitude=50.2092&radius=10000&limit=3",
+        "appLink": "pickupPlaceList",
+        "enabled": true
+      },
+      "previous": null,
+      "next": {
+        "href": "https://www.alza.cz/api/salesNetwork/v1/places?ordering=0&types%5b0%5d=1&longitude=15.8328&latitude=50.2092&radius=10000&limit=3&offset=3",
+        "appLink": "pickupPlaceList",
+        "enabled": true
+      },
+      "last": {
+        "href": "https://www.alza.cz/api/salesNetwork/v1/places?ordering=0&types%5b0%5d=1&longitude=15.8328&latitude=50.2092&radius=10000&limit=3&offset=4014",
+        "appLink": "pickupPlaceList",
+        "enabled": true
+      }
+    },
+    "value": [
+      {
+        "self": {
+          "href": "https://www.alza.cz/api/salesNetwork/v1/places/2680/1141354",
+          "appLink": "pickupPlaceDetail",
+          "enabled": true
+        },
+        "id": "1141354-2680",
+        "deliveryId": 2680,
+        "parcelShopId": 1141354,
+        "typeText": "AlzaBox",
+        "articleUrl": null,
+        "detailAction": null,
+        "state": 0,
+        "detail": null,
+        "gpsPosition": {
+          "latitude": 50.203787,
+          "longitude": 15.834234
+        },
+        "type": 1,
+        "title": "Alzabox",
+        "name": "Hradec Králové (Podnikatelské centrum)",
+        "addressText": "Hradecká 1151/9, 50003 Hradec Králové",
+        "image": "https://image.alza.cz/Foto/Domains/Logistics/PersonalPickup/svg/icon-2-xl.svg"
+      },
+      {
+        "self": {
+          "href": "https://www.alza.cz/api/salesNetwork/v1/places/2680/1009585",
+          "appLink": "pickupPlaceDetail",
+          "enabled": true
+        },
+        "id": "1009585-2680",
+        "deliveryId": 2680,
+        "parcelShopId": 1009585,
+        "typeText": "AlzaBox",
+        "articleUrl": null,
+        "detailAction": null,
+        "state": 0,
+        "detail": null,
+        "gpsPosition": {
+          "latitude": 50.207917,
+          "longitude": 15.820583
+        },
+        "type": 1,
+        "title": "Alzabox",
+        "name": "Hradec Králové - Labská kotlina (Hruška)",
+        "addressText": "Labská kotlina 1206/9, 50002 Hradec Králové",
+        "image": "https://image.alza.cz/Foto/Domains/Logistics/PersonalPickup/svg/icon-2.svg"
+      },
+      {
+        "self": {
+          "href": "https://www.alza.cz/api/salesNetwork/v1/places/2680/1009136",
+          "appLink": "pickupPlaceDetail",
+          "enabled": true
+        },
+        "id": "1009136-2680",
+        "deliveryId": 2680,
+        "parcelShopId": 1009136,
+        "typeText": "AlzaBox",
+        "articleUrl": null,
+        "detailAction": null,
+        "state": 0,
+        "detail": null,
+        "gpsPosition": {
+          "latitude": 50.217944,
+          "longitude": 15.833556
+        },
+        "type": 1,
+        "title": "Alzabox",
+        "name": "Hradec Králové (OMV)",
+        "addressText": "Pilnáčkova 379/1, 50002 Hradec Králové",
+        "image": "https://image.alza.cz/Foto/Domains/Logistics/PersonalPickup/svg/icon-2.svg"
+      }
+    ]
+  },
+  "favoritePlaces": [],
+  "infoMessage": null
+}

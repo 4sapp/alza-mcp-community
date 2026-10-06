@@ -117,4 +117,8 @@ export interface PickupPoint {
   openingHours?: string;
   /** Free-form note (e.g. "24/7", "self-service"). */
   note?: string;
+  /** AlzaBox only: Alza's parcel-shop id (the `parcelShopId` used in checkout). */
+  parcelShopId?: number;
+  /** AlzaBox only: Alza's delivery-option id for the locker network (e.g. 2680). */
+  deliveryId?: number;
 }
