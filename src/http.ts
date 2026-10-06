@@ -226,11 +226,14 @@ export async function startHttpServer(opts: HttpServerOptions = {}): Promise<Run
     transport.onclose = () => {
       if (transport.sessionId) void closeSession(transport.sessionId);
     };
-    await built.server.connect(transport);
-    await transport.handleRequest(req, res, body);
-    if (!transport.sessionId || !sessions.has(transport.sessionId)) {
-      // Initialization was rejected — nothing references this server any more.
-      await built.close().catch(() => {});
+    try {
+      await built.server.connect(transport);
+      await transport.handleRequest(req, res, body);
+    } finally {
+      if (!transport.sessionId || !sessions.has(transport.sessionId)) {
+        // Initialization was rejected or failed — nothing references this server any more.
+        await built.close().catch(() => {});
+      }
     }
   };
 
@@ -299,7 +302,8 @@ export function parseCliConfig(argv: string[], env: NodeJS.ProcessEnv = process.
   }
   if (portFromArgv && transport !== "http") throw new Error("--port only applies with --http (or ALZA_TRANSPORT=http)");
   let portNum: number | undefined;
-  if (port !== undefined) {
+  // Only validate the port in HTTP mode: a stray PORT in a stdio client's env must not break startup.
+  if (port !== undefined && transport === "http") {
     portNum = Number(port);
     if (!Number.isInteger(portNum) || portNum < 0 || portNum > 65535) throw new Error(`Invalid port "${port}"`);
   }

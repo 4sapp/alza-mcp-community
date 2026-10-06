@@ -88,6 +88,10 @@ describe("parseCliConfig", () => {
     expect(() => parseCliConfig(["--bogus"], {})).toThrow(/Unknown argument/);
     expect(() => parseCliConfig([], { ALZA_TRANSPORT: "sse" })).toThrow(/ALZA_TRANSPORT/);
   });
+  it("ignores an unrelated PORT env var in stdio mode", () => {
+    expect(parseCliConfig([], { PORT: "not-a-port" }).transport).toBe("stdio");
+    expect(() => parseCliConfig(["--http"], { PORT: "not-a-port" })).toThrow(/Invalid port/);
+  });
 });
 
 describe("Streamable HTTP transport (default: catalog only)", () => {
@@ -114,6 +118,10 @@ describe("Streamable HTTP transport (default: catalog only)", () => {
     expect(all.isError).toBeFalsy();
     expect(text(all)).toMatch(/Skipped locked toolset/);
     expect(await toolNames(client)).toEqual([...CATALOG, "list_toolsets", "set_toolset"].sort());
+    // A locked tool cannot be called directly either, even by a client that knows its name.
+    const direct = await client.callTool({ name: "cart", arguments: {} });
+    expect(direct.isError).toBe(true);
+    expect(text(direct)).toMatch(/disabled/);
   });
 
   it("guards the endpoint: Host allow-list, unknown sessions, non-initialize requests, health check", async () => {
