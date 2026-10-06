@@ -261,9 +261,17 @@ export class PcBuilder {
           if (detailFetches >= maxFetches) break;
           // Keep looking past a warn only while the budget still covers the later roles.
           if (fallback && maxFetches - detailFetches <= laterRoles) break;
-          const product = await this.catalog.getProductSpecs(card.code);
           detailFetches++;
           tries++;
+          let product: Product;
+          try {
+            product = await this.catalog.getProductSpecs(card.code);
+          } catch (e) {
+            // One candidate's page failing (timeout, delisted, CF hiccup) must
+            // not abort a multi-minute suggest run — skip it like a failed rule.
+            notes.push(`${role}: skipped ${card.code} (product page failed: ${e instanceof Error ? e.message : String(e)}).`);
+            continue;
+          }
           const candidate = toPart(role, product, true, "suggested");
           if (candidate.price === undefined) candidate.price = card.price;
           const relevant = checkBuild(toBuildParts([...parts, candidate]), { psuHeadroom: input.psuHeadroom }).filter((v) =>

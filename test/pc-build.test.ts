@@ -565,6 +565,31 @@ describe("PcBuilder.suggest", () => {
     }
   });
 
+  it("skips a candidate whose product page fails instead of aborting the run", async () => {
+    const { catalog } = fakeCatalog();
+    const saved = LISTINGS[18849164];
+    // Listing card exists but its detail page throws (fakeCatalog: unknown code).
+    PRODUCTS.PSU_GONE = product("PSU_GONE", "Delisted PSU 1000W", 3100, PSU_850);
+    LISTINGS[18849164] = ["PSU_GONE", "PSU1"];
+    const orig = catalog.getProductSpecs;
+    catalog.getProductSpecs = async (code: string) => {
+      if (code === "PSU_GONE") throw new Error("product page timeout");
+      return orig(code);
+    };
+    try {
+      const r = await new PcBuilder(catalog).suggest({
+        budget: 30000,
+        fixedParts: [{ code: "CPU1" }, { code: "GPU1" }],
+        skipRoles: ["motherboard", "ram", "storage", "case", "cooler"],
+      });
+      expect(r.parts.find((p) => p.role === "psu")?.code).toBe("PSU1");
+      expect(r.notes.join(" ")).toMatch(/psu: skipped PSU_GONE \(product page failed: product page timeout\)/);
+    } finally {
+      LISTINGS[18849164] = saved!;
+      delete PRODUCTS.PSU_GONE;
+    }
+  });
+
   it("office profile leaves out the GPU", async () => {
     const { catalog } = fakeCatalog();
     const r = await new PcBuilder(catalog).suggest({ budget: 20000, profile: "office" });
