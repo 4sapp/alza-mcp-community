@@ -521,7 +521,9 @@ about *how* the working tools relate to each other:
     `max_screen_inches` now run through the category's own diagonal slider. The
     slider is found by its inch-labelled values, so it works with any unit (mm
     or inches). The name-parsing heuristic is now only the fallback when no
-    `category_id` is given or the category has no diagonal slider.
+    `category_id` is given, the category has no diagonal slider, or the
+    category's facets can't be fetched (screen size alone falls back; explicit
+    range filters surface the error).
   - Live end-to-end through the MCP server (monitors refresh ≥ 240 Hz, spot-checked
     320 Hz via `get_product`; monitors 42"–45"; TVs 75"–77"; laptops RAM ≥ 64 GB,
     spot-checked; brand + checkbox + two sliders; page 2; price sort sweep; empty

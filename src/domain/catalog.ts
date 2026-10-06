@@ -293,7 +293,19 @@ export class Catalog {
       throw new Error("min_screen_inches is greater than max_screen_inches");
     }
 
-    const facets = (await this.getCategoryFilters(categoryId)).groups;
+    let facets: FacetGroup[];
+    try {
+      facets = (await this.getCategoryFilters(categoryId)).groups;
+    } catch (err) {
+      // Screen size alone still has the product-name fallback; explicit
+      // range filters have none, so surface the failure for those.
+      if (explicit.length > 0) throw err;
+      log.warn("catalog.planRanges: facets unavailable, screen size falls back to name parsing", {
+        categoryId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
     const resolved: ResolvedRange[] = [];
     const empty: AppliedRange[] = [];
     for (const r of explicit) {

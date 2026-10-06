@@ -9,7 +9,9 @@ import {
   snapRange,
   snapScreenInches,
 } from "../src/domain/catalog.js";
+import { Catalog } from "../src/domain/catalog.js";
 import type { FacetGroup } from "../src/domain/types.js";
+import type { AlzaBrowser } from "../src/infra/browser.js";
 import { formatCategoryFilters, formatSearchResult } from "../src/tools/format.js";
 import { splitFilterArgs } from "../src/tools/search-products.js";
 
@@ -219,5 +221,75 @@ describe("formatting", () => {
       appliedRanges: [{ paramId: 17819, name: "Obnovovací frekvence", empty: true }],
     });
     expect(text).toContain("no step in requested range");
+  });
+});
+
+describe("Catalog.searchProducts range planning", () => {
+  // A browser stub that fails loudly if a page fetch is attempted; facets
+  // come from the stubbed getCategoryFilters.
+  function makeCatalog(groups: FacetGroup[] | Error, onFetch: () => never = () => { throw new Error("unexpected page fetch"); }) {
+    const browser = {
+      locale: { baseUrl: "https://www.alza.cz" },
+      withPage: () => onFetch(),
+    } as unknown as AlzaBrowser;
+    const catalog = new Catalog(browser);
+    catalog.getCategoryFilters = async (categoryId: number) => {
+      if (groups instanceof Error) throw groups;
+      return { categoryId, brands: [], groups };
+    };
+    return catalog;
+  }
+
+  it("rejects a min/max range on a Checkbox facet", async () => {
+    const catalog = makeCatalog([brand, refreshRate]);
+    await expect(
+      catalog.searchProducts({ query: "m", categoryId: 18842948, ranges: [{ paramId: 18740, min: 1 }] })
+    ).rejects.toThrow(/Checkbox facet — filter it with \{param_id, value_id\}/);
+  });
+
+  it("rejects an unknown param id and an inverted range", async () => {
+    const catalog = makeCatalog([refreshRate]);
+    await expect(
+      catalog.searchProducts({ query: "m", categoryId: 18842948, ranges: [{ paramId: 1, min: 1 }] })
+    ).rejects.toThrow(/not a facet of category 18842948/);
+    await expect(
+      catalog.searchProducts({ query: "m", categoryId: 18842948, ranges: [{ paramId: 17819, min: 200, max: 100 }] })
+    ).rejects.toThrow(/greater than max/);
+  });
+
+  it("requires category_id for range filters", async () => {
+    const catalog = makeCatalog([refreshRate]);
+    await expect(catalog.searchProducts({ query: "m", ranges: [{ paramId: 17819, min: 144 }] })).rejects.toThrow(
+      /require category_id/
+    );
+  });
+
+  it("answers an out-of-range request as empty without fetching a page", async () => {
+    const catalog = makeCatalog([refreshRate]);
+    const res = await catalog.searchProducts({ query: "m", categoryId: 18842948, ranges: [{ paramId: 17819, min: 1001 }] });
+    expect(res.products).toEqual([]);
+    expect(res.appliedRanges).toEqual([{ paramId: 17819, name: "Obnovovací frekvence", empty: true }]);
+  });
+
+  it("maps min/max_screen_inches to the category's diagonal slider (empty when no size fits)", async () => {
+    const catalog = makeCatalog([tvDiagonal]);
+    const res = await catalog.searchProducts({ query: "tv", categoryId: 18849604, minScreenInches: 70, maxScreenInches: 80 });
+    expect(res.appliedRanges).toEqual([{ paramId: 41706, name: "Úhlopříčka", empty: true, fromScreenInches: true }]);
+  });
+
+  it("falls back to the name-heuristic search path when facets are unavailable for screen size alone", async () => {
+    let fetches = 0;
+    const catalog = makeCatalog(new Error("facets down"), () => {
+      fetches++;
+      throw new Error("stop after routing");
+    });
+    await expect(catalog.searchProducts({ query: "tv", categoryId: 18849604, minScreenInches: 50 })).rejects.toThrow(
+      /stop after routing/
+    );
+    expect(fetches).toBe(1);
+    // explicit ranges have no fallback, so the facets error surfaces
+    await expect(
+      catalog.searchProducts({ query: "tv", categoryId: 18849604, ranges: [{ paramId: 41706, min: 50 }] })
+    ).rejects.toThrow(/facets down/);
   });
 });
