@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Distribution (2026-10-06).** Release workflow now verifies `server.json` / `mcpb/manifest.json` versions against `package.json` before `npm publish`, then publishes to the official MCP Registry with `mcp-publisher` (OIDC); `server.json` corrected from 0.1.2 to 0.3.0 and its description shortened to the registry's 100-char limit. README "Quick install" gains Cursor and VS Code one-click links; a Claude Desktop `.mcpb` bundle (`mcpb/manifest.json`, `scripts/build-mcpb.sh`) is built and attached to GitHub releases. `smithery.yaml` configSchema now matches the README env vars; `docs/directory-listings.md` holds ready-to-paste directory submission text.
+
 ### Changed
 
 - **Repo cleanup (2026-10-02).** Removed 39 untracked-by-design scratch scripts from `scripts/` (dotfile probes/sweeps, two embedded the OAuth client secret); redacted order access hashes (`?x=…`), real account ids, throwaway email addresses, visitor GUIDs in `docs/live-evidence/`, and two street addresses from evidence and tests. Git history is unchanged and still contains the unredacted values.
