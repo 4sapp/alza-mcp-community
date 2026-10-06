@@ -1,0 +1,1741 @@
+{
+ "date": "2026-10-06",
+ "issue": "lukabudik/alza-mcp#10",
+ "label": "live-verified",
+ "note": "Visitor ids, ad ids, analytics/log beacons and the response Boxes HTML are omitted; nothing account-bound was used (anonymous browser, ALZA_TOKEN_FILE=none).",
+ "step1_real_mouse_drag": {
+  "page": "https://www.alza.cz/lcd-monitory/18842948.htm",
+  "method": "Playwright headless Chromium: mouse.move to the left handle of #topped-parameter-17816 (Úhlopříčka slider), mouse.down, 15 mouse.move steps to +40% of the track width, mouse.up; all requests captured",
+  "sliderBefore": {
+   "data-from": "0",
+   "data-to": "75",
+   "data-max": "75"
+  },
+  "sliderAfter": {
+   "class": "parameter slider expanded",
+   "id": "topped-parameter-17816",
+   "data-parameterid": "17816",
+   "data-aria-label-from": "Hodnota od (2,72 \")",
+   "data-aria-label-to": "Hodnota do (105 \")",
+   "data-max": "75",
+   "data-from": "36",
+   "data-to": "75"
+  },
+  "urlAfter": "https://www.alza.cz/lcd-monitory/18842948.htm#f&cud=0&pg=1&prod=&par17816=711.2--2667&sc=513",
+  "canonicalAfter": "https://www.alza.cz/lcd-monitory/18842948.htm",
+  "relNextAfter": "https://www.alza.cz/lcd-monitory/18842948-p2.htm",
+  "pagerHrefsAfter": [
+   "https://www.alza.cz/lcd-monitory/18842948.htm",
+   "https://www.alza.cz/lcd-monitory/18842948.htm#f&cud=0&pg=1&prod=&par17816=711.2--2667",
+   "https://www.alza.cz/lcd-monitory/18842948.htm#f&cud=0&pg=1&prod=&par17816=711.2--2667",
+   "https://www.alza.cz/lcd-monitory/18842948.htm#f&cud=0&pg=1&prod=&par17816=711.2--2667"
+  ],
+  "navigation": "https://www.alza.cz/lcd-monitory/18842948.htm#f&cud=0&pg=1&prod=&par17816=711.2--2667&sc=513",
+  "filterXhr": {
+   "method": "POST",
+   "url": "https://www.alza.cz/Services/EShopService.svc/Filter",
+   "body": {
+    "idCategory": 18842948,
+    "producers": "",
+    "parameters": [
+     {
+      "typeId": 17816,
+      "valueFrom": 711.2,
+      "valueTo": null,
+      "orderFrom": "36",
+      "orderTo": "75",
+      "valueIds": null
+     }
+    ],
+    "idPrefix": 0,
+    "prefixType": 0,
+    "page": 1,
+    "pageTo": 1,
+    "availabilityType": 0,
+    "newsOnly": false,
+    "commodityWears": [],
+    "upperDescriptionStatus": 0,
+    "branchId": -2,
+    "sort": 0,
+    "categoryType": 1,
+    "searchTerm": "",
+    "append": false,
+    "yearFrom": null,
+    "yearTo": null,
+    "artistId": null,
+    "minPrice": -1,
+    "maxPrice": -1,
+    "showOnlyActionCommodities": false,
+    "useRatingThreshold": false,
+    "showOnlyAlzaPlusCommodities": false,
+    "cashbackCodeStyleVariant": 2,
+    "callFromParametrizationDialog": false,
+    "configurationId": 3,
+    "scroll": 513,
+    "hash": "#f&cud=0&pg=1&prod=&par17816=711.2--2667",
+    "counter": 1
+   }
+  },
+  "firstResultsAfter": [
+   "WK060a1l56 32\" LG UltraGear 32GS60QC-B",
+   "WK060a1l7g 31,5\" LG 32U631A-B",
+   "WK0658b5 34\" LG UltraWide 34U601B-B",
+   "RPTLCD008 31,5\" Rapture VIDE 32VFQ180",
+   "WK243x56 34\" AOC CU34G4"
+  ]
+ },
+ "step2_fresh_load_of_hash_url": [
+  {
+   "finalUrl": "https://www.alza.cz/lcd-monitory/18842948.htm#f&cud=0&pg=1&prod=&par17816=711.2--2667",
+   "filterRequestBodies": [
+    {
+     "idCategory": 18842948,
+     "producers": "",
+     "parameters": [
+      {
+       "typeId": 17816,
+       "valueFrom": 711.2,
+       "valueTo": 2667,
+       "orderFrom": 36,
+       "orderTo": 75,
+       "values": null,
+       "valueIds": null
+      }
+     ],
+     "page": 1,
+     "searchTerm": "",
+     "hash": "#f&cud=0&pg=1&prod=&par17816=711.2--2667"
+    }
+   ],
+   "filterResponses": [
+    {
+     "status": 200,
+     "contentType": "application/json; charset=utf-8",
+     "length": 518159
+    }
+   ],
+   "countShownInPage": "658",
+   "slidersApplied": [
+    [
+     "17816",
+     "36",
+     "75",
+     "75"
+    ]
+   ],
+   "firstNames": [
+    "31,5\" Rapture VIDE 32VFQ180",
+    "34\" AOC CU34G4",
+    "34\" AOC CU34G2XP",
+    "34\" Philips 346E2CUAE USB-C",
+    "32\" Dell 32 Plus (S3225QS)",
+    "31,5\" LG 32MR50C-B",
+    "44,5\" LG UltraGear 45GX950A-B",
+    "34\" Dell Alienware AW3425DW"
+   ]
+  },
+  {
+   "finalUrl": "https://www.alza.cz/lcd-monitory/18842948.htm#f&cud=0&pg=1&prod=&par17816=1092.2--69",
+   "filterRequestBodies": [
+    {
+     "idCategory": 18842948,
+     "producers": "",
+     "parameters": [
+      {
+       "typeId": 17816,
+       "valueFrom": 1092.2,
+       "valueTo": 69,
+       "orderFrom": 54,
+       "orderTo": 0,
+       "values": null,
+       "valueIds": null
+      }
+     ],
+     "page": 1,
+     "searchTerm": "",
+     "hash": "#f&cud=0&pg=1&prod=&par17816=1092.2--69"
+    }
+   ],
+   "filterResponses": [
+    {
+     "status": 200,
+     "contentType": "application/json; charset=utf-8",
+     "length": 5056
+    }
+   ],
+   "countShownInPage": "0",
+   "slidersApplied": [
+    [
+     "17816",
+     "54",
+     "0",
+     "75"
+    ]
+   ],
+   "firstNames": [
+    "27\" Rapture VIDE 27IFQ200",
+    "34\" AOC CU34G4",
+    "27\" GIGABYTE MO27Q2A",
+    "27\" AOC Q27G4XF Gaming",
+    "34\" AOC CU34G2XP",
+    "34\" Philips 346E2CUAE USB-C",
+    "27\" Philips 27E1N1600AE",
+    "32\" Dell 32 Plus (S3225QS)"
+   ]
+  },
+  {
+   "finalUrl": "https://www.alza.cz/lcd-monitory/18842948.htm#f&cud=0&pg=1&prod=&par17816=711.2--800",
+   "filterRequestBodies": [
+    {
+     "idCategory": 18842948,
+     "producers": "",
+     "parameters": [
+      {
+       "typeId": 17816,
+       "valueFrom": 711.2,
+       "valueTo": 800,
+       "orderFrom": 36,
+       "orderTo": 40,
+       "values": null,
+       "valueIds": null
+      }
+     ],
+     "page": 1,
+     "searchTerm": "",
+     "hash": "#f&cud=0&pg=1&prod=&par17816=711.2--800"
+    }
+   ],
+   "filterResponses": [
+    {
+     "status": 200,
+     "contentType": "application/json; charset=utf-8",
+     "length": 224751
+    }
+   ],
+   "countShownInPage": "15",
+   "slidersApplied": [
+    [
+     "17816",
+     "36",
+     "40",
+     "75"
+    ]
+   ],
+   "firstNames": [
+    "29\" LG 29U511A-B",
+    "30\" Dahua LM30-E330CA",
+    "28,2\" BenQ RD280UA",
+    "31,5\" HP 732xk",
+    "29\" LG 29U511A-B",
+    "28,2\" BenQ RD280U",
+    "32\" LG UltraGear 32G620B-B",
+    "32\" Sharp MultiSync E329"
+   ]
+  },
+  {
+   "finalUrl": "https://www.alza.cz/lcd-monitory/aoc/hdmi/18842948-v1432-par18740-239739715.htm#f&cud=0&pg=1&prod=&par18740=18740-239739715&par17816=812.8--863.6&par17819=144--610",
+   "filterRequestBodies": [
+    {
+     "idCategory": 18842948,
+     "producers": "",
+     "parameters": [
+      {
+       "isCable": 0,
+       "isHierarchic": 0,
+       "typeId": 18740,
+       "valueFrom": null,
+       "valueTo": null,
+       "orderFrom": null,
+       "orderTo": null,
+       "values": [
+        239739715
+       ],
+       "valueIds": [
+        "18740-239739715"
+       ]
+      },
+      {
+       "typeId": 17816,
+       "valueFrom": 812.8,
+       "valueTo": 863.6,
+       "orderFrom": 12,
+       "orderTo": 13,
+       "values": null,
+       "valueIds": null
+      },
+      {
+       "typeId": 17819,
+       "valueFrom": 144,
+       "valueTo": 610,
+       "orderFrom": 4,
+       "orderTo": 20,
+       "values": null,
+       "valueIds": null
+      }
+     ],
+     "page": 1,
+     "searchTerm": "",
+     "hash": "#f&cud=0&pg=1&prod=&par18740=18740-239739715&par17816=812.8--863.6&par17819=144--610"
+    }
+   ],
+   "filterResponses": [
+    {
+     "status": 200,
+     "contentType": "application/json; charset=utf-8",
+     "length": 195877
+    }
+   ],
+   "countShownInPage": "13",
+   "slidersApplied": [
+    [
+     "17816",
+     "12",
+     "13",
+     "13"
+    ],
+    [
+     "17819",
+     "4",
+     "20",
+     "20"
+    ]
+   ],
+   "firstNames": [
+    "34\" AOC CU34G4",
+    "34\" AOC CU34G2XP",
+    "34\" AOC CU34G4Z",
+    "32\" AOC C32G2ZE Gaming",
+    "34\" AOC CU34G4CA",
+    "32\" AOC U32G4U",
+    "34\" AOC AGON AG346UCD",
+    "32\" AOC AG326UZD2"
+   ]
+  },
+  {
+   "finalUrl": "https://www.alza.cz/search.htm?exps=lg%20ultragear&idc=18842948#f&cud=0&pg=1&prod=&par17816=812.8--2667",
+   "filterRequestBodies": [],
+   "filterResponses": [],
+   "countShownInPage": "51",
+   "slidersApplied": [],
+   "firstNames": [
+    "32\" LG UltraGear 32GS60QC-B",
+    "27\" LG UltraGear 27G610A-B",
+    "44,5\" LG UltraGear 45GX950A-B",
+    "27\" LG UltraGear 27GS85Q-B",
+    "27\" LG UltraGear 27G411B-B",
+    "34\" LG UltraGear 34GX90SA-W",
+    "31,5\" LG UltraGear 32G600A-B",
+    "34\" LG UltraGear 34GX90SA-W + LG Swing Stand"
+   ]
+  }
+ ],
+ "step3_filter_response_shape": {
+  "keys": [
+   "BotInfo",
+   "Boxes",
+   "Codes",
+   "Count",
+   "Counter",
+   "DisplayCount",
+   "MoreUrl",
+   "Page",
+   "PagerBottom",
+   "PagerTop",
+   "Parameters",
+   "ParamsShowItemsText",
+   "Producers",
+   "ProducersCount",
+   "TabMaxSlide",
+   "TabMaxSlideBlock",
+   "ParametersInfo",
+   "ProducersInfo",
+   "CommodityWears",
+   "OtherParameters",
+   "GtmData",
+   "eshopCertificates"
+  ],
+  "Count": 658,
+  "Page": 2,
+  "MoreUrl": "#f&cud=0&pg=2&prod=&par17816=711.2--2667"
+ },
+ "step4_mcp_end_to_end": [
+  {
+   "case": "filters",
+   "tool": "list_category_filters",
+   "args": {
+    "category_id": 18842948
+   },
+   "ms": 1841,
+   "isError": false,
+   "groups": 58,
+   "filterable": 58,
+   "rangeGroups": [
+    {
+     "paramId": 17816,
+     "name": "Úhlopříčka",
+     "steps": 76,
+     "first": {
+      "valueId": 69,
+      "description": "2,72 \" (6,9 cm)",
+      "count": 5,
+      "value": 69
+     },
+     "last": {
+      "valueId": 2667,
+      "description": "105 \" (266,7 cm)",
+      "count": 3,
+      "value": 2667
+     }
+    },
+    {
+     "paramId": 17819,
+     "name": "Obnovovací frekvence",
+     "steps": 47,
+     "first": {
+      "valueId": 50,
+      "description": "50 Hz",
+      "count": 6,
+      "value": 50
+     },
+     "last": {
+      "valueId": 1000,
+      "description": "1 000 Hz",
+      "count": 1,
+      "value": 1000
+     }
+    },
+    {
+     "paramId": 17818,
+     "name": "Odezva",
+     "steps": 38,
+     "first": {
+      "valueId": 0,
+      "description": "0,01 ms",
+      "count": 3,
+      "value": 0.00001
+     },
+     "last": {
+      "valueId": 0,
+      "description": "60 ms",
+      "count": 1,
+      "value": 0.06
+     }
+    },
+    {
+     "paramId": 17820,
+     "name": "Maximální jas",
+     "steps": 34,
+     "first": {
+      "valueId": 150,
+      "description": "150 cd/m2",
+      "count": 1,
+      "value": 150
+     },
+     "last": {
+      "valueId": 2000,
+      "description": "2 000 cd/m2",
+      "count": 8,
+      "value": 2000
+     }
+    },
+    {
+     "paramId": 17399,
+     "name": "HDMI",
+     "steps": 4,
+     "first": {
+      "valueId": 1,
+      "description": "1 ×",
+      "count": 831,
+      "value": 1
+     },
+     "last": {
+      "valueId": 4,
+      "description": "4 ×",
+      "count": 5,
+      "value": 4
+     }
+    },
+    {
+     "paramId": 17400,
+     "name": "DVI",
+     "steps": 2,
+     "first": {
+      "valueId": 1,
+      "description": "1 ×",
+      "count": 17,
+      "value": 1
+     },
+     "last": {
+      "valueId": 3,
+      "description": "3 ×",
+      "count": 1,
+      "value": 3
+     }
+    },
+    {
+     "paramId": 17401,
+     "name": "DisplayPort",
+     "steps": 2,
+     "first": {
+      "valueId": 1,
+      "description": "1 ×",
+      "count": 1378,
+      "value": 1
+     },
+     "last": {
+      "valueId": 2,
+      "description": "2 ×",
+      "count": 127,
+      "value": 2
+     }
+    },
+    {
+     "paramId": 17402,
+     "name": "Thunderbolt / USB 4",
+     "steps": 3,
+     "first": {
+      "valueId": 1,
+      "description": "1 ×",
+      "count": 20,
+      "value": 1
+     },
+     "last": {
+      "valueId": 3,
+      "description": "3 ×",
+      "count": 1,
+      "value": 3
+     }
+    },
+    {
+     "paramId": 17403,
+     "name": "USB-C",
+     "steps": 5,
+     "first": {
+      "valueId": 1,
+      "description": "1 ×",
+      "count": 473,
+      "value": 1
+     },
+     "last": {
+      "valueId": 5,
+      "description": "5 ×",
+      "count": 5,
+      "value": 5
+     }
+    },
+    {
+     "paramId": 17404,
+     "name": "mini DisplayPort",
+     "steps": 1,
+     "first": {
+      "valueId": 1,
+      "description": "1 ×",
+      "count": 17,
+      "value": 1
+     },
+     "last": {
+      "valueId": 1,
+      "description": "1 ×",
+      "count": 17,
+      "value": 1
+     }
+    },
+    {
+     "paramId": 17405,
+     "name": "VGA",
+     "steps": 1,
+     "first": {
+      "valueId": 1,
+      "description": "1 ×",
+      "count": 222,
+      "value": 1
+     },
+     "last": {
+      "valueId": 1,
+      "description": "1 ×",
+      "count": 222,
+      "value": 1
+     }
+    },
+    {
+     "paramId": 17406,
+     "name": "USB",
+     "steps": 8,
+     "first": {
+      "valueId": 1,
+      "description": "1 ×",
+      "count": 107,
+      "value": 1
+     },
+     "last": {
+      "valueId": 8,
+      "description": "8 ×",
+      "count": 3,
+      "value": 8
+     }
+    },
+    {
+     "paramId": 17892,
+     "name": "Barevné pokrytí (Adobe RGB)",
+     "steps": 100,
+     "first": {
+      "valueId": 0,
+      "description": "0,95 %",
+      "count": 1,
+      "value": 0.95
+     },
+     "last": {
+      "valueId": 148,
+      "description": "148 %",
+      "count": 2,
+      "value": 148
+     }
+    },
+    {
+     "paramId": 17893,
+     "name": "Barevné pokrytí (sRGB)",
+     "steps": 131,
+     "first": {
+      "valueId": 0,
+      "description": "0,99 %",
+      "count": 11,
+      "value": 0.99
+     },
+     "last": {
+      "valueId": 160,
+      "description": "160 %",
+      "count": 2,
+      "value": 160
+     }
+    },
+    {
+     "paramId": 20347,
+     "name": "Maximální výkon Power Delivery",
+     "steps": 50,
+     "first": {
+      "valueId": 5,
+      "description": "5 W",
+      "count": 1,
+      "value": 5
+     },
+     "last": {
+      "valueId": 494,
+      "description": "494 W",
+      "count": 1,
+      "value": 494
+     }
+    },
+    {
+     "paramId": 17814,
+     "name": "Šířka",
+     "steps": 600,
+     "first": {
+      "valueId": 70,
+      "description": "7,1 cm",
+      "count": 1,
+      "value": 70.99
+     },
+     "last": {
+      "valueId": 2507,
+      "description": "250,72 cm",
+      "count": 1,
+      "value": 2507.2
+     }
+    },
+    {
+     "paramId": 17815,
+     "name": "Výška",
+     "steps": 934,
+     "first": {
+      "valueId": 52,
+      "description": "5,24 cm",
+      "count": 1,
+      "value": 52.44
+     },
+     "last": {
+      "valueId": 1326,
+      "description": "132,6 cm",
+      "count": 1,
+      "value": 1326
+     }
+    },
+    {
+     "paramId": 17415,
+     "name": "Hloubka",
+     "steps": 637,
+     "first": {
+      "valueId": 7,
+      "description": "0,7 cm",
+      "count": 5,
+      "value": 7
+     },
+     "last": {
+      "valueId": 554,
+      "description": "55,42 cm",
+      "count": 2,
+      "value": 554.2
+     }
+    },
+    {
+     "paramId": 17417,
+     "name": "Hmotnost",
+     "steps": 594,
+     "first": {
+      "valueId": 0,
+      "description": "0,24 kg",
+      "count": 1,
+      "value": 0.242
+     },
+     "last": {
+      "valueId": 109,
+      "description": "109,6 kg",
+      "count": 1,
+      "value": 109.6
+     }
+    },
+    {
+     "paramId": 22310,
+     "name": "Spotřeba v SDR režimu",
+     "steps": 196,
+     "first": {
+      "valueId": 3,
+      "description": "3 kWh/1000h",
+      "count": 6,
+      "value": 3
+     },
+     "last": {
+      "valueId": 515,
+      "description": "515 kWh/1000h",
+      "count": 1,
+      "value": 515
+     }
+    },
+    {
+     "paramId": 33239,
+     "name": "Maximální spotřeba",
+     "steps": 169,
+     "first": {
+      "valueId": 5,
+      "description": "5,5 W",
+      "count": 1,
+      "value": 5.5
+     },
+     "last": {
+      "valueId": 494,
+      "description": "494 W",
+      "count": 1,
+      "value": 494
+     }
+    }
+   ]
+  },
+  {
+   "case": "refresh",
+   "tool": "search_products",
+   "args": {
+    "query": "monitor",
+    "category_id": 18842948,
+    "filters": [
+     {
+      "param_id": 17819,
+      "min": 240
+     }
+    ],
+    "limit": 10
+   },
+   "ms": 1813,
+   "isError": false,
+   "appliedRanges": [
+    {
+     "paramId": 17819,
+     "name": "Obnovovací frekvence",
+     "from": 240,
+     "to": 1000
+    }
+   ],
+   "returned": 10,
+   "products": [
+    {
+     "code": "WC118a12b19",
+     "name": "27\" AOC U27G4R",
+     "price": 8557
+    },
+    {
+     "code": "WM232l55u5",
+     "name": "27\" Lenovo Legion 27Q-10",
+     "price": 4690
+    },
+    {
+     "code": "ADL34t51c5",
+     "name": "34\" Dell Alienware AW3425DW",
+     "price": 15390
+    },
+    {
+     "code": "WH605Q1a",
+     "name": "49\" Samsung Odyssey OLED G95SC Smart",
+     "price": 24990
+    },
+    {
+     "code": "WH605Q4",
+     "name": "57\" Samsung Odyssey Neo G9",
+     "price": 42490
+    },
+    {
+     "code": "ADL27u70d1",
+     "name": "27\" Dell Alienware AW2725DF",
+     "price": 14790
+    },
+    {
+     "code": "WH605G5ac",
+     "name": "32\" Samsung Odyssey G65B",
+     "price": 7490
+    },
+    {
+     "code": "WK243x03",
+     "name": "27\" AOC Q27G41ZDF",
+     "price": 10387
+    },
+    {
+     "code": "WC118a12b23",
+     "name": "27\" AOC AG276UZD OLED",
+     "price": 20986
+    },
+    {
+     "code": "WH605h10a1ce",
+     "name": "49\" Samsung Odyssey OLED G9 G93SD",
+     "price": 22990
+    }
+   ]
+  },
+  {
+   "case": "screen",
+   "tool": "search_products",
+   "args": {
+    "query": "monitor",
+    "category_id": 18842948,
+    "min_screen_inches": 42,
+    "max_screen_inches": 45,
+    "limit": 10
+   },
+   "ms": 1777,
+   "isError": false,
+   "appliedRanges": [
+    {
+     "paramId": 17816,
+     "name": "Úhlopříčka",
+     "from": 1066.8,
+     "to": 1143,
+     "fromScreenInches": true
+    }
+   ],
+   "returned": 10,
+   "products": [
+    {
+     "code": "WK060a18HU",
+     "name": "44,5\" LG UltraGear 45GX950A-B",
+     "price": 37490
+    },
+    {
+     "code": "ADL34u33f",
+     "name": "43\" Dell U4323QE Ultrasharp",
+     "price": 22390
+    },
+    {
+     "code": "WM232l6y",
+     "name": "44.5\" Lenovo Legion R45w-30",
+     "price": 16790
+    },
+    {
+     "code": "WV302",
+     "name": "43\" DAHUA LM43-F200",
+     "price": 6649
+    },
+    {
+     "code": "WK060a19HU",
+     "name": "44,5\" LG UltraGear 45GX90SA-B",
+     "price": 32876
+    },
+    {
+     "code": "WA840w6",
+     "name": "45\" iiyama G-Master GCB4580DQSN-B1",
+     "price": 18090
+    },
+    {
+     "code": "WC130c1h",
+     "name": "43\" Philips 439P1",
+     "price": 14090
+    },
+    {
+     "code": "WA827s017e",
+     "name": "43\" iiyama G-MASTER G4380UHSU-B2",
+     "price": 15490
+    },
+    {
+     "code": "WC130c2a",
+     "name": "45\" Philips 45B1U6900C",
+     "price": 18890
+    },
+    {
+     "code": "WC130c2",
+     "name": "45\" Philips 45B1U6900CH",
+     "price": 22090
+    }
+   ]
+  },
+  {
+   "case": "combo",
+   "tool": "search_products",
+   "args": {
+    "query": "monitor",
+    "category_id": 18842948,
+    "producer_ids": [
+     1432
+    ],
+    "filters": [
+     {
+      "param_id": 18740,
+      "value_id": 239739715
+     },
+     {
+      "param_id": 17816,
+      "min": 812.8
+     },
+     {
+      "param_id": 17819,
+      "min": 144
+     }
+    ],
+    "limit": 10
+   },
+   "ms": 1845,
+   "isError": false,
+   "appliedRanges": [
+    {
+     "paramId": 17816,
+     "name": "Úhlopříčka",
+     "from": 812.8,
+     "to": 863.6
+    },
+    {
+     "paramId": 17819,
+     "name": "Obnovovací frekvence",
+     "from": 144,
+     "to": 610
+    }
+   ],
+   "returned": 10,
+   "products": [
+    {
+     "code": "WK243x56",
+     "name": "34\" AOC CU34G4",
+     "price": 7187
+    },
+    {
+     "code": "WK243y42c",
+     "name": "34\" AOC CU34G2XP",
+     "price": 6270
+    },
+    {
+     "code": "WC118a12b21",
+     "name": "34\" AOC CU34G4Z",
+     "price": 8929
+    },
+    {
+     "code": "WK243x1",
+     "name": "32\" AOC C32G2ZE Gaming",
+     "price": 4386
+    },
+    {
+     "code": "WC118a13ga3",
+     "name": "34\" AOC CU34G4CA",
+     "price": 7290
+    },
+    {
+     "code": "WK243x06",
+     "name": "32\" AOC U32G4U",
+     "price": 9790
+    },
+    {
+     "code": "WK243y46",
+     "name": "34\" AOC AGON AG346UCD",
+     "price": 17987
+    },
+    {
+     "code": "WC118a13b2",
+     "name": "32\" AOC AG326UZD2",
+     "price": 25871
+    },
+    {
+     "code": "WC118a13b3",
+     "name": "32\" AOC C32G4Z",
+     "price": 5490
+    },
+    {
+     "code": "WC118a13ga2",
+     "name": "34\" AOC CU34G4ZCA",
+     "price": 8490
+    }
+   ]
+  },
+  {
+   "case": "empty",
+   "tool": "search_products",
+   "args": {
+    "query": "monitor",
+    "category_id": 18842948,
+    "filters": [
+     {
+      "param_id": 17819,
+      "min": 1001
+     }
+    ]
+   },
+   "ms": 1,
+   "isError": false,
+   "appliedRanges": [
+    {
+     "paramId": 17819,
+     "name": "Obnovovací frekvence",
+     "empty": true
+    }
+   ],
+   "returned": 0,
+   "products": []
+  },
+  {
+   "case": "badparam",
+   "args": {
+    "query": "monitor",
+    "category_id": 18842948,
+    "filters": [
+     {
+      "param_id": 18740,
+      "min": 1
+     }
+    ]
+   },
+   "isError": true,
+   "text": "Error: param_id 18740 (\"Grafické rozhraní\") is a Checkbox facet — filter it with {param_id, value_id}, not min/max"
+  },
+  {
+   "case": "tv",
+   "tool": "search_products",
+   "args": {
+    "query": "televize",
+    "category_id": 18849604,
+    "min_screen_inches": 75,
+    "max_screen_inches": 77,
+    "limit": 8
+   },
+   "ms": 5169,
+   "isError": false,
+   "appliedRanges": [
+    {
+     "paramId": 41706,
+     "name": "Úhlopříčka",
+     "from": 75,
+     "to": 77,
+     "fromScreenInches": true
+    }
+   ],
+   "returned": 8,
+   "products": [
+    {
+     "code": "WK691h1",
+     "name": "75\" TCL 75C6K PRO",
+     "price": 34990
+    },
+    {
+     "code": "WK6016c9",
+     "name": "77\" LG OLED77G64LW",
+     "price": 99990
+    },
+    {
+     "code": "WK6016c52",
+     "name": "75\" LG 75QNED85B6B",
+     "price": 35282
+    },
+    {
+     "code": "BUNWK6016c9",
+     "name": "77\" LG OLED77G64LW + Soundbar SG10TY",
+     "price": 114980
+    },
+    {
+     "code": "WK690f7q",
+     "name": "75\" TCL 75T8C",
+     "price": 23990
+    },
+    {
+     "code": "WR173n1",
+     "name": "77\" Samsung QE77S85H",
+     "price": 55544
+    },
+    {
+     "code": "WK690f7pc",
+     "name": "75\" TCL 75T69C",
+     "price": 20990
+    },
+    {
+     "code": "WK6016c13",
+     "name": "77\" LG OLED77C64LA",
+     "price": 86653
+    }
+   ]
+  },
+  {
+   "case": "laptop-ram",
+   "tool": "search_products",
+   "args": {
+    "query": "notebook",
+    "category_id": 18842920,
+    "filters": [
+     {
+      "param_id": 70,
+      "min": 65536
+     }
+    ],
+    "limit": 8
+   },
+   "ms": 5481,
+   "isError": false,
+   "appliedRanges": [
+    {
+     "paramId": 70,
+     "name": "Velikost operační paměti RAM",
+     "from": 65536,
+     "to": 196608
+    }
+   ],
+   "returned": 8,
+   "products": [
+    {
+     "code": "NA670a72f13",
+     "name": "ASUS TUF Gaming A14 FA401EA-RG005W Jaeger Gray (1 rok ochrany proti poškození zdarma po registraci)",
+     "price": 53990
+    },
+    {
+     "code": "NA683x60p5y7",
+     "name": "ASUS ROG Zephyrus G16 GU605CX-QR149 Eclipse Gray celokovový (1 rok ochrany proti poškození zdarma po registraci)",
+     "price": 90990
+    },
+    {
+     "code": "NT094p6k6e",
+     "name": "Lenovo ThinkPad P14s Gen 6 Black (záruka 3 roky ONSITE NBD)",
+     "price": 138990
+    },
+    {
+     "code": "NT379k04n5v37",
+     "name": "Lenovo Legion 7 15ASH11 Nebula celokovový (bez adaptéru) (záruka 3 roky on-site)",
+     "price": 76989
+    },
+    {
+     "code": "NT098j0u2",
+     "name": "Lenovo ThinkPad P16s Gen 4 Black (záruka 3 roky ONSITE NBD)",
+     "price": 101565
+    },
+    {
+     "code": "NA668t03u11",
+     "name": "ASUS ROG Flow Z13 GZ302EA-RU204X Off Black (1 rok ochrany proti poškození zdarma po registraci)",
+     "price": 65490
+    },
+    {
+     "code": "NB200H7a2",
+     "name": "MSI Raider A18 HX A9WJG-067CZ kovový",
+     "price": 104990
+    },
+    {
+     "code": "NB957b5v11",
+     "name": "MSI Titan 18 HX Dragon Edition Draco Epic A2WJ-1222CZ",
+     "price": 159990
+    }
+   ]
+  },
+  {
+   "case": "page2",
+   "tool": "search_products",
+   "args": {
+    "query": "monitor",
+    "category_id": 18842948,
+    "filters": [
+     {
+      "param_id": 17819,
+      "min": 240
+     }
+    ],
+    "limit": 10,
+    "page": 2
+   },
+   "ms": 4375,
+   "isError": false,
+   "appliedRanges": [
+    {
+     "paramId": 17819,
+     "name": "Obnovovací frekvence",
+     "from": 240,
+     "to": 1000
+    }
+   ],
+   "returned": 10,
+   "products": [
+    {
+     "code": "WQ27o5o5x39",
+     "name": "27\" MSI MAG 272F X24",
+     "price": 2990
+    },
+    {
+     "code": "WA049m1d23",
+     "name": "32\" ASUS ROG Swift OLED PG32UCDP",
+     "price": 21960
+    },
+    {
+     "code": "WK243x1",
+     "name": "32\" AOC C32G2ZE Gaming",
+     "price": 4386
+    },
+    {
+     "code": "WM232l55u11",
+     "name": "27\" Lenovo Legion 27QD-10",
+     "price": 4690
+    },
+    {
+     "code": "WH605h10d5g",
+     "name": "27\" Samsung Odyssey OLED G6 (G61SH)",
+     "price": 11750
+    },
+    {
+     "code": "WQ27o5o6NAD",
+     "name": "26.5\" MSI MPG 272URX QD-OLED",
+     "price": 19990
+    },
+    {
+     "code": "WA044v225",
+     "name": "26,5\" ASUS ROG Strix OLED XG27AQWMG",
+     "price": 14890
+    },
+    {
+     "code": "WQ27o5o5x46",
+     "name": "24.5\" MSI MAG 255F X24",
+     "price": 2490
+    },
+    {
+     "code": "WM232l55u10",
+     "name": "27\" Lenovo Legion 27Q-11",
+     "price": 4790
+    },
+    {
+     "code": "BUNWK060a1b3",
+     "name": "34\" LG UltraGear 34GX90SA-W + LG Swing Stand",
+     "price": 28490
+    }
+   ]
+  },
+  {
+   "case": "sweep",
+   "tool": "search_products",
+   "args": {
+    "query": "monitor",
+    "category_id": 18842948,
+    "filters": [
+     {
+      "param_id": 17819,
+      "min": 240
+     }
+    ],
+    "sort": "price-asc",
+    "limit": 30
+   },
+   "ms": 4508,
+   "isError": false,
+   "appliedRanges": [
+    {
+     "paramId": 17819,
+     "name": "Obnovovací frekvence",
+     "from": 240,
+     "to": 1000
+    }
+   ],
+   "returned": 30,
+   "products": [
+    {
+     "code": "WQ27o5o5x46",
+     "name": "24.5\" MSI MAG 255F X24",
+     "price": 2490
+    },
+    {
+     "code": "RPTLCD003",
+     "name": "23,8\" Rapture VIDE 24IFF240",
+     "price": 2490
+    },
+    {
+     "code": "WQ27o5o5x39",
+     "name": "27\" MSI MAG 272F X24",
+     "price": 2990
+    },
+    {
+     "code": "WA043v299h",
+     "name": "23,8\" ASUS TUF Gaming VG249QML5A",
+     "price": 3490
+    },
+    {
+     "code": "WQ27o5o7i1",
+     "name": "27\" MSI MAG 276CXF - nyní s prodlouženou tříletou zárukou",
+     "price": 3690
+    },
+    {
+     "code": "WC118a13b5",
+     "name": "27\" AOC C27G42ZE",
+     "price": 3853
+    },
+    {
+     "code": "WQ27o5o8a",
+     "name": "27\" MSI MAG 275CQDF X24",
+     "price": 3990
+    },
+    {
+     "code": "WK243x1",
+     "name": "32\" AOC C32G2ZE Gaming",
+     "price": 4386
+    },
+    {
+     "code": "WM232l55u5",
+     "name": "27\" Lenovo Legion 27Q-10",
+     "price": 4690
+    },
+    {
+     "code": "WM232l55u11",
+     "name": "27\" Lenovo Legion 27QD-10",
+     "price": 4690
+    }
+   ]
+  },
+  {
+   "case": "heuristic-no-cat",
+   "tool": "search_products",
+   "args": {
+    "query": "monitor 34",
+    "min_screen_inches": 34,
+    "max_screen_inches": 34,
+    "limit": 5
+   },
+   "ms": 1369,
+   "isError": false,
+   "returned": 5,
+   "products": [
+    {
+     "code": "WC130b8a41",
+     "name": "34\" Philips 346E2CUAE USB-C",
+     "price": 8520
+    },
+    {
+     "code": "ADL34t51c5",
+     "name": "34\" Dell Alienware AW3425DW",
+     "price": 15390
+    },
+    {
+     "code": "WK0658b5",
+     "name": "34\" LG UltraWide 34U601B-B",
+     "price": 5490
+    },
+    {
+     "code": "WC130b8a65",
+     "name": "34\" Philips 34M2C3500L",
+     "price": 6653
+    },
+    {
+     "code": "WA840w3d6",
+     "name": "34\" iiyama ProLite GCB3486WQSCP-B1",
+     "price": 9659
+    }
+   ]
+  },
+  {
+   "case": "detail",
+   "tool": "get_product",
+   "args": {
+    "code": "WC118a12b19"
+   },
+   "ms": 1300,
+   "isError": false,
+   "product": {
+    "code": "WC118a12b19",
+    "name": "27 AOC U27G4R",
+    "params": [
+     {
+      "name": "Obnovovací frekvence",
+      "value": "320 Hz"
+     },
+     {
+      "name": "Dual-Mode frekvence",
+      "value": "160Hz/320Hz"
+     }
+    ]
+   }
+  },
+  {
+   "case": "detail",
+   "tool": "get_product",
+   "args": {
+    "code": "NA670a72f13"
+   },
+   "ms": 2233,
+   "isError": false,
+   "product": {
+    "code": "NA670a72f13",
+    "name": "ASUS TUF Gaming A14 FA401EA-RG005W Jaeger Gray",
+    "params": [
+     {
+      "name": "Obnovovací frekvence displeje",
+      "value": "165 Hz"
+     },
+     {
+      "name": "Frekvence procesoru",
+      "value": "3,2 GHz (3 200 MHz)"
+     },
+     {
+      "name": "Core Boost Frekvence",
+      "value": "5 GHz (5 000 MHz)"
+     },
+     {
+      "name": "Velikost operační paměti RAM",
+      "value": "64 GB"
+     }
+    ]
+   }
+  }
+ ],
+ "step5_mcp_rerun_after_rebase_onto_main_c14b47b": [
+  {
+   "case": "filters",
+   "args": {
+    "category_id": 18842948
+   },
+   "ms": 2210,
+   "isError": false,
+   "groups": 58,
+   "rangeGroups": 21
+  },
+  {
+   "case": "refresh",
+   "args": {
+    "query": "monitor",
+    "category_id": 18842948,
+    "filters": [
+     {
+      "param_id": 17819,
+      "min": 240
+     }
+    ],
+    "limit": 6
+   },
+   "ms": 2202,
+   "isError": false,
+   "appliedRanges": [
+    {
+     "paramId": 17819,
+     "name": "Obnovovací frekvence",
+     "from": 240,
+     "to": 1000
+    }
+   ],
+   "products": [
+    {
+     "code": "WC118a12b19",
+     "name": "27\" AOC U27G4R",
+     "price": 8557
+    },
+    {
+     "code": "WM232l55u5",
+     "name": "27\" Lenovo Legion 27Q-10",
+     "price": 4690
+    },
+    {
+     "code": "ADL34t51c5",
+     "name": "34\" Dell Alienware AW3425DW",
+     "price": 15390
+    },
+    {
+     "code": "WH605Q1a",
+     "name": "49\" Samsung Odyssey OLED G95SC Smart",
+     "price": 24990
+    },
+    {
+     "code": "WH605Q4",
+     "name": "57\" Samsung Odyssey Neo G9",
+     "price": 42490
+    },
+    {
+     "code": "ADL27u70d1",
+     "name": "27\" Dell Alienware AW2725DF",
+     "price": 14790
+    }
+   ]
+  },
+  {
+   "case": "screen",
+   "args": {
+    "query": "monitor",
+    "category_id": 18842948,
+    "min_screen_inches": 42,
+    "max_screen_inches": 45,
+    "limit": 6
+   },
+   "ms": 1870,
+   "isError": false,
+   "appliedRanges": [
+    {
+     "paramId": 17816,
+     "name": "Úhlopříčka",
+     "from": 1066.8,
+     "to": 1143,
+     "fromScreenInches": true
+    }
+   ],
+   "products": [
+    {
+     "code": "WK060a18HU",
+     "name": "44,5\" LG UltraGear 45GX950A-B",
+     "price": 37490
+    },
+    {
+     "code": "ADL34u33f",
+     "name": "43\" Dell U4323QE Ultrasharp",
+     "price": 22390
+    },
+    {
+     "code": "WM232l6y",
+     "name": "44.5\" Lenovo Legion R45w-30",
+     "price": 16790
+    },
+    {
+     "code": "WV302",
+     "name": "43\" DAHUA LM43-F200",
+     "price": 6649
+    },
+    {
+     "code": "WK060a19HU",
+     "name": "44,5\" LG UltraGear 45GX90SA-B",
+     "price": 32876
+    },
+    {
+     "code": "WA840w6",
+     "name": "45\" iiyama G-Master GCB4580DQSN-B1",
+     "price": 18090
+    }
+   ]
+  },
+  {
+   "case": "combo",
+   "args": {
+    "query": "monitor",
+    "category_id": 18842948,
+    "producer_ids": [
+     1432
+    ],
+    "filters": [
+     {
+      "param_id": 18740,
+      "value_id": 239739715
+     },
+     {
+      "param_id": 17816,
+      "min": 812.8
+     },
+     {
+      "param_id": 17819,
+      "min": 144
+     }
+    ],
+    "limit": 6
+   },
+   "ms": 1783,
+   "isError": false,
+   "appliedRanges": [
+    {
+     "paramId": 17816,
+     "name": "Úhlopříčka",
+     "from": 812.8,
+     "to": 863.6
+    },
+    {
+     "paramId": 17819,
+     "name": "Obnovovací frekvence",
+     "from": 144,
+     "to": 610
+    }
+   ],
+   "products": [
+    {
+     "code": "WK243x56",
+     "name": "34\" AOC CU34G4",
+     "price": 7187
+    },
+    {
+     "code": "WK243y42c",
+     "name": "34\" AOC CU34G2XP",
+     "price": 6270
+    },
+    {
+     "code": "WC118a12b21",
+     "name": "34\" AOC CU34G4Z",
+     "price": 8929
+    },
+    {
+     "code": "WK243x1",
+     "name": "32\" AOC C32G2ZE Gaming",
+     "price": 4386
+    },
+    {
+     "code": "WC118a13ga3",
+     "name": "34\" AOC CU34G4CA",
+     "price": 7290
+    },
+    {
+     "code": "WK243x06",
+     "name": "32\" AOC U32G4U",
+     "price": 9790
+    }
+   ]
+  },
+  {
+   "case": "tv",
+   "args": {
+    "query": "televize",
+    "category_id": 18849604,
+    "min_screen_inches": 75,
+    "max_screen_inches": 77,
+    "limit": 6
+   },
+   "ms": 4082,
+   "isError": false,
+   "appliedRanges": [
+    {
+     "paramId": 41706,
+     "name": "Úhlopříčka",
+     "from": 75,
+     "to": 77,
+     "fromScreenInches": true
+    }
+   ],
+   "products": [
+    {
+     "code": "WK691h1",
+     "name": "75\" TCL 75C6K PRO",
+     "price": 34990
+    },
+    {
+     "code": "WK6016c9",
+     "name": "77\" LG OLED77G64LW",
+     "price": 99990
+    },
+    {
+     "code": "WK6016c52",
+     "name": "75\" LG 75QNED85B6B",
+     "price": 35282
+    },
+    {
+     "code": "BUNWK6016c9",
+     "name": "77\" LG OLED77G64LW + Soundbar SG10TY",
+     "price": 114980
+    },
+    {
+     "code": "WK690f7q",
+     "name": "75\" TCL 75T8C",
+     "price": 23990
+    },
+    {
+     "code": "WR173n1",
+     "name": "77\" Samsung QE77S85H",
+     "price": 55544
+    }
+   ]
+  },
+  {
+   "case": "sweep",
+   "args": {
+    "query": "monitor",
+    "category_id": 18842948,
+    "filters": [
+     {
+      "param_id": 17819,
+      "min": 240
+     }
+    ],
+    "sort": "price-asc",
+    "limit": 30
+   },
+   "ms": 4039,
+   "isError": false,
+   "appliedRanges": [
+    {
+     "paramId": 17819,
+     "name": "Obnovovací frekvence",
+     "from": 240,
+     "to": 1000
+    }
+   ],
+   "products": [
+    {
+     "code": "WQ27o5o5x46",
+     "name": "24.5\" MSI MAG 255F X24",
+     "price": 2490
+    },
+    {
+     "code": "RPTLCD003",
+     "name": "23,8\" Rapture VIDE 24IFF240",
+     "price": 2490
+    },
+    {
+     "code": "WQ27o5o5x39",
+     "name": "27\" MSI MAG 272F X24",
+     "price": 2990
+    },
+    {
+     "code": "WA043v299h",
+     "name": "23,8\" ASUS TUF Gaming VG249QML5A",
+     "price": 3490
+    },
+    {
+     "code": "WQ27o5o7i1",
+     "name": "27\" MSI MAG 276CXF - nyní s prodlouženou tříletou zárukou",
+     "price": 3690
+    },
+    {
+     "code": "WC118a13b5",
+     "name": "27\" AOC C27G42ZE",
+     "price": 3853
+    },
+    {
+     "code": "WQ27o5o8a",
+     "name": "27\" MSI MAG 275CQDF X24",
+     "price": 3990
+    },
+    {
+     "code": "WK243x1",
+     "name": "32\" AOC C32G2ZE Gaming",
+     "price": 4386
+    }
+   ]
+  },
+  {
+   "case": "redirected-checkbox+range",
+   "args": {
+    "query": "monitor",
+    "category_id": 18842948,
+    "filters": [
+     {
+      "param_id": 18073,
+      "value_id": 239735342
+     },
+     {
+      "param_id": 17819,
+      "min": 240
+     }
+    ],
+    "limit": 6
+   },
+   "ms": 1728,
+   "isError": true,
+   "text": "Error: Alza does not support URL filtering for param 18073=239735342 in category 18842948 (it redirected to an unfiltered page). Drop that filter and compare candidates with get_product's params instead."
+  }
+ ]
+}

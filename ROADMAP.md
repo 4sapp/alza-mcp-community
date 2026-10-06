@@ -4,7 +4,7 @@ Rough priority order. Every item is a GitHub issue — comment there before star
 
 ## Shipped
 
-- **Catalog** — search with price/stock/screen-size filters and client-side sort, real pagination, product detail with spec params (DOM + JSON-LD), aggregate rating plus individual review bodies, category tree, checkbox facet filters (`list_category_filters`), EAN lookup, AlzaBox lockers and showroom pickup points without a cart.
+- **Catalog** — search with price/stock/screen-size filters and client-side sort, real pagination, product detail with spec params (DOM + JSON-LD), aggregate rating plus individual review bodies, category tree, checkbox and slider (range) facet filters (`list_category_filters`), EAN lookup, AlzaBox lockers and showroom pickup points without a cart.
 - **Discovery tools** — `compare_products` (side-by-side spec table with an optional MCP-sampling summary), `recommend_alternatives`, `get_deals`, `autocomplete`.
 - **Account & checkout** — OAuth PKCE sign-in, cart, delivery/AlzaBox selection, checkout preview, order placement (legacy web WCF path) and cancellation, after-order payments, order history/documents, claims, subscriptions, profile/addresses and credential changes — all high-impact mutations behind one-time confirmation tokens.
 - **Progressive disclosure** — tools grouped into toolsets; only `catalog` and `auth` are enabled by default.
@@ -12,7 +12,6 @@ Rough priority order. Every item is a GitHub issue — comment there before star
 
 ## Near-term
 
-- [#10](https://github.com/lukabudik/alza-mcp/issues/10) Slider-type (range) category filters
 - [#23](https://github.com/lukabudik/alza-mcp/issues/23) Re-test `select_pickup_point` against an authenticated session
 - [#19](https://github.com/lukabudik/alza-mcp/issues/19) Publish to the official MCP Registry from the release workflow
 - [#20](https://github.com/lukabudik/alza-mcp/issues/20) List in MCP directories (Smithery, Glama, PulseMCP, mcp.so)

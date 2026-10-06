@@ -38,6 +38,24 @@ export interface SearchResult {
    * results" — the scan is bounded, not the whole catalog.
    */
   candidatesScanned?: number;
+  /**
+   * Slider (range) filters Alza's own category page actually applied, read
+   * back from the page's filter request — values are snapped to the facet's
+   * real steps. `empty: true` means no step fell inside the requested range,
+   * so the result is empty without a page fetch.
+   */
+  appliedRanges?: AppliedRange[];
+}
+
+export interface AppliedRange {
+  paramId: number;
+  name?: string;
+  from?: number;
+  to?: number;
+  /** Set when the requested range contains no facet step (no product can match). */
+  empty?: boolean;
+  /** Set when this range came from `min_screen_inches`/`max_screen_inches`. */
+  fromScreenInches?: boolean;
 }
 
 export interface Category {
@@ -76,23 +94,33 @@ export interface FacetValue {
   description: string;
   /** Product count carrying this value, when Alza reports it. */
   count?: number;
+  /**
+   * Slider (range) facets only: the raw, unrounded step value in Alza's own
+   * unit for this facet (e.g. millimetres for a monitor diagonal, inches for
+   * a TV diagonal, Hz, kg, …). Pass these numbers as `min`/`max` of a range
+   * filter in `search_products`'s `filters`.
+   */
+  value?: number;
 }
 
 export interface FacetGroup {
   /** Numeric param id — the `{paramId}` in `-par{paramId}-{valueId}`. */
   paramId: number;
   name: string;
-  /** Alza's UI widget for this facet. Only "Checkbox" can be URL-filtered (see `filterable`). */
+  /** Alza's UI widget for this facet ("Checkbox", "Slider", …). */
   renderType: string;
   /**
-   * True for Checkbox-type facets. Necessary but not sufficient: Alza only
-   * honours URL filters for facets it publishes landing pages for, and
-   * silently redirects the rest to the unfiltered category (live-verified
-   * 2026-10-03). `search_products` detects that redirect and errors instead
-   * of returning unfiltered results. Slider-type facets (size, refresh rate,
-   * weight, …) have no known URL/API encoding at all.
+   * True for Checkbox-type facets (filter by `value_id`) and Slider-type
+   * facets (filter by `min`/`max` range over `values[].value`, live-verified
+   * 2026-10-06; see docs/gap-analysis.md). For Checkbox facets this is
+   * necessary but not sufficient: Alza only honours URL filters for facets it
+   * publishes landing pages for, and silently redirects the rest to the
+   * unfiltered category (live-verified 2026-10-03). `search_products` detects
+   * that redirect and errors instead of returning unfiltered results.
    */
   filterable: boolean;
+  /** How `search_products` filters on this group: `"value"` (`{param_id, value_id}`) or `"range"` (`{param_id, min?, max?}`). Absent when not filterable. */
+  filterMode?: "value" | "range";
   values: FacetValue[];
 }
 

@@ -225,6 +225,21 @@ export const SEARCH_PRODUCTS_OUTPUT = z
     products: z.array(PRODUCT),
     /** Present when a client-side price/rating sort swept multiple pages. */
     candidatesScanned: z.number().optional(),
+    /** Slider (range) filters Alza applied, snapped to real facet steps. */
+    appliedRanges: z
+      .array(
+        z
+          .object({
+            paramId: z.number(),
+            name: z.string().optional(),
+            from: z.number().optional(),
+            to: z.number().optional(),
+            empty: z.boolean().optional(),
+            fromScreenInches: z.boolean().optional(),
+          })
+          .passthrough(),
+      )
+      .optional(),
   })
   .passthrough();
 
@@ -372,12 +387,14 @@ export const LIST_CATEGORY_FILTERS_OUTPUT = z
           name: z.string(),
           renderType: z.string(),
           filterable: z.boolean(),
+          filterMode: z.enum(["value", "range"]).optional(),
           values: z.array(
             z
               .object({
                 valueId: z.number(),
                 description: z.string(),
                 count: z.number().optional(),
+                value: z.number().optional(),
               })
               .passthrough(),
           ),
