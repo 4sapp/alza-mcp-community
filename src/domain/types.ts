@@ -53,6 +53,14 @@ export interface ProductReview {
   date?: string;
   rating?: number;
   body?: string;
+  /** Positive points the reviewer listed, when present. */
+  pros?: string[];
+  /** Negative points the reviewer listed, when present. */
+  cons?: string[];
+  verifiedPurchase?: boolean;
+  /** Reviewed variant label, e.g. "iPhone 15 128GB cerna". */
+  variant?: string;
+  helpfulCount?: number;
 }
 
 export interface ProductReviews {

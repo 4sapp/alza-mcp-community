@@ -3,6 +3,7 @@ import { TtlCache } from "../infra/cache.js";
 import { NotFoundError } from "../infra/errors.js";
 import { extractJsonLd, findProduct as findJsonLdProduct } from "../infra/jsonld.js";
 import { log } from "../infra/logger.js";
+import { compareDeals, computeDeal, DEFAULT_DEAL_CATEGORIES, type Deal } from "./deals.js";
 import type { Category, CategoryFilters, FacetGroup, FacetValue, Product, ProductParam, SearchResult } from "./types.js";
 
 export type SortOrder = "relevance" | "price-asc" | "price-desc" | "rating" | "newest";
@@ -32,6 +33,9 @@ interface RawCard {
   url: string | null;
   image: string | null;
   priceText: string | null;
+  /** `.ads-pb__original-price` text: crossed-out price or "Ušetříte N,-" (see deals.ts). */
+  originalPriceText: string | null;
+  originalIsStrike: boolean;
   ratingText: string | null;
   reviewCountText: string | null;
   /**
@@ -71,7 +75,9 @@ const CARD_EXTRACTOR = `(function() {
       name: txt('a.name') || txt('.name'),
       url: attr('a.name', 'href') || attr('a[href*=".htm"]', 'href'),
       image: attr('img', 'src') || attr('img', 'data-src'),
-      priceText: txt('.price'),
+      priceText: txt('.ads-pb__price-value') || txt('.price'),
+      originalPriceText: txt('.ads-pb__original-price'),
+      originalIsStrike: !!card.querySelector('.ads-pb__original-price--strike'),
       ratingText: ratingMatch ? ratingMatch[1] : null,
       reviewCountText: reviewMatch ? reviewMatch[1] : null,
       inStock: inStock
@@ -143,6 +149,8 @@ export class Catalog {
   private readonly productCache = new TtlCache<string, Product>(15 * 60 * 1000);
   private readonly productUrlCache = new TtlCache<string, string>(60 * 60 * 1000);
   private readonly categoryCache = new TtlCache<number, Category[]>(24 * 60 * 60 * 1000);
+
+  private readonly dealsCache = new TtlCache<string, { scanned: number; deals: Deal[] }>(5 * 60 * 1000);
 
   constructor(private readonly browser: AlzaBrowser) {}
 
@@ -227,6 +235,53 @@ export class Catalog {
         products,
       };
     });
+  }
+
+  /**
+   * Discounted products from category listing pages (`/{id}.htm`). Discount
+   * % is computed from the observed current/original prices (see deals.ts).
+   * CZ-only. Without `categoryId`, scans page 1 of a fixed set of popular
+   * leaf categories; with it, up to 3 pages of that category.
+   */
+  async getDeals(opts: { categoryId?: number; minDiscountPercent?: number; limit?: number }): Promise<{
+    categoryIds: number[];
+    candidatesScanned: number;
+    deals: Deal[];
+  }> {
+    if (this.browser.locale.countryCode !== "CZ") {
+      throw new Error("get_deals is CZ-only: it parses alza.cz's Czech price boxes ('N,-', 'Ušetříte'). Set ALZA_BASE_URL=https://www.alza.cz.");
+    }
+    const limit = clamp(opts.limit ?? 20, 1, 50);
+    const min = opts.minDiscountPercent ?? 0;
+    const categoryIds = opts.categoryId ? [opts.categoryId] : DEFAULT_DEAL_CATEGORIES.map((c) => c.id);
+    const pagesPerCategory = opts.categoryId ? 3 : 1;
+    const cacheKey = JSON.stringify({ categoryIds, pagesPerCategory });
+    const all = await this.dealsCache.memoize(cacheKey, async () => {
+      const deals: Deal[] = [];
+      const seen = new Set<string>();
+      let scanned = 0;
+      for (const id of categoryIds) {
+        let target: string | undefined = `/${id}.htm`;
+        for (let n = 1; n <= pagesPerCategory && target; n++) {
+          const { cards, pageUrls } = await this.fetchSearchPage({ query: "" }, target);
+          for (const c of cards) {
+            const product = this.normalizeCard(c);
+            if (!product || seen.has(product.code)) continue;
+            seen.add(product.code);
+            scanned++;
+            const d = computeDeal(c);
+            if (d) deals.push({ ...product, ...d });
+          }
+          target = pageUrls[String(n + 1)];
+        }
+      }
+      return { scanned, deals };
+    });
+    const deals = all.deals
+      .filter((d) => d.discountPercent >= min)
+      .sort(compareDeals)
+      .slice(0, limit);
+    return { categoryIds, candidatesScanned: all.scanned, deals };
   }
 
   private async fetchSearchPage(
@@ -758,11 +813,33 @@ export function pickAdditionalProperties(raw: unknown): ProductParam[] {
   const out: ProductParam[] = [];
   for (const entry of raw) {
     if (!entry || typeof entry !== "object") continue;
-    const name = asString((entry as Record<string, unknown>)["name"]);
-    const value = asString((entry as Record<string, unknown>)["value"]);
+    const name = decodeBasicEntities(asString((entry as Record<string, unknown>)["name"]) ?? "").trim();
+    const value = decodeBasicEntities(asString((entry as Record<string, unknown>)["value"]) ?? "").trim();
     if (name && value) out.push({ name, value });
   }
   return out;
+}
+
+/**
+ * JSON-LD `additionalProperty` strings arrive HTML-escaped (live 2026-10-06:
+ * a monitor diagonal came back as `27 &quot; (68,58 cm)`). Decode the XML
+ * entities plus numeric references instead of dropping them.
+ */
+function decodeBasicEntities(s: string): string {
+  return s
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (m, n: string) => codePoint(m, Number(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (m, n: string) => codePoint(m, parseInt(n, 16)))
+    .replace(/&amp;/g, "&");
+}
+
+/** Numeric reference -> character; an out-of-range reference is left as-is instead of throwing. */
+function codePoint(raw: string, n: number): string {
+  return Number.isInteger(n) && n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : raw;
 }
 
 function pickBreadcrumbs(raw: unknown): string[] {
@@ -797,7 +874,7 @@ function stripSchema(v: string | undefined): string | undefined {
 function stripHtmlEntities(s: string): string {
   return s
     .replace(/&amp;/g, "&")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCharCode(parseInt(n, 16)))
+    .replace(/&#(\d+);/g, (m, n: string) => codePoint(m, Number(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (m, n: string) => codePoint(m, parseInt(n, 16)))
     .replace(/&[a-z]+;/g, "");
 }
