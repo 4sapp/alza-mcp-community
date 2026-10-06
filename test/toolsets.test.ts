@@ -27,7 +27,7 @@ describe("progressive tool disclosure (toolsets)", () => {
     expect(seen.size).toBe(55);
   });
 
-  it("exposes only the catalog + auth toolsets (10 tools) plus list_toolsets/set_toolset by default", async () => {
+  it("exposes only the catalog + auth toolsets plus list_toolsets/set_toolset by default", async () => {
     const { client, built } = await clientAndServer();
     try {
       const res = await client.listTools();
