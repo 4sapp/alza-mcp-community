@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Copies package.json's version into server.json (top-level and packages[0])
-// and mcpb/manifest.json. Runs as the npm `version` lifecycle script, so
+// Copies package.json's version into server.json (top-level and packages[0]),
+// mcpb/manifest.json and the VERSION constant in src/server.ts. Runs as the npm `version` lifecycle script, so
 // `npm version patch` bumps all three in one commit; the release workflow
 // refuses to publish when they differ. `--check` only reports a mismatch.
 const fs = require("node:fs");
@@ -17,6 +17,10 @@ const stale = [];
 if (server.version !== version) stale.push(`server.json version ${server.version}`);
 if (!server.packages?.[0] || server.packages[0].version !== version) stale.push(`server.json packages[0].version ${server.packages?.[0]?.version}`);
 if (manifest.version !== version) stale.push(`mcpb/manifest.json version ${manifest.version}`);
+const serverTs = fs.readFileSync(path.join(root, "src/server.ts"), "utf8");
+const VERSION_RE = /const VERSION = "([^"]*)";/;
+const tsVersion = serverTs.match(VERSION_RE)?.[1];
+if (tsVersion !== version) stale.push(`src/server.ts VERSION ${tsVersion}`);
 
 if (check) {
   if (stale.length) {
@@ -35,4 +39,5 @@ const bump = (file) => {
 };
 bump("server.json");
 bump("mcpb/manifest.json");
-console.log(`server.json and mcpb/manifest.json set to ${version}`);
+fs.writeFileSync(path.join(root, "src/server.ts"), serverTs.replace(VERSION_RE, `const VERSION = "${version}";`));
+console.log(`server.json, mcpb/manifest.json and src/server.ts set to ${version}`);
