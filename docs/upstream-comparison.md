@@ -9,7 +9,7 @@ Checked 2026-10-02 against `lukabudik/alza-mcp` HEAD `c371ae6` (v0.1.2, 2026-05-
 | | upstream v0.1.2 | this repo v0.3.0 |
 |---|---|---|
 | Positioning | "read-only window into the Alza catalog … No credentials, no purchases — just research" | Full purchase path plus account management |
-| Tools | 5 (catalog reads) | 54 domain tools + `list_toolsets`/`set_toolset` |
+| Tools | 5 (catalog reads) | 55 domain tools + `list_toolsets`/`set_toolset` |
 | Writes | none | cart, checkout, order placement and cancellation, payments, registration, password/2FA/phone/email changes, account deletion |
 | Bot protection | "Rather than fight Cloudflare, drives a real browser … no fingerprint games" | Headless Chromium plus a `curl_cffi` Chrome-fingerprint sidecar (checkout only) |
 | Auth | none | OAuth PKCE; APK-embedded client secret as default |

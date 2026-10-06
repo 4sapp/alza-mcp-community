@@ -123,7 +123,7 @@ describe("buildFilteredCategoryUrl", () => {
 });
 
 describe("parseFacetsResponse", () => {
-  it("flattens groups, marks only Checkbox renderType as filterable, and drops unparseable values", () => {
+  it("flattens groups, marks Checkbox (value) and Slider (range) groups filterable, and drops unparseable values", () => {
     const raw = {
       params: [
         {
@@ -132,6 +132,7 @@ describe("parseFacetsResponse", () => {
               params: [
                 { tId: 17828, name: "Native contrast", renderType: "Checkbox", values: [{ v: 239718597, desc: "3000:1", cnt: 74 }, { v: undefined, desc: "bad" }] },
                 { tId: 17816, name: "Diagonal", renderType: "Slider", values: [{ v: 685.8, desc: '27 "' }] },
+                { tId: 99, name: "Mystery", renderType: "ColorPicker", values: [{ v: 1, desc: "x" }] },
               ],
             },
           ],
@@ -139,12 +140,19 @@ describe("parseFacetsResponse", () => {
       ],
     };
     const groups = parseFacetsResponse(raw);
-    expect(groups).toHaveLength(2);
+    expect(groups).toHaveLength(3);
     const contrast = groups.find((g) => g.paramId === 17828)!;
     expect(contrast.filterable).toBe(true);
+    expect(contrast.filterMode).toBe("value");
     expect(contrast.values).toEqual([{ valueId: 239718597, description: "3000:1", count: 74 }]);
     const diagonal = groups.find((g) => g.paramId === 17816)!;
-    expect(diagonal.filterable).toBe(false);
+    expect(diagonal.filterable).toBe(true);
+    expect(diagonal.filterMode).toBe("range");
+    // the raw, unrounded step value is kept for range filtering
+    expect(diagonal.values[0]).toMatchObject({ valueId: 685, value: 685.8 });
+    const mystery = groups.find((g) => g.paramId === 99)!;
+    expect(mystery.filterable).toBe(false);
+    expect(mystery.filterMode).toBeUndefined();
   });
 
   it("returns an empty list for a response with no params", () => {
@@ -196,6 +204,19 @@ describe("pickAdditionalProperties", () => {
     expect(pickAdditionalProperties(raw)).toEqual([
       { name: "Počet LAN portů s rychlostí 10 Gbit", value: "4" },
       { name: "RJ-45", value: "5 ×" },
+    ]);
+  });
+
+  it("decodes HTML entities in JSON-LD values (live 2026-10-06: `27 &quot; (68,58 cm)`)", () => {
+    expect(pickAdditionalProperties([{ name: "Úhlopříčka", value: "27 &quot; (68,58 cm)" }, { name: "A &amp; B", value: "&lt;1 ms&gt;" }])).toEqual([
+      { name: "Úhlopříčka", value: '27 " (68,58 cm)' },
+      { name: "A & B", value: "<1 ms>" },
+    ]);
+  });
+
+  it("decodes astral numeric references and leaves out-of-range ones untouched", () => {
+    expect(pickAdditionalProperties([{ name: "Ikona", value: "&#128512; &#x1F600; &#99999999;" }])).toEqual([
+      { name: "Ikona", value: "\u{1F600} \u{1F600} &#99999999;" },
     ]);
   });
 

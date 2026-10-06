@@ -404,6 +404,31 @@ about *how* the working tools relate to each other:
   30 rows, unchanged). Unit-tested (`pickAdditionalProperties` in
   `test/catalog-sort.test.ts`).
 
+### `compare_products` side-by-side comparison — added (2026-10-06)
+
+- **The gap ([#11](https://github.com/lukabudik/alza-mcp/issues/11)):** to compare
+  candidates, an agent had to call `get_product` N times and build the table
+  itself, which filled its context with full product payloads.
+- **Fix:** `compare_products({codes: 2–6, summarize?})` (catalog toolset,
+  read-only) fetches through `Catalog.getProduct` (product cache), at most two
+  pages at a time. It returns one aligned table: Price, Availability and Rating
+  first, then every spec name found in any product, matched by exact name. A
+  code that fails gets its own `ok: false` column instead of failing the call.
+  The alignment is a pure function, `buildComparisonTable`, with unit tests.
+- **Sampling ([#18](https://github.com/lukabudik/alza-mcp/issues/18)):**
+  `summarize: true` calls `server.createMessage` only when the client advertises
+  `sampling`. The request uses `includeContext: "none"` and `maxTokens: 400`,
+  and the system prompt limits the model to the table. Without the capability,
+  the call returns `summary.status: "unavailable"` and no error. A sampling
+  failure returns `status: "failed"`.
+- **Verification:** **live-verified** 2026-10-06 with two 27" monitors plus one
+  bogus code. 37 aligned rows came back and the bogus code got its own error
+  column. The sampling round trip was run with a stub sampling client; it was
+  not tested with a real sampling-capable host
+  (`docs/live-evidence/compare-products-2026-10-06.md`). The same run found that
+  JSON-LD spec values were HTML-escaped (`27 &quot;`). `pickAdditionalProperties`
+  now decodes entities.
+
 ### `select_pickup_point` re-test needed against an authenticated session
 
 - **The observation (2026-09-26, anonymous session)**: `delivery_options`'
@@ -427,7 +452,7 @@ about *how* the working tools relate to each other:
   places a real AlzaBox order without needing `select_pickup_point` at all —
   this is what should be recommended until the above is re-tested.
 
-### Search-time attribute/facet filtering — closed for Checkbox-type facets (2026-09-27)
+### Search-time attribute/facet filtering — closed for Checkbox-type (2026-09-27) and Slider-type (2026-10-06) facets
 
 - **The gap:** Alza's category pages have a rich per-category attribute filter
   system (facets) — e.g. screen diagonal, native contrast, panel technology,
@@ -481,20 +506,57 @@ about *how* the working tools relate to each other:
   `search_products` returned real, correctly-narrowed results. Unit-tested
   (`buildFilteredCategoryUrl`, `parseFacetsResponse` in
   `test/catalog-sort.test.ts`).
-- **Still not filterable**: Slider-type facets (screen diagonal, refresh
-  rate, response time, brightness, port *counts*, width/height/depth/weight,
-  color-gamut %, energy consumption) — confirmed no discoverable URL/API
-  encoding exists for these (the jQuery UI slider fires no XHR on
-  interaction this session could capture). `min_screen_inches`/
-  `max_screen_inches`'s name-parsing heuristic remains the substitute for
-  screen size specifically; other slider attributes have no substitute —
-  compare via `get_product`'s scraped `params` field instead.
-  `list_category_filters` marks these groups `filterable: false` so the
-  distinction is explicit, not silently missing.
-- **Re-test target**: if the slider's XHR can be found (e.g. by capturing
-  network traffic through a full mouse-drag interaction rather than a
-  programmatic click, which this session didn't attempt), a proper
-  server-side range filter could replace the size-parsing heuristic too.
+- **Slider-type facets: closed 2026-10-06 (`live-verified`, issue #10).**
+  (Superseded: the 2026-09-27 note said slider facets had no URL/API encoding.
+  That attempt used a programmatic click, which fires no XHR.) A real Playwright
+  mouse drag (`mouse.down` → 15 × `mouse.move` → `mouse.up`) on the diagonal
+  slider of `/lcd-monitory/18842948.htm` found the mechanism:
+  1. **URL hash**: the page writes
+     `#f&cud=0&pg={page}&prod=&par{paramId}={from}--{to}` (e.g.
+     `par17816=711.2--2667`). Values are the facet's own step values (`v` in the
+     C3 facets API), and there is one `par` entry per slider. The canonical URL and
+     `rel=next` don't change. The pager anchors are rewritten to the hash.
+  2. **XHR**: the page's JS then POSTs `/Services/EShopService.svc/Filter`
+     `{idCategory, producers, parameters:[{typeId, valueFrom, valueTo, orderFrom, orderTo, valueIds}], page, pageTo, sort, searchTerm, …}`.
+     The JSON reply is `{d:{Boxes (result-card HTML), Count, Page, PagerBottom, …}}`.
+  3. **A fresh page load of the hash URL applies it.** The site's JS issues
+     the same `Filter` call. It composes with the existing path segments
+     (`-v{producer}-par{param}-{value}` checkbox filters are copied into the
+     body), and `pg=N` in the hash selects the page.
+  4. Constraints observed live: **both bounds are required**. A missing upper
+     bound collapsed to the slider minimum, which gave 0 results. The page snaps values to real steps and
+     clamps them to the filtered subset's own range. The search page
+     (`/search.htm`) has no sliders and ignores the hash. A `searchTerm` injected
+     into the `Filter` body is ignored, so range filtering is a category-browse
+     feature, like the checkbox filters. **Units differ per category.** The diagonal
+     is millimetres on monitors (`17816`) and laptops (`316`) but inches on TVs
+     (`41706`). Laptop RAM is in MB.
+  - **Implemented**: `search_products`'s `filters` accepts
+    `{param_id, min?, max?}` next to `{param_id, value_id}`.
+    `list_category_filters` marks Slider groups `filterable: true,
+    filterMode: "range"` and exposes each step's raw `value`. `Catalog`
+    snaps the bounds to real steps (`snapRange`) and always sends both. It loads
+    `{filteredCategoryUrl}{buildRangeHash(…)}`, waits for the page's own
+    `Filter` reply, and extracts cards from `d.Boxes`. The DOM isn't used here
+    because it isn't cleared on an empty reply. It also reads the request body
+    back, so it can error out if a range wasn't applied and report the
+    effective ranges as `appliedRanges`. A range with no step inside it returns
+    an empty result (`empty: true`) without fetching a page.
+  - **Screen size**: with `category_id`, `min_screen_inches`/
+    `max_screen_inches` now run through the category's own diagonal slider. The
+    slider is found by its inch-labelled values, so it works with any unit (mm
+    or inches). The name-parsing heuristic is now only the fallback when no
+    `category_id` is given, the category has no diagonal slider, or the
+    category's facets can't be fetched (screen size alone falls back; explicit
+    range filters surface the error).
+  - Live end-to-end through the MCP server (monitors refresh ≥ 240 Hz, spot-checked
+    320 Hz via `get_product`; monitors 42"–45"; TVs 75"–77"; laptops RAM ≥ 64 GB,
+    spot-checked; brand + checkbox + two sliders; page 2; price sort sweep; empty
+    range; misuse error): see
+    [`live-evidence/range-filters-2026-10-06.md`](live-evidence/range-filters-2026-10-06.md).
+    Unit tests: `test/range-filters.test.ts`.
+  - Still open: keyword text cannot be combined with any facet filter (checkbox
+    or range), because Alza's category-browse path has no search-term input.
 
 ### AlzaBox size-eligibility surfaced pre-checkout — closed as infeasible from product data (2026-09-27)
 
@@ -514,6 +576,71 @@ about *how* the working tools relate to each other:
   product-page-level signal to build this from; `delivery_options` against a
   live cart remains the only way to learn AlzaBox eligibility. Not promoted
   to a numbered G-item — closed as a dead end, not deferred.
+
+## recommend_alternatives live verification (issue #12, 2026-10-06)
+
+Label: `live-verified` (read-only, unauthenticated, `ALZA_TOKEN_FILE=none`, CF sidecar transport).
+
+- `GET /services/restservice.svc/v1/alternatives/{commodityId}` (C7) returned HTTP 200 without a token: `{has_next, total, data[]}`; each card has `id`, `code`, `name`, `url`, `priceNoCurrency`, `rating` (0-5), `ratingCount`, `avail`, `img`; no brand field. 8 alternatives for an iPhone 17 256GB commodity (all colour variants at the same price).
+- Tool run end to end through the MCP server (product page via browser for source price/brand/category, then `MobileApi.alternatives` with the id parsed from the URL): `better-specs` and `same-brand` returned Alza's list ranked by rating; `cheaper` found nothing strictly cheaper in Alza's list, fell back to a same-category `search_products` (category from the breadcrumb is the narrow sub-category "iPhone 17") and honestly returned no matches.
+- Known limits: the fallback searches by the breadcrumb category name (not a category id), so a very narrow sub-category can yield no cheaper candidates; `better-specs` ranks by rating, not by spec-table comparison.
+
+### `get_deals` — where sale items come from (research 2026-10-06, issue #13)
+
+Question: where can a read-only tool get discounted products with current price, original price and discount %? All findings below are against alza.cz on 2026-10-06 (anonymous, no account).
+
+| Candidate source | Result | Label |
+|---|---|---|
+| Search/category listing cards (`.browsingitem`) | **Yes.** The price box (`.ads-pb`) carries the original price in two forms: `.ads-pb__original-price--strike` = the crossed-out original price (e.g. `12 490,-` now, `15 390,-` was; header badge "Zlevněno -18 %"), and a plain `.ads-pb__original-price` = a savings amount (`Ušetříte 100,-`, so original = current + savings). Example: monitor listing 18842948 page 1 → 3 strike cards + 2 "Ušetříte" cards of 24; page-1 sweep of 3 pages found 8 ≥5 % deals. Other header badges ("Super cena", "Cenová bomba") appear with NO original price on many cards and are not treated as discounts. | `live-verified` |
+| "Akce"/discount facet via `list_category_filters` | **No.** The full monitor facet list (47 groups, category 18842948) contains no sale/discount/Akce facet; also none exposed in the checkbox facets that `buildFilteredCategoryUrl` can encode. | `live-verified` (negative) |
+| Sale category pages | **Marketing hubs, no product grid.** `/vyprodej` → `/mega-slevy/y842.htm`, `/outlet` → `/zbozi-z-druhe-ruky`, `/akce` and `/zlevneno` → 404. The Mega slevy hub links `Alza dny` (`/18906341.htm`), `AlzaPlus+ slevy` (`/18906481.htm`) and has a "Podle slevy" sort control (`#sort_11`, client-side) — none render `.browsingitem` cards on load (0 cards). Top-level categories (e.g. `/18890188.htm` Počítače a notebooky) are hubs with 0 cards too; only leaf categories list products. | `live-verified` (negative for a scrapeable sale list) |
+| Free-text `search.htm?exps=zlevněno` | Matches the word in product text (books, cosmetics), not a sale list. `exps=výprodej` redirects to the Mega slevy hub (0 cards). | `live-verified` (negative) |
+| Mobile API route for deals | Not present in the APK-confirmed route inventory (`docs/mobile-endpoint-coverage.md`); not investigated further this round. | `unresolved` |
+| Coupon-block prices on cards ("Koupit s kódem ALZADNY15 … 3 987,-", "Přidat AlzaPlus+ a koupit hned levněji") | Conditional prices (code / AlzaPlus+ membership). Deliberately NOT treated as the sale price. | `live-verified` (observed, excluded) |
+
+**Resolution:** new read-only `get_deals({category_id?, min_discount_percent?, limit?})` (catalog toolset) scans category listing pages `/{id}.htm` (3 pages ≈ 72 cards for a given leaf `category_id`; page 1 of five popular leaf categories — phones 18843445, notebooks 18842920, monitors 18842948, TVs 18849604, headphones 18843602 — when omitted) and reports only cards with an observed original price, computing `discountPercent = (original − current) / original` itself (the "Zlevněno -N %" badge is never read). Live run (monitors, 2026-10-06): 72 cards scanned, top deal 34.7 % (5 990 from 9 169); the computed 18.8 % / 14.9 % for two products matched their pages' own -18 % / -14 % badges after rounding. Limits, stated in the tool description: bounded sample (not all of Alza's sale inventory), shelf price only (no coupon/AlzaPlus+ price), **CZ-scoped** — the savings wording (`Ušetříte`) and the `N,-` price format are Czech-specific, so the tool errors on `.sk`/`.hu`/… instead of guessing. Dated live evidence: `docs/live-evidence/get-deals-2026-10-06.md`.
+
+## Search suggestions / autocomplete (issue #14, 2026-10-06)
+
+- **Endpoint** `GET https://webapi.alza.cz/api/anonymous/search/whisperer/v1/whisper?country=CZ&visitor={guid}&searchTerm={q}` — `live-verified` 2026-10-06 (browser capture + plain-HTTP replay via the CF sidecar, no auth). Companion `.../emptySearch` for the empty-box dropdown. Details in `docs/mobile-endpoint-coverage.md` C15/C16.
+- **Exposure** typed read-only `autocomplete` tool (catalog toolset). APK-side equivalent not separately mapped (`unresolved`); the response carries app-style `appLink` actions (`catalogSearch`, `catalogCategory`, `catalogProductDetail`, `webView`), so the mobile app evidently consumes the same route.
+- **Observed limits** ≤5 items per section; `phrases` is often empty for multi-word queries (categories/products still returned); the web UI sends no token for this call.
+
+### Standalone AlzaBox locker discovery — implemented (2026-10-06, [#8](https://github.com/lukabudik/alza-mcp/issues/8))
+
+- **The gap:** `find_pickup_points` returned showrooms only. AlzaBoxes were
+  reachable only through a live cart (`add_to_cart` → `delivery_options` →
+  `web_pickup_places`), because `personalPickup/v1/places` is cart-scoped
+  (HTTP 400 without `orderId`/`groupId`, re-confirmed 2026-10-06).
+- **Resolution:** the public locker map at `https://www.alza.cz/alzabox` (the
+  `alzabox.htm` URL from the issue is a 404) loads its data from a separate
+  cart-free family: `GET /api/salesNetwork/v1/places?types%5B0%5D=1&latitude=&longitude=&ordering=0&limit=100`.
+  It needs no login or cart, sorts all 4015 AlzaBoxes by distance, and returns
+  name, address, GPS, `parcelShopId` and `deliveryId` (2680). The upstream
+  caps `limit` at 100. `find_pickup_points` now makes one request per
+  uncached geocoded centre and caches the parsed list for 12 h. It applies
+  radius and limit locally and merges lockers with the curated showroom list
+  by distance. `types: ["alzabox"]` returns lockers only. If the locker
+  request fails while showrooms were also requested, the tool returns
+  showrooms with a `warnings[]` entry. Coverage rows SN1–SN4 in
+  `docs/mobile-endpoint-coverage.md`.
+- **Evidence:** `live-verified` 2026-10-06 through the built MCP server
+  (anonymous, `ALZA_TOKEN_FILE=none`, CF sidecar): `500 02` + `["alzabox"]` →
+  5 lockers 0.2–1.1 km in 741 ms. The repeat query was a cache hit (0 ms, no
+  upstream call). `170 00` with default types → the Holešovice showroom
+  merged at 0.4 km between lockers. Full record:
+  `docs/live-evidence/alzabox-lockers-2026-10-06.md`. Fixture test:
+  `test/pickup.test.ts` with `test/fixtures/sales-network-places.json`.
+- **Still open:** the list can't say whether a given product fits a locker.
+  Oversized items (34"+ monitors, 2026-09-26 above) skip the whole network,
+  and only the cart flow knows. The tool description says this. Locker
+  opening hours come from the per-place detail (SN3). The tool fetches it only
+  for the first 10 lockers returned, caches each for 1 h, and skips a locker's
+  hours if its lookup fails. Re-verified live 2026-10-06: `602 00` → 4 lockers,
+  3 `Nonstop` and one shopping-arcade locker `09:00 - 21:00`.
+  The `icon-2-xl` vs `icon-2` image split might mark XL lockers, but that is
+  `unresolved`. Only alza.cz was live-verified; other locales use the same
+  route on their own origin.
 
 ### Streamable HTTP transport ([#16](https://github.com/lukabudik/alza-mcp/issues/16)): local mode shipped, hosting deferred (2026-10-06)
 
