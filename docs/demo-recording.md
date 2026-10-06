@@ -5,6 +5,8 @@
 recording: 2026-10-06. Verification label: `live-verified` for `search_products` and `get_product`
 (live mobile API); `find_pickup_points` is `source-confirmed` and reads the bundled showroom list in
 `src/data/branches.ts` (no network call), so its output is real tool output but not live data.
+The recording predates #8 (merged 2026-10-07): `find_pickup_points` now also returns AlzaBox lockers
+from a live API call, so a re-recording would show lockers merged with the showrooms.
 
 ## Prompt
 
