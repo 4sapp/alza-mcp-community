@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatCategoryFilters,
   formatPickupPoints,
   formatPrice,
   formatProduct,
@@ -82,5 +83,20 @@ describe("format", () => {
 
   it("handles empty pickup points", () => {
     expect(formatPickupPoints([])).toContain("No pickup points");
+  });
+
+  it("formats category filters with brands first and flags unfilterable groups", () => {
+    const out = formatCategoryFilters({
+      categoryId: 18842948,
+      brands: [{ valueId: 1396, description: "Dell", count: 109 }],
+      groups: [
+        { paramId: 18740, name: "Grafické rozhraní", renderType: "Checkbox", filterable: true, values: [{ valueId: 239739715, description: "HDMI" }] },
+        { paramId: 17816, name: "Úhlopříčka", renderType: "Slider", filterable: false, values: [] },
+      ],
+    });
+    expect(out.indexOf("Brands")).toBeLessThan(out.indexOf("Grafické rozhraní"));
+    expect(out).toContain("Dell (109) → producer_id: 1396");
+    expect(out).toContain("HDMI → value_id: 239739715");
+    expect(out).toMatch(/Úhlopříčka.*informational only/);
   });
 });

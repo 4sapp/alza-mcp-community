@@ -404,6 +404,31 @@ about *how* the working tools relate to each other:
   30 rows, unchanged). Unit-tested (`pickAdditionalProperties` in
   `test/catalog-sort.test.ts`).
 
+### `compare_products` side-by-side comparison — added (2026-10-06)
+
+- **The gap ([#11](https://github.com/lukabudik/alza-mcp/issues/11)):** to compare
+  candidates, an agent had to call `get_product` N times and build the table
+  itself, which filled its context with full product payloads.
+- **Fix:** `compare_products({codes: 2–6, summarize?})` (catalog toolset,
+  read-only) fetches through `Catalog.getProduct` (product cache), at most two
+  pages at a time. It returns one aligned table: Price, Availability and Rating
+  first, then every spec name found in any product, matched by exact name. A
+  code that fails gets its own `ok: false` column instead of failing the call.
+  The alignment is a pure function, `buildComparisonTable`, with unit tests.
+- **Sampling ([#18](https://github.com/lukabudik/alza-mcp/issues/18)):**
+  `summarize: true` calls `server.createMessage` only when the client advertises
+  `sampling`. The request uses `includeContext: "none"` and `maxTokens: 400`,
+  and the system prompt limits the model to the table. Without the capability,
+  the call returns `summary.status: "unavailable"` and no error. A sampling
+  failure returns `status: "failed"`.
+- **Verification:** **live-verified** 2026-10-06 with two 27" monitors plus one
+  bogus code. 37 aligned rows came back and the bogus code got its own error
+  column. The sampling round trip was run with a stub sampling client; it was
+  not tested with a real sampling-capable host
+  (`docs/live-evidence/compare-products-2026-10-06.md`). The same run found that
+  JSON-LD spec values were HTML-escaped (`27 &quot;`). `pickAdditionalProperties`
+  now decodes entities.
+
 ### `select_pickup_point` re-test needed against an authenticated session
 
 - **The observation (2026-09-26, anonymous session)**: `delivery_options`'
@@ -514,3 +539,11 @@ about *how* the working tools relate to each other:
   product-page-level signal to build this from; `delivery_options` against a
   live cart remains the only way to learn AlzaBox eligibility. Not promoted
   to a numbered G-item — closed as a dead end, not deferred.
+
+## recommend_alternatives live verification (issue #12, 2026-10-06)
+
+Label: `live-verified` (read-only, unauthenticated, `ALZA_TOKEN_FILE=none`, CF sidecar transport).
+
+- `GET /services/restservice.svc/v1/alternatives/{commodityId}` (C7) returned HTTP 200 without a token: `{has_next, total, data[]}`; each card has `id`, `code`, `name`, `url`, `priceNoCurrency`, `rating` (0-5), `ratingCount`, `avail`, `img`; no brand field. 8 alternatives for an iPhone 17 256GB commodity (all colour variants at the same price).
+- Tool run end to end through the MCP server (product page via browser for source price/brand/category, then `MobileApi.alternatives` with the id parsed from the URL): `better-specs` and `same-brand` returned Alza's list ranked by rating; `cheaper` found nothing strictly cheaper in Alza's list, fell back to a same-category `search_products` (category from the breadcrumb is the narrow sub-category "iPhone 17") and honestly returned no matches.
+- Known limits: the fallback searches by the breadcrumb category name (not a category id), so a very narrow sub-category can yield no cheaper candidates; `better-specs` ranks by rating, not by spec-table comparison.

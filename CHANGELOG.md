@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- `compare_products` (catalog toolset, read-only): 2–6 product codes side by side as one aligned spec table (price, availability, rating, then every spec row in any product). Pages load two at a time through the product cache; a bad code is reported in its own column instead of failing the call ([#11](https://github.com/lukabudik/alza-mcp/issues/11)). Optional `summarize: true` asks the client's LLM for a short verdict via MCP sampling, grounded only in the table, capped at 400 tokens; clients without sampling get the table and `summary.status: "unavailable"` ([#18](https://github.com/lukabudik/alza-mcp/issues/18)).
+- **`recommend_alternatives` tool (#12)** — read-only, `catalog` toolset. `{code, mode?: cheaper|better-specs|same-brand, limit?}` uses Alza's own alternatives list (`MobileApi.alternatives`, keyed by the numeric `d########` commodity id from the product URL, via the Cloudflare transport chain) as the candidate pool and falls back to a same-category `search_products` when it is empty or nothing survives the mode filter. Heuristics: cheaper = strictly lower price, cheapest first; same-brand = brand match, then rating desc / price asc; better-specs = rating >= source (rating heuristic, not a spec-table comparison). Response shape live-verified 2026-10-06 (C7, see `docs/mobile-endpoint-coverage.md`).
+
+### Changed
+- `auth_exchange` accepts the full `alza://identity?code=…&state=…` redirect URL as `code` and reads `state` from it. Passing `state` is now optional in that case. The `auth_start` description and README explain the misleading "Při přihlášení došlo k chybě." message on desktop browsers (a client-side timer, not a failed sign-in) and how to get the redirect URL from DevTools ([#29](https://github.com/lukabudik/alza-mcp/issues/29)).
+
+### Fixed
+- OAuth login from the npm package ([#29](https://github.com/lukabudik/alza-mcp/issues/29), [#30](https://github.com/lukabudik/alza-mcp/pull/30), thanks [@jankryh](https://github.com/jankryh)). `identity.alza.cz` is behind the same Cloudflare check as `www`, and `auth_start`/`auth_exchange` were getting HTTP 403. The package now ships the Chrome-fingerprint sidecar (`scripts/cf-transport.py`, `scripts/ensure-cf-venv.sh`) and the auth scripts, and `postinstall` sets up the `curl_cffi` venv when `python3` is present. OAuth discovery, token exchange and refresh go through the sidecar, and `URLSearchParams` bodies no longer skip it. If the sidecar is unavailable, OAuth uses plain fetch. If discovery fails, it uses the APK default endpoints instead of stopping.
+
+## [0.3.1] — 2026-10-05
+
+### Added
+- README **Contributors** section, thanking [@samuelseidel](https://github.com/samuelseidel).
+- Roadmap tracked as GitHub issues ([#8](https://github.com/lukabudik/alza-mcp/issues/8)–[#23](https://github.com/lukabudik/alza-mcp/issues/23)), plus feature-request and PR templates.
+- Daily live canary workflow (`.github/workflows/live-canary.yml`). It runs `validate:api` against alza.cz and opens (or comments on) a `canary` issue when checks fail. GitHub-hosted runners get Cloudflare's interactive challenge, so they only report the block. Set the `CANARY_RUNS_ON` variable to a self-hosted runner to get real results.
+- `validate:api` now covers price-sorted and brand-filtered search, product params, sub-level categories and category filters. It retries each failed check once, prints a markdown summary (`--markdown <file>`), and exits 2 (not 1) when Cloudflare challenges the machine.
+
+### Changed
+- README: removed the stale note saying npm serves 0.2.0.
+- CHANGELOG: the 0.3.0 changes now sit under a dated 0.3.0 heading. They had been left under Unreleased, next to a stale 0.3.0 entry from the fork.
+
+## [0.3.0] — 2026-10-05
+
+The first release with outside contributions: account, cart, checkout, order and payment tools, toolsets, and typed output schemas, contributed by [@samuelseidel](https://github.com/samuelseidel) ([#1](https://github.com/lukabudik/alza-mcp/pull/1), [#5](https://github.com/lukabudik/alza-mcp/pull/5)). Also fixes `npx -y alza-mcp` installs, which were broken in 0.1.2 and 0.2.0.
+
+### Integrated
+
+- Luka’s v0.2.0 catalog fixes: brands from the facets API, rejected filters detected after redirects, filter-preserving pagination, and real subcategory discovery.
+- Luka’s pending #4 packaging fix: ship the Chromium postinstall hook and install the packed tarball in CI.
+- Preserve upstream’s npm trusted-publishing workflow and the full account/checkout toolsets with output schemas and confirmation tokens.
+
 ### Changed
 
 - **`get_product_reviews` returns individual reviews (#9, 2026-10-06).** Reviews now come from `webapi.alza.cz/api/catalog/commodities/{id}/reviews` (commodity id from the product URL `-d####.htm` or `?dq=`), paged up to `limit` (max 50) with author, ISO date, rating, body, pros/cons, verified-purchase, variant and helpful count; the aggregate still comes from the product page. Any reviews-API failure falls back to the previous aggregate-only result.
@@ -63,9 +95,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Tool count 45 → 50 → **52**: task-5 added 4 (`order_search`/`gdpr_info`/`order_document`/`claim_detail`), the A14–A18 wrappers added 5 (`change_password`/`two_factor_set`/`phone_change`/`email_change`/`delete_account`), and this session adds 2 (`order_archive`, `product_by_ean`); annotation + outputSchema contract tests updated accordingly.
 - Operational note (2026-09-24): the standing E2E token is 401-gated on the www `/api/users/{id}/v1/*` user services (token-age re-auth window; the 1secmail inbox is sinkholed from this egress) — a fresh E2E login is required for authenticated OR1/K1/OR6/OR7 reads on the standing account; the disposable account 100000002 is the working authenticated identity for this batch.
 
-## [0.3.0] — 2026-09-13
+### Fork development history (2026-09-13)
 
-The repo version jumped from 0.1.2 (npm-published) straight to 0.3.0; npm still serves 0.1.2 — publishing is not part of this change. This entry documents everything on `main` since 0.1.2, grouped by theme.
+Everything below was developed on [@samuelseidel](https://github.com/samuelseidel)'s fork before it was merged, grouped by theme.
 
 ### Added
 
@@ -88,6 +120,29 @@ The repo version jumped from 0.1.2 (npm-published) straight to 0.3.0; npm still 
 - Browser memory leak and idle shutdown (carried over from 0.1.1 fixes, kept in 0.3.0).
 - `find_pickup_points` no longer documents a non-existent AlzaBox surface; stale v0.2 pickup comments removed.
 - Deterministic tool registration order (catalog → account → advanced) and wire-level annotation-contract tests.
+
+## [0.2.1] — 2026-10-03 (not published; shipped in 0.3.0)
+
+### Fixed
+- **`npx -y alza-mcp` failed to install.** `scripts/postinstall.cjs` was missing from the published package, so the postinstall hook crashed. CI now installs the packed tarball to catch this.
+
+## [0.2.0] — 2026-10-03
+
+Catalog improvements ported from [#1](https://github.com/lukabudik/alza-mcp/pull/1) by [@samuelseidel](https://github.com/samuelseidel). Thank you!
+
+### Added
+- **`list_category_filters`** — a category's brands and attribute facets with real ids and product counts.
+- **Brand and attribute filtering** in `search_products` (`producer_ids`, `filters`, requires `category_id`). Uses Alza's own filtered category pages. Alza only honours URL filters for some facets; when it drops one, the tool now returns an error instead of unfiltered results.
+- `min_screen_inches` / `max_screen_inches` — name-based screen-size filter for displays.
+- `candidatesScanned` in search results.
+
+### Fixed
+- **Sorting.** Alza's search page ignores server-side sort, so `price-asc` / `price-desc` / `rating` now sweep up to 3 pages and sort client-side.
+- **Pagination.** `search.htm?pg=N` is ignored by Alza; pages now follow the rendered page links (or build `-pN` URLs for filtered category pages, whose own links drop the filter).
+- **`in_stock`** now actually filters, based on the card's purchase button.
+- **`get_product` specs.** Merges the JSON-LD `additionalProperty` list, so products whose page has no DOM spec table now return params.
+- **`list_categories(parent_id)`** returned the top-level list for every parent. It now returns the real subcategories.
+- Invalid tool arguments return a readable message.
 
 ## [0.1.2] — 2026-05-11
 

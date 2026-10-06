@@ -232,6 +232,42 @@ export const GET_PRODUCT_OUTPUT = z
   .object({ product: PRODUCT })
   .passthrough();
 
+export const RECOMMEND_ALTERNATIVES_OUTPUT = z
+  .object({
+    source: PRODUCT,
+    mode: z.enum(["cheaper", "better-specs", "same-brand"]).optional(),
+    poolSource: z.enum(["alza-alternatives", "category-search"]),
+    candidatesConsidered: z.number(),
+    alternatives: z.array(PRODUCT),
+  })
+  .passthrough();
+
+export const COMPARE_PRODUCTS_OUTPUT = z
+  .object({
+    products: z.array(
+      z
+        .object({
+          code: z.string(),
+          ok: z.boolean(),
+          name: z.string().optional(),
+          url: z.string().optional(),
+          error: z.string().optional(),
+        })
+        .passthrough(),
+    ),
+    rows: z.array(z.object({ name: z.string(), values: z.array(z.string().nullable()) }).passthrough()),
+    summary: z
+      .object({
+        status: z.enum(["generated", "unavailable", "failed"]),
+        text: z.string().optional(),
+        model: z.string().optional(),
+        reason: z.string().optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
 export const GET_PRODUCT_REVIEWS_OUTPUT = z
   .object({
     code: z.string(),
@@ -296,6 +332,7 @@ export const FIND_PICKUP_POINTS_OUTPUT = z
 export const LIST_CATEGORY_FILTERS_OUTPUT = z
   .object({
     category_id: z.number(),
+    brands: z.array(z.object({ valueId: z.number(), description: z.string(), count: z.number().optional() }).passthrough()),
     groups: z.array(
       z
         .object({
@@ -324,7 +361,9 @@ export const OUTPUT_SCHEMAS: Record<string, z.AnyZodObject> = {
   // Catalog (typed domain shapes)
   search_products: SEARCH_PRODUCTS_OUTPUT,
   get_product: GET_PRODUCT_OUTPUT,
+  compare_products: COMPARE_PRODUCTS_OUTPUT,
   get_product_reviews: GET_PRODUCT_REVIEWS_OUTPUT,
+  recommend_alternatives: RECOMMEND_ALTERNATIVES_OUTPUT,
   list_categories: LIST_CATEGORIES_OUTPUT,
   find_pickup_points: FIND_PICKUP_POINTS_OUTPUT,
   list_category_filters: LIST_CATEGORY_FILTERS_OUTPUT,

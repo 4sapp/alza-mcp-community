@@ -71,7 +71,7 @@ export interface ProductReviews {
 }
 
 export interface FacetValue {
-  /** Numeric value id — the `-par{paramId}-{valueId}` URL segment. */
+  /** Numeric value id — the `-par{paramId}-{valueId}` (or `-v{producerId}` for brands) URL segment. */
   valueId: number;
   description: string;
   /** Product count carrying this value, when Alza reports it. */
@@ -82,11 +82,25 @@ export interface FacetGroup {
   /** Numeric param id — the `{paramId}` in `-par{paramId}-{valueId}`. */
   paramId: number;
   name: string;
-  /** Alza's UI widget for this facet. Only "Checkbox" has a working URL-based filter (see `filterable`). */
+  /** Alza's UI widget for this facet. Only "Checkbox" can be URL-filtered (see `filterable`). */
   renderType: string;
-  /** True only for Checkbox-type facets — Slider-type facets (size, refresh rate, weight, …) have no discoverable URL/API filter (live-verified 2026-09-27; see docs/gap-analysis.md). */
+  /**
+   * True for Checkbox-type facets. Necessary but not sufficient: Alza only
+   * honours URL filters for facets it publishes landing pages for, and
+   * silently redirects the rest to the unfiltered category (live-verified
+   * 2026-10-03). `search_products` detects that redirect and errors instead
+   * of returning unfiltered results. Slider-type facets (size, refresh rate,
+   * weight, …) have no known URL/API encoding at all.
+   */
   filterable: boolean;
   values: FacetValue[];
+}
+
+export interface CategoryFilters {
+  categoryId: number;
+  /** Brands in this category — pass `valueId`s to `search_products` as `producer_ids`. */
+  brands: FacetValue[];
+  groups: FacetGroup[];
 }
 
 export interface PickupPoint {
