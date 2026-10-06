@@ -74,6 +74,8 @@ interface Session {
   transport: StreamableHTTPServerTransport;
   built: BuildResult;
   lastSeen: number;
+  /** Requests/streams still open (e.g. a long-lived GET SSE stream); the idle sweep skips the session while > 0. */
+  open: number;
 }
 
 const LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "::1", "[::1]"];
@@ -157,7 +159,7 @@ export async function startHttpServer(opts: HttpServerOptions = {}): Promise<Run
   const sweep = setInterval(() => {
     const now = Date.now();
     for (const [id, s] of sessions) {
-      if (now - s.lastSeen > sessionIdleMs) void closeSession(id);
+      if (s.open === 0 && now - s.lastSeen > sessionIdleMs) void closeSession(id);
     }
   }, Math.min(60_000, Math.max(1_000, Math.floor(sessionIdleMs / 2))));
   sweep.unref();
@@ -192,6 +194,11 @@ export async function startHttpServer(opts: HttpServerOptions = {}): Promise<Run
       const s = sessions.get(sessionId);
       if (!s) return jsonRpcError(res, 404, "Unknown or expired session; re-initialize");
       s.lastSeen = Date.now();
+      s.open++;
+      res.once("close", () => {
+        s.open--;
+        s.lastSeen = Date.now();
+      });
       await s.transport.handleRequest(req, res);
       return;
     }
@@ -218,7 +225,7 @@ export async function startHttpServer(opts: HttpServerOptions = {}): Promise<Run
     const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (id) => {
-        sessions.set(id, { transport, built, lastSeen: Date.now() });
+        sessions.set(id, { transport, built, lastSeen: Date.now(), open: 0 });
         log.info("http: session opened", { sessions: sessions.size });
       },
       onsessionclosed: (id) => closeSession(id),

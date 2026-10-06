@@ -152,6 +152,18 @@ describe("Streamable HTTP transport (default: catalog only)", () => {
     await connect(server);
     expect(server.sessionCount()).toBe(1);
   });
+
+  it("keeps a session holding an open GET/SSE stream past the idle timeout, then sweeps it once the stream closes", async () => {
+    const server = await start({ sessionIdleMs: 300 });
+    const client = await connect(server); // the SDK client opens a standalone GET SSE stream after initialize
+    await new Promise((r) => setTimeout(r, 2_300));
+    expect(server.sessionCount()).toBe(1);
+    expect((await client.listTools()).tools.length).toBeGreaterThan(0);
+    open.clients.pop();
+    await client.close(); // aborts the stream without a DELETE
+    await new Promise((r) => setTimeout(r, 2_300));
+    expect(server.sessionCount()).toBe(0);
+  }, 10_000);
 });
 
 describe("Streamable HTTP transport (ALZA_HTTP_ENABLE_ACCOUNT opt-in)", () => {
