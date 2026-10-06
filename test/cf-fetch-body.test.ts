@@ -44,3 +44,24 @@ describe("cfFetch body routing", () => {
     }
   });
 });
+
+describe("MobileApi OAuth transport", () => {
+  it("falls back to plain fetch when the sidecar is unavailable", async () => {
+    const { MobileApi } = await import("../src/infra/mobile-api.js");
+    const discovery = { authorization_endpoint: "https://identity.alza.cz/connect/authorize", token_endpoint: "https://identity.alza.cz/connect/token" };
+    const nativeFetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(discovery)));
+    try {
+      const api = new MobileApi({ httpFetch: async () => { throw new Error("Chrome-fingerprint transport unavailable: spawn failed"); } });
+      await expect(api.discovery()).resolves.toEqual(discovery);
+      expect(nativeFetch).toHaveBeenCalledOnce();
+    } finally {
+      nativeFetch.mockRestore();
+    }
+  });
+
+  it("degrades to the APK default endpoints when discovery is challenged", async () => {
+    const { MobileApi } = await import("../src/infra/mobile-api.js");
+    const api = new MobileApi({ httpFetch: async () => new Response("challenge", { status: 403 }) });
+    await expect(api.discovery()).resolves.toEqual({});
+  });
+});

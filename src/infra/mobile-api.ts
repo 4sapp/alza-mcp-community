@@ -120,9 +120,16 @@ export class MobileApi {
     } else if (init.headers) {
       Object.assign(headers, init.headers);
     }
-    const res = await this.httpFetch(url, { method: init.method ?? "GET", headers, body: init.body ?? null });
-    const text = await res.text();
-    return { ok: res.status >= 200 && res.status < 300, status: res.status, json: async () => JSON.parse(text) as unknown };
+    try {
+      const res = await this.httpFetch(url, { method: init.method ?? "GET", headers, body: init.body ?? null });
+      const text = await res.text();
+      return { ok: res.status >= 200 && res.status < 300, status: res.status, json: async () => JSON.parse(text) as unknown };
+    } catch (err) {
+      // Same contract as performRequest: the sidecar is optional (no python3 / curl_cffi,
+      // or it died), so a transport failure degrades to plain fetch instead of failing auth.
+      log.warn("mobile-api: cf transport failed for OAuth, falling back", { url, error: String(err) });
+      return fetch(url, init as RequestInit);
+    }
   }
 
   async discovery(): Promise<OidcDiscovery> {
