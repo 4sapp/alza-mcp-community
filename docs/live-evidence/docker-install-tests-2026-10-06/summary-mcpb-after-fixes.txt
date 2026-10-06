@@ -1,0 +1,13 @@
+setup     pack                         PASS    alza-mcp-0.3.1.tgz (189 KB, 109 files)
+mcpb      claude-desktop               INFO    Claude Desktop has no Linux build: the bundle is validated, unpacked and launched the way the host app would, not installed into the app
+setup     registry                     PASS    registry now serves alza-mcp dist-tags={"latest":"0.3.1"} versions=0.3.1
+mcpb      mcpb-version-sync            PASS    manifest 0.3.1 == package.json 0.3.1
+mcpb      mcpb-build                   PASS    built build/alza-mcp-0.3.1.mcpb
+mcpb      mcpb-validate                PASS    Manifest schema validation passes!
+mcpb      mcpb-info                    PASS    alza-mcp-0.3.1.mcpb: 7849 KB on disk; mcpb info: Size: 8058.39 KB
+mcpb      mcpb-signature               INFO    unsigned bundle (Claude Desktop shows an 'unverified' notice)
+mcpb      mcpb-contents                PASS    manifest.json, dist/, node_modules (prod deps) present; 3353 files
+mcpb      mcpb-sidecar                 WARN    scripts/cf-transport.py not in the bundle: account/OAuth calls lose the Chrome-fingerprint transport (falls back to plain fetch/browser)
+mcpb      mcpb-entry_point             PASS    server.entry_point dist/index.js exists
+mcpb      mcpb-launch                  PASS    [ALZA_BASE_URL=https://www.alza.cz] alza-mcp@0.3.1, 13 tools (offline, --network none)
+mcpb      mcpb-launch-empty-config     PASS    [ALZA_BASE_URL=] alza-mcp@0.3.1, 13 tools (offline, --network none)

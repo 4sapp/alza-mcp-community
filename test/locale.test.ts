@@ -19,6 +19,21 @@ describe("locale", () => {
     expect(locale.baseUrl).toBe("https://www.alza.cz");
   });
 
+  it("treats an empty or blank base URL as unset", () => {
+    const prev = process.env.ALZA_BASE_URL;
+    try {
+      process.env.ALZA_BASE_URL = "";
+      expect(resolveLocale().baseUrl).toBe("https://www.alza.cz");
+      expect(resolveLocale("").baseUrl).toBe("https://www.alza.cz");
+      expect(resolveLocale("  ").baseUrl).toBe("https://www.alza.cz");
+      process.env.ALZA_BASE_URL = "https://www.alza.sk";
+      expect(resolveLocale("").countryCode).toBe("SK");
+    } finally {
+      if (prev === undefined) delete process.env.ALZA_BASE_URL;
+      else process.env.ALZA_BASE_URL = prev;
+    }
+  });
+
   it("rejects unknown base URL", () => {
     expect(() => resolveLocale("https://www.example.com")).toThrow();
   });

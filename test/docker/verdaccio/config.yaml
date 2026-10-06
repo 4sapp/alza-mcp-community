@@ -1,0 +1,30 @@
+# Throwaway local registry for the Docker install harness.
+# `alza-mcp` is served ONLY from local storage (the freshly packed branch build,
+# published by scripts/docker-install-tests.sh); everything else is proxied to
+# registry.npmjs.org, so `npx -y alza-mcp` inside the test containers resolves
+# to the code under test exactly as a real user's client config would.
+storage: /verdaccio/storage/data
+auth:
+  htpasswd:
+    file: /verdaccio/storage/htpasswd
+    max_users: 10
+uplinks:
+  npmjs:
+    url: https://registry.npmjs.org/
+    timeout: 60s
+packages:
+  "alza-mcp":
+    access: $all
+    publish: $authenticated
+    unpublish: $authenticated
+  "@*/*":
+    access: $all
+    publish: $authenticated
+    proxy: npmjs
+  "**":
+    access: $all
+    publish: $authenticated
+    proxy: npmjs
+server:
+  keepAliveTimeout: 60
+log: { type: stdout, format: pretty, level: warn }

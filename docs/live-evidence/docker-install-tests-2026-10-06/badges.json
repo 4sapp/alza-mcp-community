@@ -1,0 +1,23 @@
+{
+  "readme": "/src/README.md",
+  "links": {
+    "cursor": "https://cursor.com/en/install-mcp?name=alza&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImFsemEtbWNwIl19",
+    "vscode": "https://insiders.vscode.dev/redirect/mcp/install?name=alza&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22alza-mcp%22%5D%7D"
+  },
+  "cursorDeeplink": "cursor://anysphere.cursor-deeplink/mcp/install?name=alza&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImFsemEtbWNwIl19",
+  "cursorConfig": {
+    "command": "npx",
+    "args": [
+      "-y",
+      "alza-mcp"
+    ]
+  },
+  "vscodeUri": "vscode:mcp/install?%7B%22command%22:%22npx%22,%22args%22:[%22-y%22,%22alza-mcp%22],%22name%22:%22alza%22%7D",
+  "vscodeConfig": {
+    "command": "npx",
+    "args": [
+      "-y",
+      "alza-mcp"
+    ]
+  }
+}
