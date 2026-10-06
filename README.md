@@ -100,6 +100,7 @@ Catalog tools:
 | **`get_product`** | Full detail for one product — price, availability, brand, image, URL |
 | **`compare_products`** | 2–6 products side by side — one aligned table of price, availability, rating and every spec row; optional `summarize: true` verdict via MCP sampling when the client supports it |
 | **`get_product_reviews`** | Aggregate rating + review count |
+| **`recommend_alternatives`** | Cheaper / better-rated / same-brand alternatives to a product (Alza's own alternatives list, same-category search fallback) |
 | **`find_pickup_points`** | Nearest brick-and-mortar AlzaShop showrooms by postal code |
 | **`list_category_filters`** | Category brands (`brands[].valueId`) and attribute facets with live ids/counts — use `producer_ids` or `filters` with `category_id`; unsupported URL filters return an error |
 | **`list_categories`** | Top-level categories, or real subcategories when `parent_id` is supplied — feed the returned ids into `search_products` |

@@ -232,6 +232,16 @@ export const GET_PRODUCT_OUTPUT = z
   .object({ product: PRODUCT })
   .passthrough();
 
+export const RECOMMEND_ALTERNATIVES_OUTPUT = z
+  .object({
+    source: PRODUCT,
+    mode: z.enum(["cheaper", "better-specs", "same-brand"]).optional(),
+    poolSource: z.enum(["alza-alternatives", "category-search"]),
+    candidatesConsidered: z.number(),
+    alternatives: z.array(PRODUCT),
+  })
+  .passthrough();
+
 export const COMPARE_PRODUCTS_OUTPUT = z
   .object({
     products: z.array(
@@ -348,6 +358,7 @@ export const OUTPUT_SCHEMAS: Record<string, z.AnyZodObject> = {
   get_product: GET_PRODUCT_OUTPUT,
   compare_products: COMPARE_PRODUCTS_OUTPUT,
   get_product_reviews: GET_PRODUCT_REVIEWS_OUTPUT,
+  recommend_alternatives: RECOMMEND_ALTERNATIVES_OUTPUT,
   list_categories: LIST_CATEGORIES_OUTPUT,
   find_pickup_points: FIND_PICKUP_POINTS_OUTPUT,
   list_category_filters: LIST_CATEGORY_FILTERS_OUTPUT,
