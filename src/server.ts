@@ -3,6 +3,7 @@ import { ZodError } from "zod";
 import { Catalog } from "./domain/catalog.js";
 import { MobileAccount } from "./domain/mobile-account.js";
 import { Pickup } from "./domain/pickup.js";
+import { Alternatives } from "./domain/alternatives.js";
 import { Reviews } from "./domain/reviews.js";
 import { AlzaBrowser } from "./infra/browser.js";
 import { NotFoundError, UpstreamError } from "./infra/errors.js";
@@ -12,6 +13,7 @@ import { createProductResource } from "./resources/product.js";
 import { createFindPickupPointsTool } from "./tools/find-pickup-points.js";
 import { createGetProductTool } from "./tools/get-product.js";
 import { createGetProductReviewsTool } from "./tools/get-product-reviews.js";
+import { createRecommendAlternativesTool } from "./tools/recommend-alternatives.js";
 import { createListCategoriesTool } from "./tools/list-categories.js";
 import { createListCategoryFiltersTool } from "./tools/list-category-filters.js";
 import { createSearchProductsTool } from "./tools/search-products.js";
@@ -54,7 +56,8 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
     fetchImpl: cfTransport.available ? cfFetch(cfTransport) : undefined,
   });
   const mobileAccount = new MobileAccount(mobileApi);
-  const deps = { catalog, reviews, pickup, mobileAccount };
+  const alternatives = new Alternatives(catalog, mobileApi);
+  const deps = { catalog, reviews, pickup, mobileAccount, alternatives };
 
   const server = new McpServer(
     { name: "alza-mcp", title: "Alza (unofficial)", version: VERSION },
@@ -67,7 +70,7 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
       instructions:
         "Alza.cz catalog and shopping assistant. Unofficial — not affiliated with or endorsed by Alza.cz a.s. " +
         "Tools are grouped into toolsets and only `catalog` + `auth` are enabled by default to keep the visible tool list small — call `list_toolsets` to see every group, then `set_toolset({id, enabled: true})` to turn on the one a task needs (e.g. `basket_and_checkout` before placing an order) before calling its tools. " +
-        "Catalog (always on): `search_products` (keyword + filters) → `get_product` (detail) → `get_product_reviews` (reviews); `list_categories` for category ids; `find_pickup_points` for AlzaShop showrooms near a postal code. " +
+        "Catalog (always on): `search_products` (keyword + filters) → `get_product` (detail) → `get_product_reviews` (reviews); `recommend_alternatives` for cheaper / better-rated / same-brand alternatives to a product; `list_categories` for category ids; `find_pickup_points` for AlzaShop showrooms near a postal code. " +
         "Account & checkout (enable `basket_and_checkout`; OAuth token auto-loads from ~/.alza-mcp/tokens.json; check `account_status`): `cart`, `add_to_cart`, `delivery_options`, `select_pickup_point`, `checkout_preview` → `place_order` (mobile API), or the legacy web WCF path `web_add_to_cart` → `web_cart` → `web_pickup_places` → `web_place_order`. " +
         "Order submission currently works via the legacy web WCF path (`web_place_order`); the mobile `place_order` (sendOrder3) returns HTTP 500 (docs/gap-analysis.md G1/G5). Cancel with `cancel_order`. " +
         "Credentials are never collected by the MCP. High-impact mutations (payment, registration, address, review, subscription, attachment, order) require a one-time token from `prepare_mutation` (in the always-on `auth` toolset) — confirm with the user before calling them. " +
@@ -89,6 +92,7 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
     createSearchProductsTool(deps),
     createGetProductTool(deps),
     createGetProductReviewsTool(deps),
+    createRecommendAlternativesTool(deps),
     createFindPickupPointsTool(deps),
     createListCategoryFiltersTool(deps),
     createListCategoriesTool(deps),
