@@ -36,6 +36,8 @@
     "live:user-journeys": "python3 scripts/live-user-journeys.py",
     "postinstall": "node scripts/postinstall.cjs",
     "prepublishOnly": "npm run build",
+    "version": "node scripts/sync-version.cjs && git add server.json mcpb/manifest.json",
+    "version:check": "node scripts/sync-version.cjs --check",
     "auth:login": "node scripts/alza-auth-login.mjs",
     "auth:login:noninteractive": "node scripts/alza-auth-login-noninteractive.mjs",
     "auth:exchange": "node scripts/alza-auth-exchange.mjs",

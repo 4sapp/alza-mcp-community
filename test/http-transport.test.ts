@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { ACCOUNT_LOCK_REASON, parseCliConfig, startHttpServer, type RunningHttpServer } from "../src/http.js";
+import { ACCOUNT_LOCK_REASON, ANONYMOUS_TOOLSETS, parseCliConfig, startHttpServer, type RunningHttpServer } from "../src/http.js";
 import { TOOLSET_DEFS } from "../src/tools/toolsets.js";
 
 // Smoke tests for the Streamable HTTP transport (issue #16). They drive the real
@@ -15,6 +15,7 @@ import { TOOLSET_DEFS } from "../src/tools/toolsets.js";
 // before any request), so no browser or sidecar is ever started.
 
 const CATALOG = TOOLSET_DEFS.find((d) => d.id === "catalog")!.tools;
+const PC_BUILDER = TOOLSET_DEFS.find((d) => d.id === "pc_builder")!.tools;
 const tokenDir = mkdtempSync(join(tmpdir(), "alza-mcp-http-test-"));
 const tokenFile = join(tokenDir, "tokens.json");
 writeFileSync(tokenFile, JSON.stringify({ access_token: "fake-access", refresh_token: "fake-refresh", visitor_id: "00000000-0000-4000-8000-000000000000" }));
@@ -102,13 +103,14 @@ describe("Streamable HTTP transport (default: catalog only)", () => {
     expect(server.sessionCount()).toBe(1);
   });
 
-  it("locks every non-catalog toolset with a documented reason", async () => {
+  it("locks every toolset except catalog and pc_builder with a documented reason", async () => {
     const server = await start();
     const client = await connect(server);
     const listed = await client.callTool({ name: "list_toolsets", arguments: {} });
     const toolsets = (listed.structuredContent as { toolsets: { id: string; enabled: boolean; locked?: string }[] }).toolsets;
     for (const t of toolsets) {
       if (t.id === "catalog") { expect(t.enabled).toBe(true); expect(t.locked).toBeUndefined(); }
+      else if (ANONYMOUS_TOOLSETS.has(t.id)) { expect(t.enabled).toBe(false); expect(t.locked).toBeUndefined(); }
       else expect(t).toMatchObject({ enabled: false, locked: ACCOUNT_LOCK_REASON });
     }
     const refused = await client.callTool({ name: "set_toolset", arguments: { id: "basket_and_checkout", enabled: true } });
@@ -117,7 +119,7 @@ describe("Streamable HTTP transport (default: catalog only)", () => {
     const all = await client.callTool({ name: "set_toolset", arguments: { id: "all", enabled: true } });
     expect(all.isError).toBeFalsy();
     expect(text(all)).toMatch(/Skipped locked toolset/);
-    expect(await toolNames(client)).toEqual([...CATALOG, "list_toolsets", "set_toolset"].sort());
+    expect(await toolNames(client)).toEqual([...CATALOG, ...PC_BUILDER, "list_toolsets", "set_toolset"].sort());
     // A locked tool cannot be called directly either, even by a client that knows its name.
     const direct = await client.callTool({ name: "cart", arguments: {} });
     expect(direct.isError).toBe(true);

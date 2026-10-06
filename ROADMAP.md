@@ -15,7 +15,6 @@ Rough priority order. Every item is a GitHub issue — comment there before star
 
 - [#19](https://github.com/lukabudik/alza-mcp/issues/19) Publish to the official MCP Registry from the release workflow
 - [#20](https://github.com/lukabudik/alza-mcp/issues/20) List in MCP directories (Smithery, Glama, PulseMCP, mcp.so)
-- [#21](https://github.com/lukabudik/alza-mcp/issues/21) Animated demo in the README
 - [#22](https://github.com/lukabudik/alza-mcp/issues/22) One-click install links (Cursor, VS Code, Claude Desktop)
 
 ## Medium-term
@@ -24,7 +23,7 @@ Rough priority order. Every item is a GitHub issue — comment there before star
 
 ## Long-term
 
-- [#15](https://github.com/lukabudik/alza-mcp/issues/15) PC builder — socket / RAM / wattage / clearance compatibility engine
+- [#15](https://github.com/lukabudik/alza-mcp/issues/15) PC builder — `pc_build_check` / `pc_build_suggest` shipped in the `pc_builder` toolset; design-note sign-off, facet-based candidate filtering (blocked by Alza redirects) and latency remain
 - Hosted HTTP endpoint (follow-up to [#16](https://github.com/lukabudik/alza-mcp/issues/16); local `--http` mode shipped — Cloudflare blocks datacenter IPs, see docs/gap-analysis.md)
 
 Known limitations and dead ends (with dated evidence) live in [docs/gap-analysis.md](docs/gap-analysis.md). Ideas not listed here: open a [feature request](https://github.com/lukabudik/alza-mcp/issues/new/choose).

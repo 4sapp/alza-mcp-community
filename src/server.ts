@@ -23,6 +23,7 @@ import { createListCategoryFiltersTool } from "./tools/list-category-filters.js"
 import { createSearchProductsTool } from "./tools/search-products.js";
 import { createAccountTools } from "./tools/account.js";
 import { createAdvancedTools } from "./tools/advanced.js";
+import { createPcBuildCheckTool, createPcBuildSuggestTool } from "./tools/pc-builder.js";
 import { createWatchdogTools } from "./tools/watchdog.js";
 import { registerToolsets, type LockedToolsets } from "./tools/toolsets.js";
 import { MobileApi } from "./infra/mobile-api.js";
@@ -94,6 +95,7 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
         "Account & checkout (enable `basket_and_checkout`; OAuth token auto-loads from ~/.alza-mcp/tokens.json; check `account_status`): `cart`, `add_to_cart`, `delivery_options`, `select_pickup_point`, `checkout_preview` → `place_order` (mobile API), or the legacy web WCF path `web_add_to_cart` → `web_cart` → `web_pickup_places` → `web_place_order`. " +
         "Order submission currently works via the legacy web WCF path (`web_place_order`); the mobile `place_order` (sendOrder3) returns HTTP 500 (docs/gap-analysis.md G1/G5). Cancel with `cancel_order`. " +
         "Credentials are never collected by the MCP. High-impact mutations (payment, registration, address, review, subscription, attachment, order) require a one-time token from `prepare_mutation` (in the always-on `auth` toolset) — confirm with the user before calling them. " +
+        "PC building (enable `pc_builder`): `pc_build_suggest` proposes a compatibility-checked parts list within a CZK budget; `pc_build_check` checks any parts list (socket, RAM, PSU wattage, GPU/cooler clearance, form factor). " +
         "`mobile_read` (toolset `advanced_raw`) is the raw read-only escape hatch for mobile API operations without a dedicated tool." +
         (opts.instructionsNote ? ` ${opts.instructionsNote}` : ""),
     }
@@ -123,6 +125,8 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
     ...createAccountTools(deps),
     ...createAdvancedTools(deps),
     ...createWatchdogTools(deps),
+    createPcBuildCheckTool(deps),
+    createPcBuildSuggestTool(deps),
   ], opts.lockedToolsets);
 
   const productResource = createProductResource(catalog);

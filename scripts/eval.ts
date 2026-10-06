@@ -56,6 +56,8 @@ const CANONICAL_ORDER = [
   "subscription_update_installment", "upload_attachment", "web_place_order", "cancel_order",
   // watchdog.ts order
   "watchdog_list", "watchdog_set", "watchdog_delete",
+  // pc-builder.ts (issue #15)
+  "pc_build_check", "pc_build_suggest",
   // toolsets.ts meta-tools (registered last, after every domain tool)
   "list_toolsets", "set_toolset",
 ];
@@ -138,17 +140,17 @@ async function run(): Promise<void> {
 
   scenarios.push(await scenario("registration-surface", false, async (c) => {
     const tools = session.tools;
-    check(c, "tool count is 63 (61 domain tools + list_toolsets + set_toolset)", tools.length === 63, String(tools.length));
+    check(c, "tool count is 65 (63 domain tools + list_toolsets + set_toolset)", tools.length === 65, String(tools.length));
     check(c, "registration order is deterministic", JSON.stringify(tools.map((t) => t.name)) === JSON.stringify(CANONICAL_ORDER), JSON.stringify(tools.map((t) => t.name)));
     const missing = tools.filter((t) => !t.title || !t.description || t.description.length < 40);
     check(c, "every tool has a ≥40-char description and a title", missing.length === 0, missing.map((t) => t.name).join(","));
     const noOut = tools.filter((t) => !t.outputSchema || (t.outputSchema as Record<string, unknown>).type !== "object");
     check(c, "every tool publishes an object outputSchema", noOut.length === 0, noOut.map((t) => t.name).join(","));
-    check(c, "outputSchema map covers all 61 domain-tool names", Object.keys(OUTPUT_SCHEMAS).length === 61, String(Object.keys(OUTPUT_SCHEMAS).length));
+    check(c, "outputSchema map covers all 63 domain-tool names", Object.keys(OUTPUT_SCHEMAS).length === 63, String(Object.keys(OUTPUT_SCHEMAS).length));
     const readOnly = tools.filter((t) => t.annotations?.readOnlyHint === true).map((t) => t.name);
     const destructive = tools.filter((t) => t.annotations?.destructiveHint === true).map((t) => t.name);
     const mutating = tools.filter((t) => t.annotations?.readOnlyHint === false).map((t) => t.name);
-    check(c, "readOnlyHint true on exactly 36", readOnly.length === 36, String(readOnly.length));
+    check(c, "readOnlyHint true on exactly 38", readOnly.length === 38, String(readOnly.length));
     check(c, "destructiveHint true on exactly 10", destructive.length === 10, String(destructive.length));
     check(c, "readOnlyHint false (mutating) on exactly 27", mutating.length === 27, String(mutating.length));
   }));

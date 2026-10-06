@@ -97,6 +97,13 @@ export const TOOLSET_DEFS: ToolsetDef[] = [
     tools: ["chat_navigation", "chat_send"],
   },
   {
+    id: "pc_builder",
+    title: "PC builder",
+    description: "Compatibility-checked PC parts lists from live Alza stock: `pc_build_check` (check a parts list) and `pc_build_suggest` (propose a build within a budget). Slow composite workflows (many product-page loads) — enable when the user wants to build or check a PC.",
+    defaultEnabled: false,
+    tools: ["pc_build_check", "pc_build_suggest"],
+  },
+  {
     id: "advanced_raw",
     title: "Raw mobile-API escape hatch",
     description: "`mobile_read`: untyped read access to any mobile-API operation without a dedicated tool. Enable only when a typed tool genuinely doesn't cover what's needed.",

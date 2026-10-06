@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write  # required for npm trusted publishing
+      id-token: write  # required for npm trusted publishing (and MCP Registry OIDC)
     steps:
       - uses: actions/checkout@v4
 
@@ -43,6 +43,21 @@ jobs:
             exit 1
           fi
 
+      - name: Verify server.json versions match package.json
+        run: |
+          node -e '
+            const pkg = require("./package.json");
+            const srv = require("./server.json");
+            const bad = [];
+            if (srv.version !== pkg.version) bad.push(`server.json version ${srv.version}`);
+            const p0 = srv.packages && srv.packages[0];
+            if (!p0 || p0.version !== pkg.version) bad.push(`server.json packages[0].version ${p0 && p0.version}`);
+            const mcpb = require("./mcpb/manifest.json");
+            if (mcpb.version !== pkg.version) bad.push(`mcpb/manifest.json version ${mcpb.version}`);
+            if (srv.name !== pkg.mcpName) bad.push(`server.json name ${srv.name} != package.json mcpName ${pkg.mcpName}`);
+            if (bad.length) { console.error(`Mismatch with package.json ${pkg.version}: ` + bad.join("; ")); process.exit(1); }
+          '
+
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
@@ -52,3 +67,43 @@ jobs:
       - run: npm install -g npm@latest
 
       - run: npm publish --access public --provenance
+
+      # Official MCP Registry listing (runs only after npm publish succeeded,
+      # because the registry verifies the npm package + mcpName exist).
+      # CLI install and commands: https://github.com/modelcontextprotocol/registry
+      # (docs/modelcontextprotocol-io/github-actions.mdx). The io.github.lukabudik/*
+      # namespace is authorised by GitHub OIDC from this repository.
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      - name: Authenticate to MCP Registry (GitHub OIDC)
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish server to MCP Registry
+        run: ./mcp-publisher publish
+
+  # Claude Desktop one-click bundle (.mcpb, https://github.com/anthropics/mcpb),
+  # attached to the GitHub release for this tag.
+  mcpb:
+    runs-on: ubuntu-latest
+    needs: publish
+    permissions:
+      contents: write  # create/update the release and upload the asset
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: ./scripts/build-mcpb.sh
+
+      - name: Attach bundle to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" build/*.mcpb --clobber

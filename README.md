@@ -11,7 +11,9 @@
 
 `alza-mcp` is an unofficial **Model Context Protocol** server that gives Claude (or any MCP-aware agent) an interface to Alza through browser-based catalog scraping and reverse-engineered mobile/web APIs: search products, pull full detail, read reviews, use anonymous/account data, manage a cart, select delivery/AlzaBox pickup, preview checkout, and submit an order only with an explicit one-time confirmation token.
 
-<p align="center"><img src="docs/demo.svg" alt="A Claude Code session using alza-mcp to find a pro-grade wheel cleaner on Alza and the nearest pickup point" width="780"></p>
+<p align="center"><img src="docs/demo.gif" alt="Animated recording of a real Claude Code session: search_products finds wheel cleaners under 600 Kč, get_product shows price and stock, find_pickup_points lists Prague showrooms" width="780"></p>
+
+<p align="center"><sub>Real session, catalog toolset only, no account. Re-record: <a href="docs/demo-recording.md">docs/demo-recording.md</a>. Static version: <a href="docs/demo.svg">docs/demo.svg</a>.</sub></p>
 
 Ask: *"Find me the best pro-grade wheel cleaner under 600 Kč and tell me where I can pick it up in Prague."* The agent calls `search_products` → `get_product` → `find_pickup_points` and gives you a real answer with real prices and a real address.
 
@@ -21,6 +23,13 @@ Ask: *"Find me the best pro-grade wheel cleaner under 600 Kč and tell me where 
 ---
 
 ## Quick install
+
+### One-click install
+
+[![Install in Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=alza&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImFsemEtbWNwIl19)
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_alza--mcp-0098FF?logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=alza&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22alza-mcp%22%5D%7D)
+
+Both buttons install the same thing as the manual config below: `npx -y alza-mcp`, no environment variables, no secrets. The first tool call downloads Playwright's headless Chromium (~92 MB, ~30 s); every call after that is a few seconds. For Claude Desktop, download the one-click `alza-mcp-<version>.mcpb` bundle from the [latest release](https://github.com/lukabudik/alza-mcp/releases/latest) (attached from the next release onward) and open it, or use the JSON config below.
 
 ### Claude Code
 
@@ -77,7 +86,7 @@ That's the agent calling four MCP tools across two parallel searches and synthes
 
 ## What it does
 
-With 61 domain tools (63 including `list_toolsets` and `set_toolset`), listing every tool on every `tools/list` call would front-load an agent's context with dozens of tools it may never touch in a given conversation. So they're grouped into **toolsets**, and only two are enabled by default, exposing 12 domain tools plus the two toolset controls:
+With 63 domain tools (65 including `list_toolsets` and `set_toolset`), listing every tool on every `tools/list` call would front-load an agent's context with dozens of tools it may never touch in a given conversation. So they're grouped into **toolsets**, and only two are enabled by default, exposing 12 domain tools plus the two toolset controls:
 
 | Toolset | Enabled by default? | Covers |
 |---|---|---|
@@ -89,6 +98,7 @@ With 61 domain tools (63 including `list_toolsets` and `set_toolset`), listing e
 | `reviews_and_subscriptions` | — | Reviews, complaints, AlzaSubscription, attachments, EAN lookup |
 | `watchdogs` | — | Alza's native price-drop / back-in-stock watchdog (list, set, delete) |
 | `chat` | — | Alza's in-app chatbot |
+| `pc_builder` | — | Compatibility-checked PC parts lists: `pc_build_check`, `pc_build_suggest` |
 | `advanced_raw` | — | `mobile_read`, the untyped escape hatch |
 
 Call **`list_toolsets`** to see every group and **`set_toolset({id, enabled: true})`** to turn one on before using its tools — e.g. enable `basket_and_checkout` before adding something to a cart. This is standard MCP progressive disclosure (`RegisteredTool.enable()`/`.disable()`, which fires the normal `tools/list_changed` notification) — no functionality is removed, it's just not all visible at once.
@@ -108,6 +118,13 @@ Catalog tools:
 | **`list_categories`** | Top-level categories, or real subcategories when `parent_id` is supplied — feed the returned ids into `search_products` |
 | **`autocomplete`** | Search-box suggestions over plain HTTP (no page render): phrases, categories, brands and products with ids/codes — refine a messy Czech query before `search_products` |
 | **`product_by_ean`** | Looks up catalog products by barcode/EAN (the app's camera barcode-scan API, AT3; read-only, no account required; enable `reviews_and_subscriptions`) |
+
+PC builder tools (enable `pc_builder`):
+
+| Tool | Purpose |
+|---|---|
+| **`pc_build_check`** | Checks a parts list (Alza codes). Checks socket, RAM generation/slots, PSU wattage + headroom, GPU length and cooler height/radiator vs case, form factors, and display output. Returns prices, total, stock, and one verdict per rule with the spec values used |
+| **`pc_build_suggest`** | Proposes a compatible build within a CZK budget from Alza's real component categories (gaming / workstation / office, pinned `fixed_parts`, bounded detail fetches) |
 
 Account and checkout tools:
 
@@ -223,7 +240,7 @@ claude mcp add --transport http alza http://127.0.0.1:3000/mcp
 
 On HTTP the server is stricter than on stdio, because a network endpoint can be reached by more than one client:
 
-- **Catalog only by default.** Only the read-only `catalog` toolset is usable. Every other toolset (`auth`, basket/checkout, account, orders/payments, reviews/subscriptions, chat, `advanced_raw`) is **locked**: `list_toolsets` shows it with the reason, and `set_toolset` refuses to enable it. These tools sign in to and act on a real Alza account (orders, payments, credentials), so a shared endpoint must not offer them by accident. Set `ALZA_HTTP_ENABLE_ACCOUNT=1` to unlock them.
+- **Catalog only by default.** Only the read-only, anonymous toolsets are usable: `catalog` (on) and `pc_builder` (enable with `set_toolset`). Every other toolset (`auth`, basket/checkout, account, orders/payments, reviews/subscriptions, chat, `advanced_raw`) is **locked**: `list_toolsets` shows it with the reason, and `set_toolset` refuses to enable it. These tools sign in to and act on a real Alza account (orders, payments, credentials), so a shared endpoint must not offer them by accident. Set `ALZA_HTTP_ENABLE_ACCOUNT=1` to unlock them.
 - **One server per MCP session.** Each `Mcp-Session-Id` gets its own server instance: its own toolset state, OAuth tokens and one-time confirmation tokens. With `ALZA_HTTP_ENABLE_ACCOUNT=1`, each session also gets its own browser context and Chrome-fingerprint sidecar, because both keep Alza cookies. Sessions expire after 30 idle minutes.
 - **No token file.** `ALZA_TOKEN_FILE` (`~/.alza-mcp/tokens.json`) holds one person's login, so HTTP mode does not load it. Each session signs in with `auth_start` → `auth_exchange`. For a single-user localhost setup you can set `ALZA_HTTP_ALLOW_TOKEN_FILE=1` (together with `ALZA_HTTP_ENABLE_ACCOUNT=1`); every session then starts signed in as that account, so never do this on a shared host. All sessions start from the same refresh token and Alza rotates it on refresh, so the first session that refreshes invalidates the copy the others hold (they then need `auth_start` → `auth_exchange`); keep to one active session in this mode.
 - **Localhost only by default.** It binds `127.0.0.1` and rejects requests whose `Host` or `Origin` is not a loopback name (DNS-rebinding protection). There is no built-in authentication or TLS. If you bind elsewhere (`--host 0.0.0.0`), put it behind a reverse proxy that does both, and set `ALZA_HTTP_ALLOWED_HOSTS`.
@@ -349,7 +366,7 @@ node dist/index.js --http   # or serve MCP Streamable HTTP on http://127.0.0.1:3
 
 `main` already covers catalog, filtering, cart, checkout, order placement/cancellation and account management (see [What it does](#what-it-does) and the known limitations in [docs/gap-analysis.md](docs/gap-analysis.md)). Next up:
 
-- **PC builder** ([#15](https://github.com/lukabudik/alza-mcp/issues/15)) and a **hosted HTTP endpoint** (follow-up to [#16](https://github.com/lukabudik/alza-mcp/issues/16); local `--http` mode is shipped)
+- **PC builder** follow-ups ([#15](https://github.com/lukabudik/alza-mcp/issues/15); `pc_builder` toolset shipped) and a **hosted HTTP endpoint** (follow-up to [#16](https://github.com/lukabudik/alza-mcp/issues/16); local `--http` mode is shipped)
 
 Priorities live in [ROADMAP.md](ROADMAP.md); everything is tracked in [issues](https://github.com/lukabudik/alza-mcp/issues) — [`good first issue`](https://github.com/lukabudik/alza-mcp/labels/good%20first%20issue) is the place to start.
 
