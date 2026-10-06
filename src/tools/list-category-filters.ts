@@ -18,22 +18,24 @@ export function createListCategoryFiltersTool(deps: ToolDeps): RegisterableTool 
       return server.registerTool(
         name,
         {
-          title: "List a category's attribute filters",
+          title: "List a category's filters",
           description:
-            "List the attribute filters (facets) Alza defines for a category — brand, native contrast, panel type, refresh rate, screen diagonal, etc. — with their real filter values and product counts. " +
-            "Works for any category; the set of attributes differs per category (a laptop category has RAM/CPU facets, a monitor category has panel/contrast facets, …). " +
-            "Only groups with `filterable: true` (Alza's Checkbox-type facets — includes brand) can actually be used to filter `search_products` (pass their `values[].value_id` in `search_products`'s `filters`, or brand ids in `producer_ids`); groups with `filterable: false` are informational only — Alza's own slider-type facets (size, refresh rate, weight, brightness, port counts, …) have no discoverable URL/API filter, live-verified 2026-09-27 (see docs/gap-analysis.md). For those, compare candidates with `get_product`'s scraped `params` field instead. " +
-            "Call this before using `search_products`'s `filters`/`producer_ids` to get real, valid ids — never guess them. Read-only.",
+            "List the brands and attribute filters (facets) Alza defines for a category, with real ids and product counts. " +
+            "The attribute set differs per category (laptops have CPU/RAM facets, monitors have panel/resolution facets, …). " +
+            "Pass `brands[].valueId` to `search_products` as `producer_ids` (brand filtering works in every category), and `filterable: true` groups' `param_id`/`value_id` pairs as `filters`. " +
+            "Not every filterable facet is honoured by Alza — when one isn't, `search_products` returns an error rather than unfiltered results; drop that filter and compare candidates with `get_product`'s `params` instead. " +
+            "Slider groups (`filterMode: \"range\"` — screen size, refresh rate, brightness, weight, port counts, …) filter by `{param_id, min?, max?}` in `search_products`'s `filters`, with min/max in the facet's own units as given by `values[].value` (e.g. millimetres for a monitor diagonal, inches for a TV diagonal; live-verified 2026-10-06). `filterable: false` groups are informational only. " +
+            "Call this before using `producer_ids`/`filters` — never guess ids. Read-only.",
           inputSchema,
           outputSchema: OUTPUT_SCHEMAS["list_category_filters"],
           annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
         },
         async (args) =>
           errorWrap(name, async () => {
-            const groups = await deps.catalog.getFacets(args.category_id);
+            const filters = await deps.catalog.getCategoryFilters(args.category_id);
             return {
-              content: [{ type: "text", text: formatCategoryFilters(groups) }],
-              structuredContent: { category_id: args.category_id, groups: groups as unknown as Record<string, unknown>[] },
+              content: [{ type: "text", text: formatCategoryFilters(filters) }],
+              structuredContent: { category_id: filters.categoryId, brands: filters.brands, groups: filters.groups },
             };
           })
       );

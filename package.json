@@ -1,9 +1,8 @@
 {
   "name": "alza-mcp",
   "mcpName": "io.github.lukabudik/alza-mcp",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Unofficial Model Context Protocol server for Alza.cz — product search, details, reviews, and pickup points, plus the authenticated account, cart, checkout, order, and payment stack (mobile REST + legacy web WCF).",
-
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -11,6 +10,13 @@
   },
   "files": [
     "dist",
+    "scripts/postinstall.cjs",
+    "scripts/cf-transport.py",
+    "scripts/ensure-cf-venv.sh",
+    "scripts/alza-auth-login.mjs",
+    "scripts/alza-auth-login-noninteractive.mjs",
+    "scripts/alza-auth-exchange.mjs",
+    "scripts/alza-auth-refresh.mjs",
     "README.md",
     "LICENSE"
   ],
@@ -30,6 +36,8 @@
     "live:user-journeys": "python3 scripts/live-user-journeys.py",
     "postinstall": "node scripts/postinstall.cjs",
     "prepublishOnly": "npm run build",
+    "version": "node scripts/sync-version.cjs && git add server.json mcpb/manifest.json",
+    "version:check": "node scripts/sync-version.cjs --check",
     "auth:login": "node scripts/alza-auth-login.mjs",
     "auth:login:noninteractive": "node scripts/alza-auth-login-noninteractive.mjs",
     "auth:exchange": "node scripts/alza-auth-exchange.mjs",
