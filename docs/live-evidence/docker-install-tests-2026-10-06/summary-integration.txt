@@ -1,0 +1,98 @@
+setup     pack                         PASS    alza-mcp-0.3.1.tgz (189 KB, 109 files)
+setup     registry                     PASS    registry now serves alza-mcp dist-tags={"latest":"0.3.1"} versions=0.3.1
+install:node22-slim-nopython install                      PASS    exit 0 (npx)
+install:node22-slim-nopython postinstall-ran              PASS    setting up the Chrome-fingerprint transport venv (curl_cffi) …;downloading chromium headless-shell (~92 MB) for the browser-driven MCP …;chromium headless-shell installed.;
+install:node22-slim-nopython sidecar-files                PASS    cf-transport.py, ensure-cf-venv.sh, postinstall.cjs, dist/index.js
+install:node22-slim-nopython cf-venv                      PASS    absent as expected (python3/venv unavailable); install still exit 0
+install:node22-slim-nopython chromium-download            PASS    chromium_headless_shell-1243
+install:node22-slim-nopython stdio-initialize+tools       PASS    alza-mcp@0.3.1, 13 tools
+install:node22-slim-python install                      PASS    exit 0 (npx)
+install:node22-slim-python postinstall-ran              PASS    setting up the Chrome-fingerprint transport venv (curl_cffi) …;downloading chromium headless-shell (~92 MB) for the browser-driven MCP …;chromium headless-shell installed.;
+install:node22-slim-python sidecar-files                PASS    cf-transport.py, ensure-cf-venv.sh, postinstall.cjs, dist/index.js
+install:node22-slim-python cf-venv                      PASS    created with curl_cffi 0.16.3
+install:node22-slim-python chromium-download            PASS    chromium_headless_shell-1243
+install:node22-slim-python stdio-initialize+tools       PASS    alza-mcp@0.3.1, 13 tools
+install:node20-slim-nopython install                      PASS    exit 0 (tarball)
+install:node20-slim-nopython postinstall-ran              PASS    setting up the Chrome-fingerprint transport venv (curl_cffi) …;downloading chromium headless-shell (~92 MB) for the browser-driven MCP …;chromium headless-shell installed.;
+install:node20-slim-nopython sidecar-files                PASS    cf-transport.py, ensure-cf-venv.sh, postinstall.cjs, dist/index.js
+install:node20-slim-nopython cf-venv                      PASS    absent as expected (python3/venv unavailable); install still exit 0
+install:node20-slim-nopython chromium-download            PASS    chromium_headless_shell-1243
+install:node20-slim-nopython stdio-initialize+tools       PASS    alza-mcp@0.3.1, 13 tools
+install:node20-slim-python install                      PASS    exit 0 (tarball)
+install:node20-slim-python postinstall-ran              PASS    setting up the Chrome-fingerprint transport venv (curl_cffi) …;downloading chromium headless-shell (~92 MB) for the browser-driven MCP …;chromium headless-shell installed.;
+install:node20-slim-python sidecar-files                PASS    cf-transport.py, ensure-cf-venv.sh, postinstall.cjs, dist/index.js
+install:node20-slim-python cf-venv                      PASS    created with curl_cffi 0.16.3
+install:node20-slim-python chromium-download            PASS    chromium_headless_shell-1243
+install:node20-slim-python stdio-initialize+tools       PASS    alza-mcp@0.3.1, 13 tools
+install:node22-full-python-novenv install                      PASS    exit 0 (npx)
+install:node22-full-python-novenv postinstall-ran              PASS    setting up the Chrome-fingerprint transport venv (curl_cffi) …;cf-venv setup exited with code 1; the server will fall back to the browser transport.;downloading chromium headless-shell (~92 MB) for
+install:node22-full-python-novenv sidecar-files                PASS    cf-transport.py, ensure-cf-venv.sh, postinstall.cjs, dist/index.js
+install:node22-full-python-novenv cf-venv                      PASS    absent as expected (python3/venv unavailable); install still exit 0
+install:node22-full-python-novenv chromium-download            PASS    chromium_headless_shell-1243
+install:node22-full-python-novenv stdio-initialize+tools       PASS    alza-mcp@0.3.1, 13 tools
+install:node24-slim-python install                      PASS    exit 0 (npx)
+install:node24-slim-python postinstall-ran              PASS    setting up the Chrome-fingerprint transport venv (curl_cffi) …;downloading chromium headless-shell (~92 MB) for the browser-driven MCP …;chromium headless-shell installed.;
+install:node24-slim-python sidecar-files                PASS    cf-transport.py, ensure-cf-venv.sh, postinstall.cjs, dist/index.js
+install:node24-slim-python cf-venv                      PASS    created with curl_cffi 0.16.3
+install:node24-slim-python chromium-download            PASS    chromium_headless_shell-1243
+install:node24-slim-python stdio-initialize+tools       PASS    alza-mcp@0.3.1, 13 tools
+install:node24-slim-python-project install                      PASS    exit 0 (tarball)
+install:node24-slim-python-project postinstall-ran              PASS    setting up the Chrome-fingerprint transport venv (curl_cffi) …;downloading chromium headless-shell (~92 MB) for the browser-driven MCP …;chromium headless-shell installed.;
+install:node24-slim-python-project npm-install-scripts          INFO    npm 11.19.0 warns: 1 package has install scripts not yet covered by allowScripts: (postinstall still ran)
+install:node24-slim-python-project sidecar-files                PASS    cf-transport.py, ensure-cf-venv.sh, postinstall.cjs, dist/index.js
+install:node24-slim-python-project cf-venv                      PASS    created with curl_cffi 0.16.3
+install:node24-slim-python-project chromium-download            PASS    chromium_headless_shell-1243
+install:node24-slim-python-project stdio-initialize+tools       PASS    alza-mcp@0.3.1, 13 tools
+badges    cursor-badge-decode          PASS    https://cursor.com/en/install-mcp -> base64 config {"command":"npx","args":["-y","alza-mcp"]}
+badges    cursor-name                  PASS    name="alza"
+badges    cursor-config                PASS    command="npx" args=["-y","alza-mcp"]
+badges    cursor-no-env                PASS    no env, no extra keys
+badges    cursor-badge-image           PASS    https://cursor.com/deeplink/mcp-install-dark.svg
+badges    vscode-badge-decode          PASS    https://insiders.vscode.dev/redirect/mcp/install -> config {"command":"npx","args":["-y","alza-mcp"]}
+badges    vscode-name                  PASS    name="alza"
+badges    vscode-config                PASS    command="npx" args=["-y","alza-mcp"]
+badges    vscode-no-env                PASS    no env, no extra keys
+badges    vscode-redirect              PASS    HTTP 302 Location: vscode:mcp/install?%7B%22command%22:%22npx%22,%22args%22:[%22-y%22,%22alza-mcp%22],%22name%22:%22alza%22%7D
+badges    cursor-landing               PASS    HTTP 200 https://cursor.com/install-mcp?name=alza&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImFsemEtbWNwIl19 (query preserved: true; cursor-deeplink scheme found in page/JS: true)
+vscode    vscode-no-silent-install     PASS    URI opened the 'MCP Server: alza' editor; nothing written until Install is clicked
+vscode    vscode-uri-handler           PASS    code --open-url opened the install editor; Install clicked via CDP
+vscode    vscode-mcp.json              PASS    servers=["alza"] alza={"type":"stdio","command":"npx","args":["-y","alza-mcp"]} (no env)
+vscode    vscode-settings.json         PASS    no MCP entries in settings.json (config lives only in user mcp.json)
+vscode    vscode-config-launches       PASS    npx -y alza-mcp -> alza-mcp@0.3.1, 13 tools
+vscode    vscode-add-mcp-equivalent    PASS    code --add-mcp '{"command":"npx","args":["-y","alza-mcp"],"name":"alza"}' writes the same entry (only difference: implicit type stdio)
+cursor    cursor-login-gate            INFO    signed-out first window ('Cursor Agents') shows only Log In / Sign Up and ignores the deeplink
+cursor    cursor-dialog-fields         PASS    name=alza type=Command command=npx args=["-y","alza-mcp"] secrets=0
+cursor    cursor-deeplink-handler      PASS    cursor --open-url showed 'Install MCP server?' in a signed-out editor window; Install clicked via CDP
+cursor    cursor-mcp.json              PASS    servers=["alza"] alza={"command":"npx","args":["-y","alza-mcp"],"env":{}} (env {} is added by Cursor, no variables)
+cursor    cursor-config-launches       PASS    npx -y alza-mcp -> alza-mcp@0.3.1, 13 tools
+mcpb      claude-desktop               INFO    Claude Desktop has no Linux build: the bundle is validated, unpacked and launched the way the host app would, not installed into the app
+mcpb      mcpb-version-sync            FAIL    mcpb/manifest.json version 0.3.0 != package.json 0.3.1 (build-mcpb.sh and the release workflow refuse this)
+mcpb      mcpb-build                   FAIL    scripts/build-mcpb.sh failed: mcpb/manifest.json version 0.3.0 != package.json 0.3.1
+mcpb      launch                       BLOCKED no bundle built
+http      server                       PASS    npx -y alza-mcp --http on :3000 (0.0.0.0), :3001 (default bind), :3002 (env-only, account mode)
+http      loopback-in-container        PASS    default-bind server answers /healthz on 127.0.0.1 inside its container
+http      http-healthz                 PASS    {"ok":true,"transport":"streamable-http","sessions":0,"account":false}
+http      http-initialize              PASS    server alza-mcp@0.3.1, session 53e56740…, protocol 2025-11-25
+http      http-tools/list              PASS    8 tools: find_pickup_points, get_product, get_product_reviews, list_categories, list_category_filters, list_toolsets, search_products, set_toolset
+http      http-two-sessions            PASS    A=53e56740… B=a008a6f5…
+http      http-session-count           PASS    /healthz sessions=2
+http      http-isolation-disable       PASS    A disabled catalog -> A has 2 tools (search_products: false), B has 8 (search_products: true)
+http      http-account-locked          PASS    Error: Toolset "basket_and_checkout" is locked on this deployment: Disabled on the Streamable HTTP transport: a networked MCP endpoint can be reached by more th
+http      http-list_toolsets-locked    PASS    7/8 toolsets locked; unlocked: catalog
+http      http-unknown-session         PASS    unknown Mcp-Session-Id -> HTTP 404
+http      http-missing-session         PASS    non-initialize without session -> HTTP 400
+http      http-origin-check            PASS    Origin: http://evil.example -> HTTP 403
+http      http-host-check              PASS    Host: evil.example -> HTTP 403; Host: alza-http:3000 -> HTTP 200
+http      http-delete-session          PASS    after DELETE: reuse -> HTTP 404, /healthz sessions=1
+http      http-account-isolation       PASS    ALZA_HTTP_ENABLE_ACCOUNT=1: X enabled basket_and_checkout -> X 13->25 tools, Y stays 13
+http      http-account-no-tokenfile    PASS    account_status authenticated: X=false Y=false (no token file on HTTP)
+http      http-default-loopback        PASS    server started without --host, reached from another container: refused (ECONNREFUSED)
+smithery  smithery-type                PASS    startCommand.type=stdio
+smithery  smithery-configSchema        PASS    object with 5 optional properties (alzaBaseUrl, alzaCdpUrl, alzaHeadless, alzaIdleTtlMs, alzaDebug)
+smithery  smithery-cmd-empty           PASS    {} -> {"command":"npx","args":["-y","alza-mcp"],"env":{}}
+smithery  smithery-cmd-full            PASS    {"alzaBaseUrl":"https://www.alza.sk","alzaCdpUrl":"http://localhost:9222","alzaHeadless":true,"alzaIdleTtlMs":60000,"alzaDebug":true} -> env {"ALZA_BASE_URL":"https://www.alza.sk","ALZA_CDP_URL":"http://localhost:9222","ALZA_HEADLESS":"true","ALZA_IDLE_TTL_MS":"60000","ALZA_DEBUG":"true"}
+smithery  smithery-every-prop-mapped   PASS    5/5 properties produce an env var
+smithery  smithery-env-strings         PASS    all env values are strings
+smithery  smithery-env-read-by-server  PASS    ALZA_BASE_URL, ALZA_CDP_URL, ALZA_HEADLESS, ALZA_IDLE_TTL_MS, ALZA_DEBUG all read by dist/
+smithery  smithery-launch              PASS    npx -y alza-mcp -> alza-mcp@0.3.1, 13 tools
+smithery  smithery-baseurl-applied     PASS    alzaBaseUrl=https://www.alza.sk -> server ready log reports baseUrl alza.sk

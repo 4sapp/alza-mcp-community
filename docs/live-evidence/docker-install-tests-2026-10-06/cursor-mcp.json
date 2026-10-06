@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "alza": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "alza-mcp"
+      ],
+      "env": {}
+    }
+  }
+}

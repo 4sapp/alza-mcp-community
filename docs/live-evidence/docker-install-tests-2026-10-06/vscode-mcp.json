@@ -1,0 +1,13 @@
+{
+	"servers": {
+		"alza": {
+			"type": "stdio",
+			"command": "npx",
+			"args": [
+				"-y",
+				"alza-mcp"
+			]
+		}
+	},
+	"inputs": []
+}
