@@ -3,7 +3,8 @@ import { TtlCache } from "../infra/cache.js";
 import { NotFoundError } from "../infra/errors.js";
 import { extractJsonLd, findProduct as findJsonLdProduct } from "../infra/jsonld.js";
 import { log } from "../infra/logger.js";
-import type { Category, FacetGroup, Product, ProductParam, SearchResult } from "./types.js";
+import { compareDeals, computeDeal, DEFAULT_DEAL_CATEGORIES, type Deal } from "./deals.js";
+import type { Category, CategoryFilters, FacetGroup, FacetValue, Product, ProductParam, SearchResult } from "./types.js";
 
 export type SortOrder = "relevance" | "price-asc" | "price-desc" | "rating" | "newest";
 
@@ -18,7 +19,7 @@ export interface SearchOptions {
   categoryId?: number;
   minScreenInches?: number;
   maxScreenInches?: number;
-  /** Alza producer/brand ids (from `list_category_filters`'s `producers` group). Requires `categoryId`. */
+  /** Alza producer/brand ids (from `list_category_filters`'s `brands`). Requires `categoryId`. */
   producerIds?: number[];
   /** Checkbox-type attribute facet selections (from `list_category_filters`, `filterable: true` groups only). Requires `categoryId`. */
   filters?: Array<{ paramId: number; valueId: number }>;
@@ -32,6 +33,9 @@ interface RawCard {
   url: string | null;
   image: string | null;
   priceText: string | null;
+  /** `.ads-pb__original-price` text: crossed-out price or "Ušetříte N,-" (see deals.ts). */
+  originalPriceText: string | null;
+  originalIsStrike: boolean;
   ratingText: string | null;
   reviewCountText: string | null;
   /**
@@ -71,7 +75,9 @@ const CARD_EXTRACTOR = `(function() {
       name: txt('a.name') || txt('.name'),
       url: attr('a.name', 'href') || attr('a[href*=".htm"]', 'href'),
       image: attr('img', 'src') || attr('img', 'data-src'),
-      priceText: txt('.price'),
+      priceText: txt('.ads-pb__price-value') || txt('.price'),
+      originalPriceText: txt('.ads-pb__original-price'),
+      originalIsStrike: !!card.querySelector('.ads-pb__original-price--strike'),
       ratingText: ratingMatch ? ratingMatch[1] : null,
       reviewCountText: reviewMatch ? reviewMatch[1] : null,
       inStock: inStock
@@ -144,6 +150,8 @@ export class Catalog {
   private readonly productUrlCache = new TtlCache<string, string>(60 * 60 * 1000);
   private readonly categoryCache = new TtlCache<number, Category[]>(24 * 60 * 60 * 1000);
 
+  private readonly dealsCache = new TtlCache<string, { scanned: number; deals: Deal[] }>(5 * 60 * 1000);
+
   constructor(private readonly browser: AlzaBrowser) {}
 
   async searchProducts(opts: SearchOptions): Promise<SearchResult> {
@@ -175,7 +183,10 @@ export class Catalog {
       let pageLinks: Record<string, string> = {};
       for (let n = 1; n < page + maxPages; n++) {
         if (n < page) continue; // explicit page: skip earlier pages
-        let target = pageLinks[String(n)];
+        // Filtered category pages render pagination anchors that drop the
+        // -par segments (live-verified 2026-10-03), but `{filteredUrl}-pN.htm`
+        // keeps them — so build those URLs instead of following the anchors.
+        let target = hasAttrFilters && n > 1 ? this.buildSearchUrl(opts, 1).replace(/\.htm$/, `-p${n}.htm`) : pageLinks[String(n)];
         if (!target && n > 1) {
           // Resolve links via the first page (one navigation), then continue.
           const first = await this.fetchSearchPage(opts);
@@ -226,6 +237,53 @@ export class Catalog {
     });
   }
 
+  /**
+   * Discounted products from category listing pages (`/{id}.htm`). Discount
+   * % is computed from the observed current/original prices (see deals.ts).
+   * CZ-only. Without `categoryId`, scans page 1 of a fixed set of popular
+   * leaf categories; with it, up to 3 pages of that category.
+   */
+  async getDeals(opts: { categoryId?: number; minDiscountPercent?: number; limit?: number }): Promise<{
+    categoryIds: number[];
+    candidatesScanned: number;
+    deals: Deal[];
+  }> {
+    if (this.browser.locale.countryCode !== "CZ") {
+      throw new Error("get_deals is CZ-only: it parses alza.cz's Czech price boxes ('N,-', 'Ušetříte'). Set ALZA_BASE_URL=https://www.alza.cz.");
+    }
+    const limit = clamp(opts.limit ?? 20, 1, 50);
+    const min = opts.minDiscountPercent ?? 0;
+    const categoryIds = opts.categoryId ? [opts.categoryId] : DEFAULT_DEAL_CATEGORIES.map((c) => c.id);
+    const pagesPerCategory = opts.categoryId ? 3 : 1;
+    const cacheKey = JSON.stringify({ categoryIds, pagesPerCategory });
+    const all = await this.dealsCache.memoize(cacheKey, async () => {
+      const deals: Deal[] = [];
+      const seen = new Set<string>();
+      let scanned = 0;
+      for (const id of categoryIds) {
+        let target: string | undefined = `/${id}.htm`;
+        for (let n = 1; n <= pagesPerCategory && target; n++) {
+          const { cards, pageUrls } = await this.fetchSearchPage({ query: "" }, target);
+          for (const c of cards) {
+            const product = this.normalizeCard(c);
+            if (!product || seen.has(product.code)) continue;
+            seen.add(product.code);
+            scanned++;
+            const d = computeDeal(c);
+            if (d) deals.push({ ...product, ...d });
+          }
+          target = pageUrls[String(n + 1)];
+        }
+      }
+      return { scanned, deals };
+    });
+    const deals = all.deals
+      .filter((d) => d.discountPercent >= min)
+      .sort(compareDeals)
+      .slice(0, limit);
+    return { categoryIds, candidatesScanned: all.scanned, deals };
+  }
+
   private async fetchSearchPage(
     opts: SearchOptions,
     explicitUrl?: string
@@ -238,6 +296,15 @@ export class Catalog {
       if (res && res.status() >= 400) {
         // Some "no results" pages are legit 404 — degrade gracefully.
         return { cards: [] as RawCard[], pageUrls: {} };
+      }
+      if (opts.categoryId && (opts.producerIds?.length || opts.filters?.length)) {
+        const dropped = droppedFilterSegments(p.url(), opts.producerIds, opts.filters);
+        if (dropped.length > 0) {
+          throw new Error(
+            `Alza does not support URL filtering for ${dropped.join(", ")} in category ${opts.categoryId} ` +
+              "(it redirected to an unfiltered page). Drop that filter and compare candidates with get_product's params instead."
+          );
+        }
       }
       // Render-race guard (observed 2026-09-12): the first navigation after a
       // cold browser launch can finish "load" with the result grid still
@@ -314,7 +381,7 @@ export class Catalog {
     });
   }
 
-  private readonly facetsCache = new TtlCache<number, FacetGroup[]>(60 * 60 * 1000);
+  private readonly facetsCache = new TtlCache<number, CategoryFilters>(60 * 60 * 1000);
 
   /**
    * Category attribute facets (brand, native contrast, panel type, screen
@@ -325,7 +392,7 @@ export class Catalog {
    * see `buildFilteredCategoryUrl`'s docstring for why Slider-type facets
    * aren't.
    */
-  async getFacets(categoryId: number): Promise<FacetGroup[]> {
+  async getCategoryFilters(categoryId: number): Promise<CategoryFilters> {
     return this.facetsCache.memoize(categoryId, async () => {
       const pageUrl = `${this.browser.locale.baseUrl}/${categoryId}.htm`;
       const apiUrl = `/services/restservice.svc/v3/params/${categoryId}?type=CATEGORY&typeId=0&search=`;
@@ -335,7 +402,7 @@ export class Catalog {
         const raw = (await p.evaluate(
           `fetch(${JSON.stringify(apiUrl)}, { headers: { accept: "application/json" } }).then((r) => r.json())`
         )) as FacetsApiResponse;
-        return parseFacetsResponse(raw);
+        return { categoryId, brands: parseProducers(raw), groups: parseFacetsResponse(raw) };
       });
     });
   }
@@ -350,16 +417,21 @@ export class Catalog {
         await p.goto(url, { waitUntil: "commit", timeout: 30_000 });
         await p.waitForLoadState("load", { timeout: 20_000 }).catch(() => {});
 
+        // Top-level: the homepage's MUI category navigation. Sub-level: the
+        // category page's tile grid. The global navigation is rendered on
+        // category pages too, so it must not be a sub-level fallback — it
+        // would return the top-level list for every parent_id.
+        const sels = parentId
+          ? [
+              '.react-category-tiles a[href*=".htm"]',
+              '.category-tiles__categories a[href*=".htm"]',
+              '.subCategoriesList a[href*=".htm"]',
+              '.category-tree a[href*=".htm"]',
+              'ul.subCategories a[href*=".htm"]',
+            ]
+          : ['li[class*="category-naviga"] a[href*=".htm"]'];
         const raw = (await p.evaluate(`(function() {
-          // Top-level: Alza homepage uses MUI list items with class
-          // 'category-navigation-item'. Sub-level: same pattern works
-          // on category pages, with sidebar links also marked similarly.
-          var sels = [
-            'li[class*="category-naviga"] a[href*=".htm"]',
-            '.subCategoriesList a[href*=".htm"]',
-            '.category-tree a[href*=".htm"]',
-            'ul.subCategories a[href*=".htm"]'
-          ];
+          var sels = ${JSON.stringify(sels)};
           var seen = new Set();
           var out = [];
           for (var s = 0; s < sels.length; s++) {
@@ -545,6 +617,7 @@ function filterByPrice(p: Product, opts: SearchOptions): boolean {
  * facets (size, refresh rate, weight, …) have no known URL/API encoding.
  */
 interface FacetsApiResponse {
+  producers?: Array<{ v?: number; desc?: string; cnt?: number }>;
   params?: Array<{
     groups?: Array<{
       params?: Array<{
@@ -587,6 +660,51 @@ export function parseFacetsResponse(raw: FacetsApiResponse): FacetGroup[] {
   return out;
 }
 
+/** Brand values from the facets API's top-level `producers` list. */
+export function parseProducers(raw: FacetsApiResponse): FacetValue[] {
+  const out: FacetValue[] = [];
+  for (const v of raw.producers ?? []) {
+    if (v.v === undefined || !v.desc) continue;
+    out.push({ valueId: Math.trunc(v.v), description: v.desc, count: v.cnt });
+  }
+  return out;
+}
+
+/**
+ * Filter segments Alza dropped while resolving a filtered category URL.
+ * Alza 30x-redirects a `-par{p}-{v}` / `-v{id}` segment it doesn't serve a
+ * landing page for back to the less-filtered page (live-verified 2026-10-03:
+ * monitors `-par18073-239735342` "Quad HD" lands on the plain category), so
+ * the final URL is the only reliable signal that a filter was applied.
+ */
+export function droppedFilterSegments(
+  finalUrl: string,
+  producerIds: number[] = [],
+  filters: Array<{ paramId: number; valueId: number }> = []
+): string[] {
+  const last = new URL(finalUrl).pathname.split("/").pop() ?? "";
+  const segments = last.replace(/\.htm$/, "").split("-");
+  const missing: string[] = [];
+  for (const id of producerIds) {
+    if (!segments.includes(`v${id}`)) missing.push(`producer ${id}`);
+  }
+  for (const f of filters) {
+    const i = segments.indexOf(`par${f.paramId}`);
+    if (i < 0 || segments[i + 1] !== String(f.valueId)) missing.push(`param ${f.paramId}=${f.valueId}`);
+  }
+  return missing;
+}
+
+/**
+ * Category browse URL with brand/attribute filters applied — live-verified
+ * 2026-09-27 against real Alza category pages (monitor category, HDMI +
+ * brand combined: product codes and page title both changed correctly).
+ * The path's slug segments are purely cosmetic (any text, or none, 302s/
+ * resolves to the canonical URL) — only the numeric suffix matters:
+ * `{categoryId}[-v{producerId}]...[-par{paramId}-{valueId}]...`. Only some
+ * Checkbox-type facets work this way (see `FacetGroup.filterable` and
+ * `droppedFilterSegments`); Slider facets have no known URL/API encoding.
+ */
 export function buildFilteredCategoryUrl(
   baseUrl: string,
   categoryId: number,
@@ -695,11 +813,33 @@ export function pickAdditionalProperties(raw: unknown): ProductParam[] {
   const out: ProductParam[] = [];
   for (const entry of raw) {
     if (!entry || typeof entry !== "object") continue;
-    const name = asString((entry as Record<string, unknown>)["name"]);
-    const value = asString((entry as Record<string, unknown>)["value"]);
+    const name = decodeBasicEntities(asString((entry as Record<string, unknown>)["name"]) ?? "").trim();
+    const value = decodeBasicEntities(asString((entry as Record<string, unknown>)["value"]) ?? "").trim();
     if (name && value) out.push({ name, value });
   }
   return out;
+}
+
+/**
+ * JSON-LD `additionalProperty` strings arrive HTML-escaped (live 2026-10-06:
+ * a monitor diagonal came back as `27 &quot; (68,58 cm)`). Decode the XML
+ * entities plus numeric references instead of dropping them.
+ */
+function decodeBasicEntities(s: string): string {
+  return s
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (m, n: string) => codePoint(m, Number(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (m, n: string) => codePoint(m, parseInt(n, 16)))
+    .replace(/&amp;/g, "&");
+}
+
+/** Numeric reference -> character; an out-of-range reference is left as-is instead of throwing. */
+function codePoint(raw: string, n: number): string {
+  return Number.isInteger(n) && n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : raw;
 }
 
 function pickBreadcrumbs(raw: unknown): string[] {
@@ -734,7 +874,7 @@ function stripSchema(v: string | undefined): string | undefined {
 function stripHtmlEntities(s: string): string {
   return s
     .replace(/&amp;/g, "&")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCharCode(parseInt(n, 16)))
+    .replace(/&#(\d+);/g, (m, n: string) => codePoint(m, Number(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (m, n: string) => codePoint(m, parseInt(n, 16)))
     .replace(/&[a-z]+;/g, "");
 }

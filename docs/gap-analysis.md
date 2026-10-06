@@ -404,6 +404,31 @@ about *how* the working tools relate to each other:
   30 rows, unchanged). Unit-tested (`pickAdditionalProperties` in
   `test/catalog-sort.test.ts`).
 
+### `compare_products` side-by-side comparison — added (2026-10-06)
+
+- **The gap ([#11](https://github.com/lukabudik/alza-mcp/issues/11)):** to compare
+  candidates, an agent had to call `get_product` N times and build the table
+  itself, which filled its context with full product payloads.
+- **Fix:** `compare_products({codes: 2–6, summarize?})` (catalog toolset,
+  read-only) fetches through `Catalog.getProduct` (product cache), at most two
+  pages at a time. It returns one aligned table: Price, Availability and Rating
+  first, then every spec name found in any product, matched by exact name. A
+  code that fails gets its own `ok: false` column instead of failing the call.
+  The alignment is a pure function, `buildComparisonTable`, with unit tests.
+- **Sampling ([#18](https://github.com/lukabudik/alza-mcp/issues/18)):**
+  `summarize: true` calls `server.createMessage` only when the client advertises
+  `sampling`. The request uses `includeContext: "none"` and `maxTokens: 400`,
+  and the system prompt limits the model to the table. Without the capability,
+  the call returns `summary.status: "unavailable"` and no error. A sampling
+  failure returns `status: "failed"`.
+- **Verification:** **live-verified** 2026-10-06 with two 27" monitors plus one
+  bogus code. 37 aligned rows came back and the bogus code got its own error
+  column. The sampling round trip was run with a stub sampling client; it was
+  not tested with a real sampling-capable host
+  (`docs/live-evidence/compare-products-2026-10-06.md`). The same run found that
+  JSON-LD spec values were HTML-escaped (`27 &quot;`). `pickAdditionalProperties`
+  now decodes entities.
+
 ### `select_pickup_point` re-test needed against an authenticated session
 
 - **The observation (2026-09-26, anonymous session)**: `delivery_options`'
@@ -514,6 +539,29 @@ about *how* the working tools relate to each other:
   product-page-level signal to build this from; `delivery_options` against a
   live cart remains the only way to learn AlzaBox eligibility. Not promoted
   to a numbered G-item — closed as a dead end, not deferred.
+
+## recommend_alternatives live verification (issue #12, 2026-10-06)
+
+Label: `live-verified` (read-only, unauthenticated, `ALZA_TOKEN_FILE=none`, CF sidecar transport).
+
+- `GET /services/restservice.svc/v1/alternatives/{commodityId}` (C7) returned HTTP 200 without a token: `{has_next, total, data[]}`; each card has `id`, `code`, `name`, `url`, `priceNoCurrency`, `rating` (0-5), `ratingCount`, `avail`, `img`; no brand field. 8 alternatives for an iPhone 17 256GB commodity (all colour variants at the same price).
+- Tool run end to end through the MCP server (product page via browser for source price/brand/category, then `MobileApi.alternatives` with the id parsed from the URL): `better-specs` and `same-brand` returned Alza's list ranked by rating; `cheaper` found nothing strictly cheaper in Alza's list, fell back to a same-category `search_products` (category from the breadcrumb is the narrow sub-category "iPhone 17") and honestly returned no matches.
+- Known limits: the fallback searches by the breadcrumb category name (not a category id), so a very narrow sub-category can yield no cheaper candidates; `better-specs` ranks by rating, not by spec-table comparison.
+
+### `get_deals` — where sale items come from (research 2026-10-06, issue #13)
+
+Question: where can a read-only tool get discounted products with current price, original price and discount %? All findings below are against alza.cz on 2026-10-06 (anonymous, no account).
+
+| Candidate source | Result | Label |
+|---|---|---|
+| Search/category listing cards (`.browsingitem`) | **Yes.** The price box (`.ads-pb`) carries the original price in two forms: `.ads-pb__original-price--strike` = the crossed-out original price (e.g. `12 490,-` now, `15 390,-` was; header badge "Zlevněno -18 %"), and a plain `.ads-pb__original-price` = a savings amount (`Ušetříte 100,-`, so original = current + savings). Example: monitor listing 18842948 page 1 → 3 strike cards + 2 "Ušetříte" cards of 24; page-1 sweep of 3 pages found 8 ≥5 % deals. Other header badges ("Super cena", "Cenová bomba") appear with NO original price on many cards and are not treated as discounts. | `live-verified` |
+| "Akce"/discount facet via `list_category_filters` | **No.** The full monitor facet list (47 groups, category 18842948) contains no sale/discount/Akce facet; also none exposed in the checkbox facets that `buildFilteredCategoryUrl` can encode. | `live-verified` (negative) |
+| Sale category pages | **Marketing hubs, no product grid.** `/vyprodej` → `/mega-slevy/y842.htm`, `/outlet` → `/zbozi-z-druhe-ruky`, `/akce` and `/zlevneno` → 404. The Mega slevy hub links `Alza dny` (`/18906341.htm`), `AlzaPlus+ slevy` (`/18906481.htm`) and has a "Podle slevy" sort control (`#sort_11`, client-side) — none render `.browsingitem` cards on load (0 cards). Top-level categories (e.g. `/18890188.htm` Počítače a notebooky) are hubs with 0 cards too; only leaf categories list products. | `live-verified` (negative for a scrapeable sale list) |
+| Free-text `search.htm?exps=zlevněno` | Matches the word in product text (books, cosmetics), not a sale list. `exps=výprodej` redirects to the Mega slevy hub (0 cards). | `live-verified` (negative) |
+| Mobile API route for deals | Not present in the APK-confirmed route inventory (`docs/mobile-endpoint-coverage.md`); not investigated further this round. | `unresolved` |
+| Coupon-block prices on cards ("Koupit s kódem ALZADNY15 … 3 987,-", "Přidat AlzaPlus+ a koupit hned levněji") | Conditional prices (code / AlzaPlus+ membership). Deliberately NOT treated as the sale price. | `live-verified` (observed, excluded) |
+
+**Resolution:** new read-only `get_deals({category_id?, min_discount_percent?, limit?})` (catalog toolset) scans category listing pages `/{id}.htm` (3 pages ≈ 72 cards for a given leaf `category_id`; page 1 of five popular leaf categories — phones 18843445, notebooks 18842920, monitors 18842948, TVs 18849604, headphones 18843602 — when omitted) and reports only cards with an observed original price, computing `discountPercent = (original − current) / original` itself (the "Zlevněno -N %" badge is never read). Live run (monitors, 2026-10-06): 72 cards scanned, top deal 34.7 % (5 990 from 9 169); the computed 18.8 % / 14.9 % for two products matched their pages' own -18 % / -14 % badges after rounding. Limits, stated in the tool description: bounded sample (not all of Alza's sale inventory), shelf price only (no coupon/AlzaPlus+ price), **CZ-scoped** — the savings wording (`Ušetříte`) and the `N,-` price format are Czech-specific, so the tool errors on `.sk`/`.hu`/… instead of guessing. Dated live evidence: `docs/live-evidence/get-deals-2026-10-06.md`.
 
 ## Search suggestions / autocomplete (issue #14, 2026-10-06)
 

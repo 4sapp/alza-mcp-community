@@ -170,7 +170,7 @@ export class MobileAccount {
 
   async authStart(): Promise<OAuthStart> { return this.api.startOAuth(); }
   async authDiscovery(): Promise<unknown> { return this.api.discovery(); }
-  async authExchange(code: string, state: string): Promise<unknown> { return this.api.exchangeOAuthCode(code, state); }
+  async authExchange(code: string, state?: string): Promise<unknown> { return this.api.exchangeOAuthCode(code, state); }
 
   async read(operation: string, args: Record<string, unknown> = {}): Promise<unknown> {
     switch (operation) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildFilteredCategoryUrl, compareForSort, parseFacetsResponse, parseScreenInches, passesInStock, pickAdditionalProperties, sortSweepPages } from "../src/domain/catalog.js";
+import { buildFilteredCategoryUrl, compareForSort, droppedFilterSegments, parseFacetsResponse, parseProducers, parseScreenInches, passesInStock, pickAdditionalProperties, sortSweepPages } from "../src/domain/catalog.js";
 import type { Product } from "../src/domain/types.js";
 
 const p = (over: Partial<Product>): Product => ({
@@ -152,6 +152,41 @@ describe("parseFacetsResponse", () => {
   });
 });
 
+describe("parseProducers", () => {
+  it("reads brands from the top-level producers list and drops unparseable rows", () => {
+    const raw = { producers: [{ v: 1396, desc: "Dell", cnt: 109 }, { v: undefined, desc: "bad" }, { v: 1, desc: "" }] };
+    expect(parseProducers(raw)).toEqual([{ valueId: 1396, description: "Dell", count: 109 }]);
+    expect(parseProducers({})).toEqual([]);
+  });
+});
+
+describe("droppedFilterSegments", () => {
+  const dell = [1396];
+  const hdmi = [{ paramId: 18740, valueId: 239739715 }];
+
+  it("reports nothing when Alza kept every segment (slug segments are ignored)", () => {
+    expect(
+      droppedFilterSegments("https://www.alza.cz/lcd-monitory/dell/hdmi/18842948-v1396-par18740-239739715.htm", dell, hdmi)
+    ).toEqual([]);
+  });
+
+  it("reports a param Alza redirected away (live: Quad HD on monitors)", () => {
+    expect(
+      droppedFilterSegments("https://www.alza.cz/lcd-monitory/18842948.htm", [], [{ paramId: 18073, valueId: 239735342 }])
+    ).toEqual(["param 18073=239735342"]);
+  });
+
+  it("reports a wrong value even when the param id survived", () => {
+    expect(
+      droppedFilterSegments("https://www.alza.cz/x/18842948-par18740-111.htm", [], hdmi)
+    ).toEqual(["param 18740=239739715"]);
+  });
+
+  it("reports a dropped producer, without prefix-matching longer ids", () => {
+    expect(droppedFilterSegments("https://www.alza.cz/x/18842948-v13960.htm", dell)).toEqual(["producer 1396"]);
+  });
+});
+
 describe("pickAdditionalProperties", () => {
   it("extracts name/value pairs from a schema.org PropertyValue[] array", () => {
     const raw = [
@@ -161,6 +196,19 @@ describe("pickAdditionalProperties", () => {
     expect(pickAdditionalProperties(raw)).toEqual([
       { name: "Počet LAN portů s rychlostí 10 Gbit", value: "4" },
       { name: "RJ-45", value: "5 ×" },
+    ]);
+  });
+
+  it("decodes HTML entities in JSON-LD values (live 2026-10-06: `27 &quot; (68,58 cm)`)", () => {
+    expect(pickAdditionalProperties([{ name: "Úhlopříčka", value: "27 &quot; (68,58 cm)" }, { name: "A &amp; B", value: "&lt;1 ms&gt;" }])).toEqual([
+      { name: "Úhlopříčka", value: '27 " (68,58 cm)' },
+      { name: "A & B", value: "<1 ms>" },
+    ]);
+  });
+
+  it("decodes astral numeric references and leaves out-of-range ones untouched", () => {
+    expect(pickAdditionalProperties([{ name: "Ikona", value: "&#128512; &#x1F600; &#99999999;" }])).toEqual([
+      { name: "Ikona", value: "\u{1F600} \u{1F600} &#99999999;" },
     ]);
   });
 
