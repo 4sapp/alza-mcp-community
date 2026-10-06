@@ -276,9 +276,13 @@ PA4/PA5/PA6/PA7; `DeliveryVariantsActions`/`DeliveryTimeItemsWithForm`/`Delivery
 personal-delivery actions = P7/P8/D6 — each classified once via its main row above.
 
 Adjacent (not a blocked row, noted to avoid silent omission): B9 watchdog's persistent
-creation is reversible only through the dynamic `WatchdogsParams.deleteAction` form
-(row stays `source-confirmed`); if the user wants the delete wrapped, it folds into
-task-6 the same way as OR9.
+creation was reversible only through the dynamic `WatchdogsParams.deleteAction` form.
+**Closed 2026-10-06 (issue #17)**: the list (B9a, user navigation → `watchDogs/commodities`)
+and the delete (B9b, the per-product `watchdogDialog`'s `deleteAction` →
+`DELETE webapi/api/watchdog/v1/{watchdogId}`) were found and live-verified together with
+create. The rows are now `live-verified` and wrapped by the typed `watchdog_list` /
+`watchdog_set` / `watchdog_delete` tools (one-time tokens, account email never surfaced;
+`docs/live-evidence/watchdog-b9-2026-10-06.md`).
 
 Classification counts: 21 main-table `blocked` rows + 2 `unresolved` rows (O3, AT3) +
 the 2 G6 rows (PA2/PA3, labeled `live-verified` with a documented limitation) + the
@@ -429,7 +433,7 @@ about *how* the working tools relate to each other:
   JSON-LD spec values were HTML-escaped (`27 &quot;`). `pickAdditionalProperties`
   now decodes entities.
 
-### `select_pickup_point` re-test needed against an authenticated session
+### `select_pickup_point` re-test against an authenticated session — done 2026-10-06 (does not select a pickup point)
 
 - **The observation (2026-09-26, anonymous session)**: `delivery_options`'
   delivery entries all carry null `beforeSelectAction`/`afterSelectAction` —
@@ -445,12 +449,27 @@ about *how* the working tools relate to each other:
   only populate for an authenticated cart. Re-test target: run the same
   sequence against a real authenticated session and see whether
   `beforeSelectAction` is populated.
+- **Authenticated re-test (2026-10-06, `unresolved` → resolved as "not a pickup-point
+  selector")**: on the authenticated owner session, `delivery_options` returned 2 groups
+  (59 + 56 deliveries) and 12 payments. All 127 entries had null
+  `beforeSelectAction`/`afterSelectAction`/`afterDeselectAction`, and the AlzaBox entry
+  had `associatedItems_cnt: 0`, so no association form exists for an authenticated
+  cart either. `select_pickup_point` (`getDeliveryAssociations`, payload mirroring the
+  cart's current AlzaBox selection) returned the same delivery → payment association
+  list as the anonymous run (payment ids 103/143/144/203/243/211/216, each with the
+  delivery price). The cart was recorded before the test and was unchanged afterwards.
+  `add_to_cart` was deliberately skipped: the owner's cart was already non-empty, and
+  there is no verified line-removal route to restore it exactly. Evidence:
+  [`docs/live-evidence/select-pickup-point-auth-retest-2026-10-06.md`](live-evidence/select-pickup-point-auth-retest-2026-10-06.md)
+  (+ `.json`). **Outcome applied**: the tool description now says what the route does
+  and points at the working chain below. A rename to `delivery_payment_associations`
+  (or removal) is proposed to the maintainer.
 - **Workaround that works today**: the live-verified
   `add_to_cart` → `delivery_options` → `web_pickup_places` (parsing
   `orderId`/`groupId` from the AlzaBox option's `deliveryOption.href`) →
   `web_place_order` (with `parcel_shop_id` from `web_pickup_places`) chain
   places a real AlzaBox order without needing `select_pickup_point` at all —
-  this is what should be recommended until the above is re-tested.
+  this is the recommended pickup-point path (confirmed by the 2026-10-06 re-test).
 
 ### Search-time attribute/facet filtering — closed for Checkbox-type (2026-09-27) and Slider-type (2026-10-06) facets
 

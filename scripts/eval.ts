@@ -54,6 +54,8 @@ const CANONICAL_ORDER = [
   "change_password", "two_factor_set", "phone_change", "email_change", "delete_account",
   "review_submit", "complaint_claims", "subscription_overview", "subscription_activate",
   "subscription_update_installment", "upload_attachment", "web_place_order", "cancel_order",
+  // watchdog.ts order
+  "watchdog_list", "watchdog_set", "watchdog_delete",
   // toolsets.ts meta-tools (registered last, after every domain tool)
   "list_toolsets", "set_toolset",
 ];
@@ -136,19 +138,19 @@ async function run(): Promise<void> {
 
   scenarios.push(await scenario("registration-surface", false, async (c) => {
     const tools = session.tools;
-    check(c, "tool count is 60 (58 domain tools + list_toolsets + set_toolset)", tools.length === 60, String(tools.length));
+    check(c, "tool count is 63 (61 domain tools + list_toolsets + set_toolset)", tools.length === 63, String(tools.length));
     check(c, "registration order is deterministic", JSON.stringify(tools.map((t) => t.name)) === JSON.stringify(CANONICAL_ORDER), JSON.stringify(tools.map((t) => t.name)));
     const missing = tools.filter((t) => !t.title || !t.description || t.description.length < 40);
     check(c, "every tool has a ≥40-char description and a title", missing.length === 0, missing.map((t) => t.name).join(","));
     const noOut = tools.filter((t) => !t.outputSchema || (t.outputSchema as Record<string, unknown>).type !== "object");
     check(c, "every tool publishes an object outputSchema", noOut.length === 0, noOut.map((t) => t.name).join(","));
-    check(c, "outputSchema map covers all 58 domain-tool names", Object.keys(OUTPUT_SCHEMAS).length === 58, String(Object.keys(OUTPUT_SCHEMAS).length));
+    check(c, "outputSchema map covers all 61 domain-tool names", Object.keys(OUTPUT_SCHEMAS).length === 61, String(Object.keys(OUTPUT_SCHEMAS).length));
     const readOnly = tools.filter((t) => t.annotations?.readOnlyHint === true).map((t) => t.name);
     const destructive = tools.filter((t) => t.annotations?.destructiveHint === true).map((t) => t.name);
     const mutating = tools.filter((t) => t.annotations?.readOnlyHint === false).map((t) => t.name);
-    check(c, "readOnlyHint true on exactly 35", readOnly.length === 35, String(readOnly.length));
+    check(c, "readOnlyHint true on exactly 36", readOnly.length === 36, String(readOnly.length));
     check(c, "destructiveHint true on exactly 10", destructive.length === 10, String(destructive.length));
-    check(c, "readOnlyHint false (mutating) on exactly 25", mutating.length === 25, String(mutating.length));
+    check(c, "readOnlyHint false (mutating) on exactly 27", mutating.length === 27, String(mutating.length));
   }));
 
   scenarios.push(await scenario("catalog-read", true, async (c) => {

@@ -1,12 +1,13 @@
 import { randomBytes } from "node:crypto";
 import type { MobileApi, OAuthStart } from "../infra/mobile-api.js";
 import type { AppActionFilePart, AppActionValue, ServerAppAction } from "../infra/app-action.js";
+import { WATCHDOG_ID_RE, parseWatchdogDialog, parseWatchdogList, type WatchdogEntry } from "./watchdog.js";
 
 /** Every guarded mutation accepted by `prepare_mutation` (and the typed tools). */
 export const MUTATION_ACTIONS = [
   // low-risk whitelisted writes (executed via mutate_list)
   "create", "rename", "delete", "add", "remove", "move", "set_country", "set_isic",
-  "add_gift", "add_order_service", "set_watchdog", "send_feedback", "submit_discussion", "rate_discussion",
+  "add_gift", "add_order_service", "send_feedback", "submit_discussion", "rate_discussion",
   "coupon_add", "coupon_remove", "basket_update", "basket_unlock",
   // high-impact writes (executed via the typed tools)
   "after_order_payment", "register", "address_create", "address_edit", "address_delete",
@@ -19,11 +20,13 @@ export const MUTATION_ACTIONS = [
   // account credential/identity mutations (A14–A18, 2026-09-22): static routes
   // probed live; one-time token each; delete_account is irreversible.
   "change_password", "two_factor_set", "phone_change", "email_change", "delete_account",
+  // native price/stock watchdog (B9/B9b, live-verified 2026-10-06): typed tools
+  "watchdog_set", "watchdog_delete",
 ] as const;
 
 const WHITELISTED_MUTATIONS = new Set<string>([
   "create", "rename", "delete", "add", "remove", "move", "set_country", "set_isic",
-  "add_gift", "add_order_service", "set_watchdog", "send_feedback", "submit_discussion", "rate_discussion",
+  "add_gift", "add_order_service", "send_feedback", "submit_discussion", "rate_discussion",
   "coupon_add", "coupon_remove", "basket_update", "basket_unlock",
   "gdpr_export",
 ]);
@@ -148,7 +151,7 @@ function validateListPayload(action: string, payload: Record<string, unknown>): 
     create: ["name"], rename: ["id", "name"], delete: ["id"],
     add: ["productId", "commodityListType"], remove: ["id", "productId"], move: ["id", "productId", "targetId"],
     set_country: ["countryId"], set_isic: ["isic"],
-    add_gift: ["rangeIdsGiftCodes"], set_watchdog: ["commodityId", "email", "isTrackingStock"], send_feedback: ["text", "info"], add_order_service: ["orderItemId", "enabled", "selected"], // orderItemId: live correction 2026-09-10 (server ModelState binds Int32)
+    add_gift: ["rangeIdsGiftCodes"], send_feedback: ["text", "info"], add_order_service: ["orderItemId", "enabled", "selected"], // orderItemId: live correction 2026-09-10 (server ModelState binds Int32)
     submit_discussion: ["commodityId", "msg", "userEmail", "anonymous", "notifications"], rate_discussion: ["postId", "rating"],
     coupon_add: ["coupon"], coupon_remove: ["couponId"], basket_update: ["basket_id"], basket_unlock: [], gdpr_export: ["user_id"], // couponId: live correction 2026-09-10 (delcoupon binds Int32)
   };
@@ -159,7 +162,6 @@ function validateListPayload(action: string, payload: Record<string, unknown>): 
     if (field in payload && (typeof payload[field] !== "number" || !Number.isInteger(payload[field]))) throw new Error(`${field} must be an integer`);
   }
   if (("name" in payload) && typeof payload.name !== "string") throw new Error("name must be a string");
-  if (action === "set_watchdog" && typeof payload.email !== "string") throw new Error("email must be a string");
   if (action === "send_feedback" && (typeof payload.text !== "string" || typeof payload.info !== "string")) throw new Error("feedback text and info must be strings");
 }
 
@@ -780,6 +782,67 @@ export class MobileAccount {
     return result;
   }
 
+  /** B9a (2026-10-06): the user's watchdogs, normalised (no email in output). */
+  async watchdogList(userId: unknown, limit?: number): Promise<{ count: number; has_more: boolean; empty_message: string | null; items: WatchdogEntry[] }> {
+    const uid = requireUserId(userId);
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 100)) throw new Error("limit must be an integer between 1 and 100");
+    const parsed = parseWatchdogList(await this.api.watchdogList(uid, limit));
+    return { count: parsed.items.length, has_more: parsed.hasMore, empty_message: parsed.emptyMessage, items: parsed.items };
+  }
+
+  /** B9 (2026-10-06): create a watchdog through the product's watchdog dialog
+   * (one-time token). Refuses when one already exists for the product — there
+   * is no live-verified update path, so delete-then-set is the supported flow. */
+  async watchdogSet(payload: Record<string, unknown>, token: string): Promise<Record<string, unknown>> {
+    this.assertMutationToken("watchdog_set", token);
+    const uid = requireUserId(payload.user_id);
+    const commodityId = requireInt(payload, "commodity_id");
+    if (commodityId < 1) throw new Error("commodity_id must be a positive integer");
+    const trackStock = payload.track_stock === undefined ? true : payload.track_stock;
+    if (typeof trackStock !== "boolean") throw new Error("track_stock must be a boolean");
+    const maxPrice = payload.max_price === undefined || payload.max_price === null ? undefined : payload.max_price;
+    if (maxPrice !== undefined && (typeof maxPrice !== "number" || !Number.isFinite(maxPrice) || maxPrice <= 0)) throw new Error("max_price must be a positive number (CZK incl. VAT)");
+    if (!trackStock && maxPrice === undefined) throw new Error("nothing to watch: set track_stock true and/or max_price");
+    const dialog = parseWatchdogDialog(await this.api.watchdogDialog(uid, commodityId));
+    if (dialog.existingWatchdogId) throw new Error(`a watchdog already exists for commodity ${commodityId} (watchdog_id ${dialog.existingWatchdogId}); delete it with watchdog_delete first, then set it again`);
+    if (!dialog.email) throw new Error("Alza's watchdog form did not pre-fill the account email; is the session authenticated? (check account_status)");
+    if (maxPrice !== undefined && dialog.priceMax !== null && maxPrice >= dialog.priceMax) throw new Error(`max_price must be below the current price (${dialog.priceMax} Kč)`);
+    const created = (await this.api.watchdogCreate(uid, { commodityId, email: dialog.email, isTrackingStock: trackStock, price: maxPrice ?? null })) as Record<string, unknown> | null;
+    this.pendingMutation = undefined;
+    return {
+      created: true,
+      watchdog_id: typeof created?.watchdogId === "string" ? created.watchdogId : null,
+      commodity_id: commodityId,
+      is_tracking_stock: typeof created?.isTrackingStock === "boolean" ? created.isTrackingStock : trackStock,
+      max_price: typeof created?.price === "number" ? created.price : maxPrice ?? null,
+      created_at: typeof created?.created === "string" ? created.created : null,
+      notification: "Alza emails the account's login address when the condition is met.",
+    };
+  }
+
+  /** B9b (2026-10-06): delete a watchdog by id (from watchdog_list) or by the
+   * product it watches (resolved through the dialog's deleteAction). One-time token. */
+  async watchdogDelete(payload: Record<string, unknown>, token: string): Promise<Record<string, unknown>> {
+    this.assertMutationToken("watchdog_delete", token);
+    const uid = requireUserId(payload.user_id);
+    let watchdogId: string | undefined;
+    let commodityId: number | undefined;
+    if (payload.watchdog_id !== undefined && payload.watchdog_id !== null) {
+      if (typeof payload.watchdog_id !== "string" || !WATCHDOG_ID_RE.test(payload.watchdog_id)) throw new Error("watchdog_id must be the UUID from watchdog_list");
+      watchdogId = payload.watchdog_id.toLowerCase();
+    } else {
+      commodityId = requireInt(payload, "commodity_id");
+      if (commodityId < 1) throw new Error("commodity_id must be a positive integer");
+      const dialog = parseWatchdogDialog(await this.api.watchdogDialog(uid, commodityId));
+      if (!dialog.existingWatchdogId) throw new Error(`no watchdog is set for commodity ${commodityId}`);
+      if (!WATCHDOG_ID_RE.test(dialog.existingWatchdogId)) throw new Error("Alza's deleteAction did not carry a recognisable watchdog id; delete it by watchdog_id from watchdog_list instead");
+      watchdogId = dialog.existingWatchdogId;
+    }
+    await this.api.watchdogDelete(uid, watchdogId);
+    this.pendingMutation = undefined;
+    return { deleted: true, watchdog_id: watchdogId, ...(commodityId === undefined ? {} : { commodity_id: commodityId }) };
+  }
+
   prepareMutation(action: string): { action: string; confirmationToken: string } {
     if (!(MUTATION_ACTIONS as readonly string[]).includes(action)) throw new Error(`Unknown mutation action: ${action}`);
     const confirmationToken = randomBytes(24).toString("hex");
@@ -801,7 +864,6 @@ export class MobileAccount {
       : action === "set_isic" ? await this.api.setIsic(payload as { isic: string })
       : action === "add_gift" ? await this.api.addGift(payload as { rangeIdsGiftCodes: Array<{ priceRangeId: number; giftCodes: string[] }> })
       : action === "add_order_service" ? await this.api.addOrderService(String(payload.orderItemId), Boolean(payload.enabled), Boolean(payload.selected))
-      : action === "set_watchdog" ? await this.api.setWatchdog(payload as { commodityId: number; email: string; isTrackingStock: boolean; price?: number })
       : action === "send_feedback" ? await this.api.sendFeedback(payload as { text: string; email?: string; info: string })
       : action === "submit_discussion" ? await this.api.submitDiscussionPost(payload as { commodityId: number; msg: string; userEmail: string; anonymous: boolean; notifications: boolean; parentPostId?: number })
       : action === "rate_discussion" ? await this.api.rateDiscussionPost(Number(payload.postId), Boolean(payload.rating))

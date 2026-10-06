@@ -83,6 +83,13 @@ export const TOOLSET_DEFS: ToolsetDef[] = [
     ],
   },
   {
+    id: "watchdogs",
+    title: "Price & stock watchdogs",
+    description: "Alza's native watchdog (\"Hlídací pes\"): list, set, and delete price-drop / back-in-stock alerts that Alza emails to the account. Enable for \"tell me when this gets cheaper / is back in stock\" requests.",
+    defaultEnabled: false,
+    tools: ["watchdog_list", "watchdog_set", "watchdog_delete"],
+  },
+  {
     id: "chat",
     title: "Alza chat assistant",
     description: "Alza's own in-app chatbot navigation and message sending. Narrow, rarely needed outside a chat-support task.",

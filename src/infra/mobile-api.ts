@@ -499,7 +499,6 @@ export class MobileApi {
   async addGift(payload: { rangeIdsGiftCodes: Array<{ priceRangeId: number; giftCodes: string[] }> }): Promise<unknown> { return this.request("/services/restservice.svc/v2/addGift", { method: "POST", body: JSON.stringify(payload) }); }
   // Live correction (2026-09-10, row O9): the first path segment binds to orderItemId (Int32) per server ModelState.
   async addOrderService(orderItemId: string | number, enabled: boolean, selected: boolean): Promise<unknown> { return this.request(`/services/restservice.svc/v1/addOrderService/${orderItemId}/${enabled ? 1 : 0}/${selected ? 1 : 0}`); }
-  async setWatchdog(payload: { commodityId: number; email: string; isTrackingStock: boolean; price?: number }): Promise<unknown> { return this.request("/api/watchdog/v1", { method: "POST", body: JSON.stringify(payload) }); }
   async sendFeedback(payload: { text: string; email?: string; info: string }): Promise<unknown> { return this.request("/services/restservice.svc/v1/feedback", { method: "POST", body: JSON.stringify(payload) }); }
 
   async orderHelpdeskQuestions(): Promise<unknown> { return this.request("/api/orders/v1/helpdesk/questions"); }
@@ -800,6 +799,45 @@ export class MobileApi {
       method: "DELETE",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ acknowledgeAndDelete: true }),
+    });
+  }
+
+  /** B9 family (live-verified 2026-10-06): the per-product watchdog dialog
+   * (`productAvailabilityWatchdogDialog`). Carries the create form (POST
+   * `webapi.alza.cz/api/watchdog/v1`, fields commodityId/email/isTrackingStock/
+   * price with `max` = current price, email pre-filled with the login address)
+   * and, once a watchdog exists for the product, a `deleteAction`
+   * (`removeProductAvailabilityWatchdog`, DELETE `.../watchdog/v1/{watchdogId}`). */
+  async watchdogDialog(userId: string, commodityId: number): Promise<unknown> {
+    return this.request(`/api/v1/users/${encodeURIComponent(userId)}/products/${encodeURIComponent(commodityId)}/watchdogDialog?country=CZ`);
+  }
+
+  /** B9a (live-verified 2026-10-06): the user's watchdog list
+   * (`userWatchDogsCommodities`, from the user navigation's `watchDogs` link).
+   * Paged `{emptyInfo, paging, value[]}`; each item carries `updateForm`
+   * (PATCH `.../watchdog/v1/{watchdogId}`) and `deleteAction`. */
+  async watchdogList(userId: string, limit?: number): Promise<unknown> {
+    const q = new URLSearchParams({ country: "CZ" });
+    if (limit !== undefined) q.set("limit", String(limit));
+    return this.request(`/api/users/${encodeURIComponent(userId)}/v1/watchDogs/commodities?${q.toString()}`);
+  }
+
+  /** B9 (live-verified 2026-10-06): create a watchdog — the dialog form's
+   * target. 200 with `{watchdogId, commodityId, isTrackingStock, price, created,
+   * actions:{delete, update}}` (the response also echoes the email). */
+  async watchdogCreate(userId: string, payload: { commodityId: number; email: string; isTrackingStock: boolean; price: number | null }): Promise<unknown> {
+    return this.request(`https://webapi.alza.cz/api/watchdog/v1?country=CZ&commodityClientId=${encodeURIComponent(userId)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /** B9b (live-verified 2026-10-06): delete a watchdog — the dialog's
+   * `deleteAction` target. 2xx with an empty body. */
+  async watchdogDelete(userId: string, watchdogId: string): Promise<unknown> {
+    return this.request(`https://webapi.alza.cz/api/watchdog/v1/${encodeURIComponent(watchdogId)}?country=CZ&commodityClientId=${encodeURIComponent(userId)}`, {
+      method: "DELETE",
     });
   }
 

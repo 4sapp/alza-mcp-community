@@ -13,7 +13,6 @@ Rough priority order. Every item is a GitHub issue — comment there before star
 
 ## Near-term
 
-- [#23](https://github.com/lukabudik/alza-mcp/issues/23) Re-test `select_pickup_point` against an authenticated session
 - [#19](https://github.com/lukabudik/alza-mcp/issues/19) Publish to the official MCP Registry from the release workflow
 - [#20](https://github.com/lukabudik/alza-mcp/issues/20) List in MCP directories (Smithery, Glama, PulseMCP, mcp.so)
 - [#21](https://github.com/lukabudik/alza-mcp/issues/21) Animated demo in the README
@@ -21,7 +20,7 @@ Rough priority order. Every item is a GitHub issue — comment there before star
 
 ## Medium-term
 
-- [#17](https://github.com/lukabudik/alza-mcp/issues/17) Price watchlist via Alza's native watchdog
+- [#17](https://github.com/lukabudik/alza-mcp/issues/17) Price watchlist — native watchdog tools (`watchdog_list/set/delete`) shipped; approach sign-off and a self-hosted watchlist remain
 
 ## Long-term
 

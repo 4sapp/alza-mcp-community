@@ -191,6 +191,52 @@ export const WEB_PICKUP_PLACES = z
   })
   .passthrough();
 
+/** `watchdog_list` result (B9a, 2026-10-06) — normalised, no account email. */
+export const WATCHDOG_LIST = z
+  .object({
+    count: z.number(),
+    has_more: z.boolean(),
+    empty_message: z.union([z.string(), z.null()]),
+    items: z.array(
+      z
+        .object({
+          watchdog_id: z.union([z.string(), z.null()]),
+          commodity_id: z.union([z.number(), z.null()]),
+          name: z.union([z.string(), z.null()]),
+          url: z.union([z.string(), z.null()]),
+          current_price: z.union([z.number(), z.null()]),
+          availability: z.union([z.string(), z.null()]),
+          is_tracking_stock: z.union([z.boolean(), z.null()]),
+          max_price: z.union([z.number(), z.null()]),
+        })
+        .passthrough(),
+    ),
+  })
+  .passthrough()
+  .describe("The account's Alza watchdogs (price-drop / back-in-stock alerts).");
+
+/** `watchdog_set` result (B9, 2026-10-06). */
+export const WATCHDOG_SET = z
+  .object({
+    created: z.boolean(),
+    watchdog_id: z.union([z.string(), z.null()]),
+    commodity_id: z.number(),
+    is_tracking_stock: z.boolean(),
+    max_price: z.union([z.number(), z.null()]),
+    created_at: z.union([z.string(), z.null()]),
+    notification: z.string(),
+  })
+  .passthrough();
+
+/** `watchdog_delete` result (B9b, 2026-10-06). */
+export const WATCHDOG_DELETE = z
+  .object({
+    deleted: z.boolean(),
+    watchdog_id: z.string(),
+    commodity_id: z.number().optional(),
+  })
+  .passthrough();
+
 /* ---------------- Catalog domain shapes ---------------- */
 
 const PRODUCT_PARAM = z
@@ -470,4 +516,8 @@ export const OUTPUT_SCHEMAS: Record<string, z.AnyZodObject> = {
   phone_change: ACCOUNT_MUTATION,
   email_change: ACCOUNT_MUTATION,
   delete_account: ACCOUNT_MUTATION,
+  // native price/stock watchdog (2026-10-06, issue #17)
+  watchdog_list: WATCHDOG_LIST,
+  watchdog_set: WATCHDOG_SET,
+  watchdog_delete: WATCHDOG_DELETE,
 };
