@@ -46,7 +46,7 @@ scripts/            # validate-api & ops scripts
 
 Add a domain module under `src/domain/`. If it talks to a new upstream:
 
-- Prefer an official API with a documented schema (see how `pickup.ts` uses the AlzaBox OpenAPI).
+- Prefer an official API with a documented schema (see how `pickup.ts` reads AlzaBox lockers from Alza's public `/api/salesNetwork/v1/places` JSON API).
 - If you have to reverse-engineer, document the recipe in a top-of-file comment and reference any prior art.
 - Always plumb errors through the typed errors in `src/infra/errors.ts` so the server can return clean MCP errors.
 

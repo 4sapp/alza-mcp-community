@@ -28,6 +28,13 @@ export interface MobileApiOptions {
    * fingerprint). Falls back to global fetch when absent.
    */
   fetchImpl?: FetchLike;
+  /**
+   * Auto-load the OAuth token store (ALZA_TOKEN_FILE). Default true (stdio,
+   * single user). The Streamable HTTP transport passes false unless the
+   * operator explicitly opts in, because the store is single-user by design
+   * and must never be shared by every session of a multi-user host.
+   */
+  loadTokenFile?: boolean;
 }
 
 /** fetch-shaped transport (the sidecar adapter satisfies this). */
@@ -87,7 +94,7 @@ export class MobileApi {
     this.browser = opts.browser;
     this.httpFetch = opts.httpFetch;
     this.fetchImpl = opts.fetchImpl;
-    const stored = this.readStoredTokens();
+    const stored = opts.loadTokenFile === false ? undefined : this.readStoredTokens();
     const explicitVisitor = opts.visitorId ?? process.env.ALZA_VISITOR_ID;
     this.visitorId = explicitVisitor ?? stored?.visitor_id ?? randomUUID();
     this.userId = opts.userId;
@@ -381,6 +388,12 @@ export class MobileApi {
     return this.request("/services/restservice.svc/v1/getProductByEANlist", { method: "POST", body: JSON.stringify({ eanList: eans }) });
   }
 
+  /** Search-box suggestions (live-verified 2026-10-06): anonymous webapi GET, no token. */
+  async whisper(searchTerm: string): Promise<unknown> {
+    const q = `country=CZ&visitor=${encodeURIComponent(this.visitorId)}&searchTerm=${encodeURIComponent(searchTerm)}`;
+    return this.request(`https://webapi.alza.cz/api/anonymous/search/whisperer/v1/whisper?${q}`);
+  }
+
   async search(searchTerm: string, page = 0): Promise<unknown> {
     return this.request("/services/restservice.svc/v5/search", { method: "POST", body: JSON.stringify({ searchTerm, id: 0, type: "PRODUCTION", typeId: 0, orderBy: 0, page, availabilityType: 0, selectedBranches: [], params: [], producers: [], sendPrices: false }) });
   }
@@ -460,8 +473,10 @@ export class MobileApi {
   // is SPA-404 on www and policy-403 on webapi; the app actually reads reviews from server-provided
   // hrefs (webapi.alza.cz/api/catalog/commodities/{id}/reviews — live-verified 200, includes the
   // user's own review with a templated userReviewActions form when one exists).
-  async commodityReviews(commodityId: number): Promise<unknown> {
-    return this.request(`https://webapi.alza.cz/api/catalog/commodities/${commodityId}/reviews?country=CZ&limit=5`);
+  async commodityReviews(commodityId: number, opts: { limit?: number; offset?: number } = {}): Promise<unknown> {
+    const limit = opts.limit ?? 5;
+    const offset = opts.offset ? `&offset=${opts.offset}` : "";
+    return this.request(`https://webapi.alza.cz/api/catalog/commodities/${commodityId}/reviews?country=CZ&limit=${limit}${offset}`);
   }
 
   async discussionPosts(commodityId: number, pageStart = 0, options: { parentId?: number; showOnlyWithoutAnswer?: boolean; orderBy?: number } = {}): Promise<unknown> {

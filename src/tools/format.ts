@@ -17,11 +17,17 @@ export function formatProductLine(p: Product): string {
 export function formatSearchResult(res: SearchResult): string {
   const scanned =
     res.candidatesScanned !== undefined ? ` (scanned ${res.candidatesScanned} candidates)` : "";
+  const ranges = (res.appliedRanges ?? []).map((r) =>
+    r.empty
+      ? `${r.name ?? `param ${r.paramId}`}: no step in requested range`
+      : `${r.name ?? `param ${r.paramId}`} ${r.from ?? "…"}–${r.to ?? "…"}`
+  );
+  const rangeNote = ranges.length > 0 ? ` [range filters: ${ranges.join("; ")}]` : "";
   if (res.products.length === 0) {
-    return `No products found for **"${res.query}"**${scanned}.`;
+    return `No products found for **"${res.query}"**${scanned}${rangeNote}.`;
   }
   const lines: string[] = [
-    `Top ${res.products.length} result(s) for **"${res.query}"**${scanned}:`,
+    `Top ${res.products.length} result(s) for **"${res.query}"**${scanned}${rangeNote}:`,
     "",
     ...res.products.map(formatProductLine),
   ];
@@ -69,6 +75,8 @@ export function formatReviews(r: ProductReviews): string {
       .join(" · ");
     lines.push(`### ${head}`);
     if (rev.body) lines.push(rev.body);
+    if (rev.pros?.length) lines.push(`+ ${rev.pros.join("; ")}`);
+    if (rev.cons?.length) lines.push(`- ${rev.cons.join("; ")}`);
     lines.push("");
   }
   return lines.join("\n");
@@ -96,27 +104,39 @@ export function formatCategoryFilters(filters: CategoryFilters): string {
     lines.push("");
   }
   for (const g of filters.groups) {
-    const flag = g.filterable ? "" : " (not filterable via search_products — informational only)";
+    const isRange = g.filterMode === "range";
+    const flag = !g.filterable
+      ? " (not filterable via search_products — informational only)"
+      : isRange
+        ? " — range filter: {param_id, min?, max?} using the `value` numbers below"
+        : "";
     lines.push(`**${g.name}** (param_id: ${g.paramId}, ${g.renderType})${flag}`);
-    for (const v of g.values.slice(0, 15)) {
+    const last = g.values[g.values.length - 1];
+    const shown = isRange && last && g.values.length > 15 ? [...g.values.slice(0, 14), last] : g.values.slice(0, 15);
+    for (const v of shown) {
       const count = v.count !== undefined ? ` (${v.count})` : "";
-      lines.push(`  - ${v.description}${count} → value_id: ${v.valueId}`);
+      const id = isRange && v.value !== undefined ? `value: ${v.value}` : `value_id: ${v.valueId}`;
+      lines.push(`  - ${v.description}${count} → ${id}`);
     }
-    if (g.values.length > 15) lines.push(`  … ${g.values.length - 15} more values`);
+    if (g.values.length > 15) lines.push(`  … ${g.values.length - 15} more values${isRange ? " (last step shown above)" : ""}`);
     lines.push("");
   }
   return lines.join("\n").trim();
 }
 
-export function formatPickupPoints(points: PickupPoint[]): string {
-  if (points.length === 0) return "No pickup points found in the requested radius.";
-  const lines: string[] = [];
+export function formatPickupPoints(points: PickupPoint[], warnings: string[] = []): string {
+  const notes = warnings.map((w) => `> ${w}`).join("\n");
+  if (points.length === 0) {
+    return [notes, "No pickup points found in the requested radius."].filter(Boolean).join("\n\n");
+  }
+  const lines: string[] = notes ? [notes, ""] : [];
   for (const p of points) {
     const head = `**${p.name}** (${p.type === "alzabox" ? "AlzaBox locker" : "showroom"})`;
     const distance = p.distanceKm !== undefined ? ` · ${p.distanceKm} km` : "";
     lines.push(`${head}${distance}`);
     lines.push(`  ${p.address}, ${p.city}${p.postalCode ? ` ${p.postalCode}` : ""}`);
     if (p.openingHours) lines.push(`  Open: ${p.openingHours}`);
+    if (p.parcelShopId !== undefined) lines.push(`  parcelShopId: ${p.parcelShopId}`);
     if (p.note) lines.push(`  ${p.note}`);
     lines.push("");
   }

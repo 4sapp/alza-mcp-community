@@ -3,7 +3,8 @@ import { TtlCache } from "../infra/cache.js";
 import { NotFoundError } from "../infra/errors.js";
 import { extractJsonLd, findProduct as findJsonLdProduct } from "../infra/jsonld.js";
 import { log } from "../infra/logger.js";
-import type { Category, CategoryFilters, FacetGroup, FacetValue, Product, ProductParam, SearchResult } from "./types.js";
+import type { AppliedRange, Category, CategoryFilters, FacetGroup, FacetValue, Product, ProductParam, SearchResult } from "./types.js";
+import { compareDeals, computeDeal, DEFAULT_DEAL_CATEGORIES, type Deal } from "./deals.js";
 
 export type SortOrder = "relevance" | "price-asc" | "price-desc" | "rating" | "newest";
 
@@ -22,6 +23,26 @@ export interface SearchOptions {
   producerIds?: number[];
   /** Checkbox-type attribute facet selections (from `list_category_filters`, `filterable: true` groups only). Requires `categoryId`. */
   filters?: Array<{ paramId: number; valueId: number }>;
+  /**
+   * Slider-type (range) facet selections: `min`/`max` in the facet's own
+   * `values[].value` units (from `list_category_filters`). Requires `categoryId`.
+   */
+  ranges?: RangeFilter[];
+}
+
+export interface RangeFilter {
+  paramId: number;
+  min?: number;
+  max?: number;
+}
+
+/** A range snapped to a slider facet's real steps (`from`/`to` are step values). */
+export interface ResolvedRange {
+  paramId: number;
+  name: string;
+  from: number;
+  to: number;
+  fromScreenInches?: boolean;
 }
 
 interface RawCard {
@@ -32,6 +53,9 @@ interface RawCard {
   url: string | null;
   image: string | null;
   priceText: string | null;
+  /** `.ads-pb__original-price` text: crossed-out price or "Ušetříte N,-" (see deals.ts). */
+  originalPriceText: string | null;
+  originalIsStrike: boolean;
   ratingText: string | null;
   reviewCountText: string | null;
   /**
@@ -43,8 +67,14 @@ interface RawCard {
   inStock: boolean | null;
 }
 
-const CARD_EXTRACTOR = `(function() {
-  return Array.from(document.querySelectorAll('.browsingitem')).map(function(card) {
+/**
+ * Card extractor as a function source taking a query root, so it runs both
+ * against the live page (`document`) and against the `Boxes` HTML returned
+ * by the category page's own `EShopService.svc/Filter` call (parsed with
+ * DOMParser — see `Catalog.fetchRangePage`).
+ */
+const CARD_EXTRACTOR_FN = `function(root) {
+  return Array.from(root.querySelectorAll('.browsingitem')).map(function(card) {
     function txt(sel) {
       var el = card.querySelector(sel);
       return el ? el.textContent.trim().replace(/\\s+/g, ' ') : null;
@@ -71,13 +101,17 @@ const CARD_EXTRACTOR = `(function() {
       name: txt('a.name') || txt('.name'),
       url: attr('a.name', 'href') || attr('a[href*=".htm"]', 'href'),
       image: attr('img', 'src') || attr('img', 'data-src'),
-      priceText: txt('.price'),
+      priceText: txt('.ads-pb__price-value') || txt('.price'),
+      originalPriceText: txt('.ads-pb__original-price'),
+      originalIsStrike: !!card.querySelector('.ads-pb__original-price--strike'),
       ratingText: ratingMatch ? ratingMatch[1] : null,
       reviewCountText: reviewMatch ? reviewMatch[1] : null,
       inStock: inStock
     };
   });
-})()`;
+}`;
+
+const CARD_EXTRACTOR = `(${CARD_EXTRACTOR_FN})(document)`;
 
 /**
  * Pagination links for a free-text search. Alza renders page-number anchors
@@ -144,16 +178,25 @@ export class Catalog {
   private readonly productUrlCache = new TtlCache<string, string>(60 * 60 * 1000);
   private readonly categoryCache = new TtlCache<number, Category[]>(24 * 60 * 60 * 1000);
 
+  private readonly dealsCache = new TtlCache<string, { scanned: number; deals: Deal[] }>(5 * 60 * 1000);
+
   constructor(private readonly browser: AlzaBrowser) {}
 
   async searchProducts(opts: SearchOptions): Promise<SearchResult> {
     const hasAttrFilters = (opts.producerIds && opts.producerIds.length > 0) || (opts.filters && opts.filters.length > 0);
-    if (hasAttrFilters && !opts.categoryId) {
+    if ((hasAttrFilters || (opts.ranges && opts.ranges.length > 0)) && !opts.categoryId) {
       throw new Error("producer_ids/filters require category_id (attribute facets are category-scoped in Alza's system) — get category_id from list_categories, then call list_category_filters to discover valid filter values");
     }
     const limit = clamp(opts.limit ?? 20, 1, 50);
     const page = Math.max(1, opts.page ?? 1);
     const cacheKey = JSON.stringify({ ...opts, limit, page });
+
+    // Slider (range) filters, including screen size backed by the category's
+    // own diagonal slider when a category is given (live-verified 2026-10-06).
+    const rangePlan = await this.planRanges(opts);
+    if (rangePlan) {
+      return this.searchCache.memoize(cacheKey, () => this.searchWithRanges(opts, rangePlan, limit, page));
+    }
 
     // Alza's search page ignores server-side sort (verified 2026-09-12) and
     // cards carry no explicit stock attribute, so for price/rating orders we
@@ -227,6 +270,262 @@ export class Catalog {
         products,
       };
     });
+  }
+
+  /**
+   * Resolve explicit range filters (and, when a category is given, the
+   * `min/max_screen_inches` request) against the category's live facet
+   * definitions, snapping each bound to a real slider step. Returns null
+   * when no server-side range applies (screen size then falls back to the
+   * product-name heuristic).
+   */
+  private async planRanges(opts: SearchOptions): Promise<RangePlan | null> {
+    const explicit = opts.ranges ?? [];
+    const wantsScreen =
+      opts.categoryId !== undefined && (opts.minScreenInches !== undefined || opts.maxScreenInches !== undefined);
+    if (explicit.length === 0 && !wantsScreen) return null;
+    const categoryId = opts.categoryId as number;
+    for (const r of explicit) {
+      if (r.min === undefined && r.max === undefined) {
+        throw new Error(`range filter for param_id ${r.paramId} needs min and/or max`);
+      }
+      if (r.min !== undefined && r.max !== undefined && r.min > r.max) {
+        throw new Error(`range filter for param_id ${r.paramId}: min (${r.min}) is greater than max (${r.max})`);
+      }
+    }
+    if (
+      opts.minScreenInches !== undefined &&
+      opts.maxScreenInches !== undefined &&
+      opts.minScreenInches > opts.maxScreenInches
+    ) {
+      throw new Error("min_screen_inches is greater than max_screen_inches");
+    }
+
+    let facets: FacetGroup[];
+    try {
+      facets = (await this.getCategoryFilters(categoryId)).groups;
+    } catch (err) {
+      // Screen size alone still has the product-name fallback; explicit
+      // range filters have none, so surface the failure for those.
+      if (explicit.length > 0) throw err;
+      log.warn("catalog.planRanges: facets unavailable, screen size falls back to name parsing", {
+        categoryId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
+    const resolved: ResolvedRange[] = [];
+    const empty: AppliedRange[] = [];
+    for (const r of explicit) {
+      const group = facets.find((g) => g.paramId === r.paramId);
+      if (!group) {
+        throw new Error(`param_id ${r.paramId} is not a facet of category ${categoryId} — call list_category_filters({category_id: ${categoryId}}) for valid ids`);
+      }
+      if (group.filterMode !== "range") {
+        throw new Error(`param_id ${r.paramId} ("${group.name}") is a ${group.renderType} facet — filter it with {param_id, value_id}, not min/max`);
+      }
+      const snapped = snapRange(group, r.min, r.max);
+      if (snapped) resolved.push(snapped);
+      else empty.push({ paramId: group.paramId, name: group.name, empty: true });
+    }
+
+    let screenServerSide = false;
+    if (wantsScreen) {
+      const diag = findScreenDiagonalGroup(facets);
+      if (diag && !explicit.some((r) => r.paramId === diag.paramId)) {
+        screenServerSide = true;
+        const snapped = snapScreenInches(diag, opts.minScreenInches, opts.maxScreenInches);
+        if (snapped) resolved.push({ ...snapped, fromScreenInches: true });
+        else empty.push({ paramId: diag.paramId, name: diag.name, empty: true, fromScreenInches: true });
+      }
+    }
+    if (resolved.length === 0 && empty.length === 0) return null;
+    return { resolved, empty, screenServerSide };
+  }
+
+  private async searchWithRanges(
+    opts: SearchOptions,
+    plan: RangePlan,
+    limit: number,
+    page: number
+  ): Promise<SearchResult> {
+    const requested: AppliedRange[] = plan.resolved.map((r) => ({
+      paramId: r.paramId,
+      name: r.name,
+      from: r.from,
+      to: r.to,
+      ...(r.fromScreenInches ? { fromScreenInches: true } : {}),
+    }));
+    if (plan.empty.length > 0) {
+      // A bound with no slider step inside it can't match any product in
+      // this category — answer honestly without a page fetch.
+      return {
+        query: opts.query,
+        total: 0,
+        page,
+        pageSize: limit,
+        candidatesScanned: 0,
+        products: [],
+        appliedRanges: [...requested, ...plan.empty],
+      };
+    }
+
+    const sweeping =
+      page === 1 && (opts.sort === "price-asc" || opts.sort === "price-desc" || opts.sort === "rating");
+    const maxPages = sweeping ? sortSweepPages(limit) : 1;
+    const candidates: Product[] = [];
+    const seen = new Set<string>();
+    let applied: AppliedRange[] | undefined;
+    for (let n = page; n < page + maxPages; n++) {
+      const res = await this.fetchRangePage(opts, plan.resolved, n);
+      applied ??= mergeApplied(requested, res.applied);
+      const organic = res.cards
+        .filter((c) => !c.sponsored)
+        .map((c) => this.normalizeCard(c))
+        .filter((p): p is Product => p !== null);
+      for (const p of organic) {
+        if (seen.has(p.code)) continue;
+        seen.add(p.code);
+        candidates.push(p);
+        this.productUrlCache.set(p.code, p.url);
+      }
+      if (!sweeping || organic.length === 0) break;
+      if (res.cards.length > 0 && n >= Math.ceil(res.count / res.cards.length)) break;
+    }
+
+    const products = candidates
+      .filter((p) => filterByPrice(p, opts))
+      .filter((p) => passesInStock(p, opts.inStock))
+      .filter((p) => plan.screenServerSide || filterByScreenSize(p, opts))
+      .sort((a, b) => compareForSort(a, b, opts.sort))
+      .slice(0, limit);
+
+    log.debug("catalog.searchWithRanges", {
+      categoryId: opts.categoryId,
+      ranges: plan.resolved.length,
+      candidates: candidates.length,
+      returned: products.length,
+    });
+
+    return {
+      query: opts.query,
+      total: products.length,
+      page,
+      pageSize: limit,
+      candidatesScanned: candidates.length,
+      products,
+      appliedRanges: applied ?? requested,
+    };
+  }
+
+  /**
+   * One result page of a category with slider (range) filters applied.
+   * Mechanism (live-verified 2026-10-06 via a real Playwright mouse drag on
+   * /lcd-monitory/18842948.htm): Alza's category page keeps slider state in
+   * the URL hash (`#f&cud=0&pg={page}&prod=&par{paramId}={from}--{to}`) and,
+   * on load, its own JS POSTs `/Services/EShopService.svc/Filter`, whose JSON
+   * reply carries the result cards as `d.Boxes` HTML plus `d.Count`. We let
+   * the page build that request (so producer/checkbox path segments are
+   * carried over too), wait for the reply, and extract cards from `Boxes`
+   * instead of the DOM (the DOM is not cleared on an empty reply). The
+   * request body is read back to confirm the ranges were really applied.
+   */
+  private async fetchRangePage(
+    opts: SearchOptions,
+    ranges: ResolvedRange[],
+    page: number
+  ): Promise<{ cards: RawCard[]; count: number; applied: AppliedRange[] }> {
+    const url =
+      buildFilteredCategoryUrl(this.browser.locale.baseUrl, opts.categoryId as number, opts.producerIds, opts.filters) +
+      buildRangeHash(ranges, page);
+    log.debug("catalog.fetchRangePage", { url });
+    return this.browser.withPage(async (p) => {
+      const responseP = p.waitForResponse(
+        (r) => isFilterCallUrl(r.url()) && r.request().method() === "POST",
+        { timeout: RANGE_FILTER_TIMEOUT_MS }
+      );
+      responseP.catch(() => {}); // goto may throw first; avoid an unhandled rejection
+      await p.goto(url, { waitUntil: "commit", timeout: 30_000 });
+      let resp;
+      try {
+        resp = await responseP;
+      } catch {
+        throw new Error(
+          `Alza's category page did not issue its range-filter request within ${RANGE_FILTER_TIMEOUT_MS / 1000} s — the slider encoding may have changed (see docs/gap-analysis.md, "Search-time attribute/facet filtering")`
+        );
+      }
+      if (!resp.ok()) throw new Error(`Alza range-filter request failed: HTTP ${resp.status()}`);
+      // Same redirect guard as the checkbox path: a path segment Alza has no
+      // landing page for is dropped by a redirect (the hash survives it).
+      const dropped = droppedFilterSegments(p.url(), opts.producerIds, opts.filters);
+      if (dropped.length > 0) {
+        throw new Error(
+          `Alza does not support URL filtering for ${dropped.join(", ")} in category ${opts.categoryId} ` +
+            "(it redirected to an unfiltered page). Drop that filter and compare candidates with get_product's params instead."
+        );
+      }
+      const applied = parseAppliedRanges(safeJsonParse(resp.request().postData()));
+      for (const r of ranges) {
+        if (!applied.some((a) => a.paramId === r.paramId)) {
+          throw new Error(`Alza's category page did not apply the range filter for param_id ${r.paramId} ("${r.name}")`);
+        }
+      }
+      const json = (await resp.json()) as FilterResponse;
+      const boxes = json.d?.Boxes ?? "";
+      const cards = boxes
+        ? ((await p.evaluate(
+            `(function(){ var doc = new DOMParser().parseFromString(${JSON.stringify(boxes)}, 'text/html'); return (${CARD_EXTRACTOR_FN})(doc); })()`
+          )) as RawCard[])
+        : [];
+      return { cards, count: typeof json.d?.Count === "number" ? json.d.Count : cards.length, applied };
+    });
+  }
+
+  /**
+   * Discounted products from category listing pages (`/{id}.htm`). Discount
+   * % is computed from the observed current/original prices (see deals.ts).
+   * CZ-only. Without `categoryId`, scans page 1 of a fixed set of popular
+   * leaf categories; with it, up to 3 pages of that category.
+   */
+  async getDeals(opts: { categoryId?: number; minDiscountPercent?: number; limit?: number }): Promise<{
+    categoryIds: number[];
+    candidatesScanned: number;
+    deals: Deal[];
+  }> {
+    if (this.browser.locale.countryCode !== "CZ") {
+      throw new Error("get_deals is CZ-only: it parses alza.cz's Czech price boxes ('N,-', 'Ušetříte'). Set ALZA_BASE_URL=https://www.alza.cz.");
+    }
+    const limit = clamp(opts.limit ?? 20, 1, 50);
+    const min = opts.minDiscountPercent ?? 0;
+    const categoryIds = opts.categoryId ? [opts.categoryId] : DEFAULT_DEAL_CATEGORIES.map((c) => c.id);
+    const pagesPerCategory = opts.categoryId ? 3 : 1;
+    const cacheKey = JSON.stringify({ categoryIds, pagesPerCategory });
+    const all = await this.dealsCache.memoize(cacheKey, async () => {
+      const deals: Deal[] = [];
+      const seen = new Set<string>();
+      let scanned = 0;
+      for (const id of categoryIds) {
+        let target: string | undefined = `/${id}.htm`;
+        for (let n = 1; n <= pagesPerCategory && target; n++) {
+          const { cards, pageUrls } = await this.fetchSearchPage({ query: "" }, target);
+          for (const c of cards) {
+            const product = this.normalizeCard(c);
+            if (!product || seen.has(product.code)) continue;
+            seen.add(product.code);
+            scanned++;
+            const d = computeDeal(c);
+            if (d) deals.push({ ...product, ...d });
+          }
+          target = pageUrls[String(n + 1)];
+        }
+      }
+      return { scanned, deals };
+    });
+    const deals = all.deals
+      .filter((d) => d.discountPercent >= min)
+      .sort(compareDeals)
+      .slice(0, limit);
+    return { categoryIds, candidatesScanned: all.scanned, deals };
   }
 
   private async fetchSearchPage(
@@ -333,9 +632,8 @@ export class Catalog {
    * diagonal, …) from the live JSON facets API. Read-only, same-origin
    * fetch from within a loaded page (this endpoint sits behind the same
    * Cloudflare wall as everything else; a real browser page already
-   * cleared it). Only `renderType: "Checkbox"` groups are `filterable` —
-   * see `buildFilteredCategoryUrl`'s docstring for why Slider-type facets
-   * aren't.
+   * cleared it). Checkbox groups filter by value id (`buildFilteredCategoryUrl`),
+   * Slider groups by range (`buildRangeHash`).
    */
   async getCategoryFilters(categoryId: number): Promise<CategoryFilters> {
     return this.facetsCache.memoize(categoryId, async () => {
@@ -551,16 +849,6 @@ function filterByPrice(p: Product, opts: SearchOptions): boolean {
   return true;
 }
 
-/**
- * Category browse URL with brand/attribute filters applied — live-verified
- * 2026-09-27 against real Alza category pages (monitor category, HDMI +
- * brand combined: product codes and page title both changed correctly).
- * The path's slug segments are purely cosmetic (any text, or none, 302s/
- * resolves to the canonical URL) — only the numeric suffix matters:
- * `{categoryId}[-v{producerId}]...[-par{paramId}-{valueId}]...`. Only
- * Checkbox-type facets (see `FacetGroup.filterable`) work this way; Slider
- * facets (size, refresh rate, weight, …) have no known URL/API encoding.
- */
 interface FacetsApiResponse {
   producers?: Array<{ v?: number; desc?: string; cnt?: number }>;
   params?: Array<{
@@ -590,13 +878,20 @@ export function parseFacetsResponse(raw: FacetsApiResponse): FacetGroup[] {
         const values: FacetGroup["values"] = [];
         for (const v of p.values ?? []) {
           if (v.v === undefined || !v.desc) continue;
-          values.push({ valueId: Math.trunc(v.v), description: v.desc, count: v.cnt });
+          values.push({
+            valueId: Math.trunc(v.v),
+            description: v.desc,
+            count: v.cnt,
+            ...(p.renderType === "Slider" ? { value: v.v } : {}),
+          });
         }
+        const filterMode = p.renderType === "Checkbox" ? "value" : p.renderType === "Slider" ? "range" : undefined;
         out.push({
           paramId: p.tId,
           name: p.name,
           renderType: p.renderType ?? "Unknown",
-          filterable: p.renderType === "Checkbox",
+          filterable: filterMode !== undefined,
+          ...(filterMode ? { filterMode } : {}),
           values,
         });
       }
@@ -648,7 +943,8 @@ export function droppedFilterSegments(
  * resolves to the canonical URL) — only the numeric suffix matters:
  * `{categoryId}[-v{producerId}]...[-par{paramId}-{valueId}]...`. Only some
  * Checkbox-type facets work this way (see `FacetGroup.filterable` and
- * `droppedFilterSegments`); Slider facets have no known URL/API encoding.
+ * `droppedFilterSegments`); Slider facets go in the URL hash instead — see
+ * `buildRangeHash`.
  */
 export function buildFilteredCategoryUrl(
   baseUrl: string,
@@ -662,17 +958,143 @@ export function buildFilteredCategoryUrl(
   return new URL(`/${suffix}.htm`, baseUrl).toString();
 }
 
+const RANGE_FILTER_TIMEOUT_MS = 45_000;
+
+interface RangePlan {
+  resolved: ResolvedRange[];
+  /** Requested ranges with no slider step inside them (result is necessarily empty). */
+  empty: AppliedRange[];
+  /** True when `min/max_screen_inches` is enforced by the category's diagonal slider. */
+  screenServerSide: boolean;
+}
+
+interface FilterResponse {
+  d?: { Boxes?: string; Count?: number; Page?: number };
+}
+
+function isFilterCallUrl(url: string): boolean {
+  return /\/Services\/EShopService\.svc\/Filter(?:[?#]|$)/i.test(url);
+}
+
+function safeJsonParse(raw: string | null): unknown {
+  if (!raw) return undefined;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Sorted, de-duplicated slider step values of a range facet. */
+function sliderSteps(group: FacetGroup): number[] {
+  const steps = group.values
+    .map((v) => v.value)
+    .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  return [...new Set(steps)].sort((a, b) => a - b);
+}
+
+function tolerance(x: number): number {
+  return Math.abs(x) * 1e-9 + 1e-12;
+}
+
 /**
- * Screen-diagonal size, parsed from the product name's leading `NN"` token
- * (Alza's naming convention for displays: monitors/TVs/laptops name-prefix
- * the diagonal, e.g. `40" MSI MAG401QR`). Not a real attribute filter —
- * Alza's actual diagonal facet is a client-side-only jQuery UI slider with
- * no URL/API encoding we could find (live-verified 2026-09-27: the search
- * JSON API's `params`/`producers` fields accept values without error but
- * silently don't filter; the category page's slider fires no discoverable
- * XHR/URL on change). This name-prefix heuristic is a pragmatic substitute
- * that works for the product families that actually carry a diagonal in
- * their name; see `search-products.ts`'s description for the caveat.
+ * Snap a requested `[min, max]` (facet units) to the slider's real steps:
+ * `from` = smallest step ≥ min, `to` = largest step ≤ max (an omitted bound
+ * takes the slider's end). Alza's page needs both bounds in the hash — a
+ * missing upper bound was live-observed 2026-10-06 to collapse to the
+ * slider's minimum (zero results) — and snapping to real steps keeps the
+ * page's own index lookup exact. Undefined when no step lies in range.
+ */
+export function snapRange(group: FacetGroup, min?: number, max?: number): ResolvedRange | undefined {
+  const steps = sliderSteps(group);
+  if (steps.length === 0) return undefined;
+  const from = min === undefined ? steps[0] : steps.find((v) => v >= min - tolerance(min));
+  const to = max === undefined ? steps[steps.length - 1] : [...steps].reverse().find((v) => v <= max + tolerance(max));
+  if (from === undefined || to === undefined || from > to) return undefined;
+  return { paramId: group.paramId, name: group.name, from, to };
+}
+
+/**
+ * The category's screen-diagonal slider, recognised by its value labels
+ * being inch sizes (`27 " (68,58 cm)`, `10,5 "`). Unit-agnostic on purpose:
+ * the underlying step value is millimetres on monitors/laptops but inches on
+ * TVs (live-verified 2026-10-06), so the param id and unit can't be assumed.
+ */
+export function findScreenDiagonalGroup(facets: FacetGroup[]): FacetGroup | undefined {
+  return facets.find((g) => {
+    if (g.filterMode !== "range" || g.values.length < 2) return false;
+    const inchLabels = g.values.filter((v) => parseScreenInches(v.description) !== undefined).length;
+    return inchLabels >= Math.ceil(g.values.length * 0.8);
+  });
+}
+
+/** Snap an inch range to the diagonal slider's steps via each step's inch label. */
+export function snapScreenInches(group: FacetGroup, minInches?: number, maxInches?: number): ResolvedRange | undefined {
+  const pairs = group.values
+    .map((v) => ({ value: v.value, inches: parseScreenInches(v.description) }))
+    .filter((x): x is { value: number; inches: number } => typeof x.value === "number" && x.inches !== undefined)
+    .sort((a, b) => a.value - b.value);
+  const inRange = pairs.filter(
+    (x) =>
+      (minInches === undefined || x.inches >= minInches - 1e-9) &&
+      (maxInches === undefined || x.inches <= maxInches + 1e-9)
+  );
+  const first = inRange[0];
+  const last = inRange[inRange.length - 1];
+  if (!first || !last) return undefined;
+  return { paramId: group.paramId, name: group.name, from: first.value, to: last.value };
+}
+
+/** Plain decimal rendering (never exponent notation) for a hash value. */
+export function formatRangeNumber(n: number): string {
+  const s = String(n);
+  if (!/e/i.test(s)) return s;
+  return n.toFixed(12).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+/**
+ * Alza's category-page filter hash for slider facets — the exact shape the
+ * page itself writes after a real mouse drag (live-verified 2026-10-06):
+ * `#f&cud=0&pg={page}&prod=&par{paramId}={from}--{to}`, one `par` entry per
+ * slider, values in the facet's own units.
+ */
+export function buildRangeHash(ranges: Array<{ paramId: number; from: number; to: number }>, page = 1): string {
+  let hash = `#f&cud=0&pg=${Math.max(1, Math.trunc(page))}&prod=`;
+  for (const r of ranges) hash += `&par${r.paramId}=${formatRangeNumber(r.from)}--${formatRangeNumber(r.to)}`;
+  return hash;
+}
+
+/** Ranges actually sent in the page's `EShopService.svc/Filter` request body. */
+export function parseAppliedRanges(body: unknown): AppliedRange[] {
+  const params = (body as { parameters?: unknown } | undefined)?.parameters;
+  if (!Array.isArray(params)) return [];
+  const out: AppliedRange[] = [];
+  for (const raw of params) {
+    const p = raw as { typeId?: unknown; valueFrom?: unknown; valueTo?: unknown };
+    if (typeof p.typeId !== "number") continue;
+    const from = typeof p.valueFrom === "number" ? p.valueFrom : undefined;
+    const to = typeof p.valueTo === "number" ? p.valueTo : undefined;
+    if (from === undefined && to === undefined) continue;
+    out.push({ paramId: p.typeId, from, to });
+  }
+  return out;
+}
+
+function mergeApplied(requested: AppliedRange[], applied: AppliedRange[]): AppliedRange[] {
+  return requested.map((r) => {
+    const a = applied.find((x) => x.paramId === r.paramId);
+    return a ? { ...r, from: a.from, to: a.to } : r;
+  });
+}
+
+/**
+ * Screen-diagonal size, parsed from a leading `NN"` token — used on product
+ * names (Alza's naming convention for displays, e.g. `40" MSI MAG401QR`) and
+ * on diagonal-slider value labels (`27 " (68,58 cm)`). For product names it
+ * is only the fallback when no category is given (or the category has no
+ * diagonal slider): with a category, `min/max_screen_inches` is enforced by
+ * Alza's own diagonal slider filter (live-verified 2026-10-06; see
+ * `buildRangeHash`).
  */
 export function parseScreenInches(name: string): number | undefined {
   const m = name.match(/^(\d+(?:[.,]\d+)?)\s*(?:"|''|″)/);
@@ -758,11 +1180,33 @@ export function pickAdditionalProperties(raw: unknown): ProductParam[] {
   const out: ProductParam[] = [];
   for (const entry of raw) {
     if (!entry || typeof entry !== "object") continue;
-    const name = asString((entry as Record<string, unknown>)["name"]);
-    const value = asString((entry as Record<string, unknown>)["value"]);
+    const name = decodeBasicEntities(asString((entry as Record<string, unknown>)["name"]) ?? "").trim();
+    const value = decodeBasicEntities(asString((entry as Record<string, unknown>)["value"]) ?? "").trim();
     if (name && value) out.push({ name, value });
   }
   return out;
+}
+
+/**
+ * JSON-LD `additionalProperty` strings arrive HTML-escaped (live 2026-10-06:
+ * a monitor diagonal came back as `27 &quot; (68,58 cm)`). Decode the XML
+ * entities plus numeric references instead of dropping them.
+ */
+function decodeBasicEntities(s: string): string {
+  return s
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (m, n: string) => codePoint(m, Number(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (m, n: string) => codePoint(m, parseInt(n, 16)))
+    .replace(/&amp;/g, "&");
+}
+
+/** Numeric reference -> character; an out-of-range reference is left as-is instead of throwing. */
+function codePoint(raw: string, n: number): string {
+  return Number.isInteger(n) && n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : raw;
 }
 
 function pickBreadcrumbs(raw: unknown): string[] {
@@ -797,7 +1241,7 @@ function stripSchema(v: string | undefined): string | undefined {
 function stripHtmlEntities(s: string): string {
   return s
     .replace(/&amp;/g, "&")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCharCode(parseInt(n, 16)))
+    .replace(/&#(\d+);/g, (m, n: string) => codePoint(m, Number(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (m, n: string) => codePoint(m, parseInt(n, 16)))
     .replace(/&[a-z]+;/g, "");
 }

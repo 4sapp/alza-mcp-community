@@ -33,7 +33,7 @@ async function listTools(): Promise<{ name: string; annotations: Record<string, 
   }
 }
 
-const CATALOG = ["search_products", "get_product", "get_product_reviews", "find_pickup_points", "list_categories"];
+const CATALOG = ["search_products", "get_product", "compare_products", "get_product_reviews", "recommend_alternatives", "find_pickup_points", "list_categories", "get_deals", "autocomplete"];
 
 const DESTRUCTIVE = new Set([
   "place_order",
@@ -51,15 +51,15 @@ const DESTRUCTIVE = new Set([
 const NO_OPEN_WORLD = new Set(["account_status", "prepare_mutation", "list_toolsets", "set_toolset"]);
 
 describe("tool annotation contract", () => {
-  it("serves exactly 59 tools with bare, snake_case names (57 domain tools + list_toolsets + set_toolset, all toolsets enabled)", async () => {
+  it("serves exactly 63 tools with bare, snake_case names (61 domain tools + list_toolsets + set_toolset, all toolsets enabled)", async () => {
     const tools = await listTools();
-    expect(tools).toHaveLength(59);
+    expect(tools).toHaveLength(63);
     for (const t of tools) {
       expect(t.name).toMatch(/^[a-z][a-z0-9_]*$/);
     }
   });
 
-  it("marks all 5 catalog tools R+I+O, never destructive", async () => {
+  it("marks all 9 catalog tools R+I+O, never destructive", async () => {
     const tools = await listTools();
     for (const name of CATALOG) {
       const a = tools.find((t) => t.name === name)?.annotations ?? {};

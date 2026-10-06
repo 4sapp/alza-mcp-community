@@ -16,7 +16,7 @@ async function clientAndServer() {
 }
 
 describe("progressive tool disclosure (toolsets)", () => {
-  it("every one of the 57 domain tools is assigned to exactly one toolset", () => {
+  it("every one of the 61 domain tools is assigned to exactly one toolset", () => {
     const seen = new Map<string, string>();
     for (const def of TOOLSET_DEFS) {
       for (const name of def.tools) {
@@ -24,10 +24,10 @@ describe("progressive tool disclosure (toolsets)", () => {
         seen.set(name, def.id);
       }
     }
-    expect(seen.size).toBe(57);
+    expect(seen.size).toBe(61);
   });
 
-  it("exposes only the catalog + auth toolsets (10 tools) plus list_toolsets/set_toolset by default", async () => {
+  it("exposes only the catalog + auth toolsets plus list_toolsets/set_toolset by default", async () => {
     const { client, built } = await clientAndServer();
     try {
       const res = await client.listTools();
@@ -92,7 +92,7 @@ describe("progressive tool disclosure (toolsets)", () => {
     const { client, built } = await clientAndServer();
     try {
       await client.callTool({ name: "set_toolset", arguments: { id: "all", enabled: true } });
-      expect((await client.listTools()).tools).toHaveLength(59);
+      expect((await client.listTools()).tools).toHaveLength(63);
 
       await client.callTool({ name: "set_toolset", arguments: { id: "all", enabled: false } });
       const names = (await client.listTools()).tools.map((t) => t.name).sort();
