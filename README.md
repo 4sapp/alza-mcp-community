@@ -22,6 +22,13 @@ Ask: *"Find me the best pro-grade wheel cleaner under 600 Kč and tell me where 
 
 ## Quick install
 
+### One-click install
+
+[![Install in Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=alza&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImFsemEtbWNwIl19)
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_alza--mcp-0098FF?logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=alza&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22alza-mcp%22%5D%7D)
+
+Both buttons install the same thing as the manual config below: `npx -y alza-mcp`, no environment variables, no secrets. The first tool call downloads Playwright's headless Chromium (~92 MB, ~30 s); every call after that is a few seconds. For Claude Desktop, download the one-click `alza-mcp-<version>.mcpb` bundle from the [latest release](https://github.com/lukabudik/alza-mcp/releases/latest) (attached from the next release onward) and open it, or use the JSON config below.
+
 ### Claude Code
 
 ```bash
