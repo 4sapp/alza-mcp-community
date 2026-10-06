@@ -27,7 +27,7 @@ const inputSchema = {
     .array(z.enum(["alzabox", "branch"]))
     .optional()
     .describe(
-      "Restrict to specific pickup-point types. 'branch' = brick-and-mortar AlzaShop with staff (currently the only type that returns results). 'alzabox' = self-service parcel locker — accepted, but returns nothing: Alza's AlzaBox lookup API is checkout-cart-scoped (requires an orderId/groupId from an active cart), not a standalone geo endpoint. For real AlzaBox results, use `add_to_cart` + `delivery_options` + `web_pickup_places` instead — see that tool's description. Default: both."
+      "Restrict to specific pickup-point types. 'alzabox' = self-service AlzaBox parcel lockers (live list from Alza's public locker map, no cart needed). 'branch' = brick-and-mortar AlzaShop showrooms with staff. Default: both, merged and sorted by distance."
     ),
 };
 
@@ -39,29 +39,29 @@ export function createFindPickupPointsTool(deps: ToolDeps): RegisterableTool {
       return server.registerTool(
         name,
         {
-          title: "Find Alza showrooms",
+          title: "Find AlzaBox lockers and Alza showrooms",
           description:
-            "Find Alza brick-and-mortar showrooms (AlzaShop) near a Czech/Slovak postal code: name, address, distance, and opening hours. " +
-            "Use when the user wants to browse in person, get on-site advice, or find where an AlzaShop branch is. " +
-            "Note: `types` accepts `alzabox`, but only `branch` results are returned here — Alza's AlzaBox lookup is checkout-cart-scoped (its API 400s without an orderId/groupId from an active cart), not a standalone postal-code search. " +
-            "For real AlzaBox locker results: `add_to_cart` a product, call `delivery_options`, take the AlzaBox delivery option's `deliveryOption.href` query params (`orderId`, `groupId`), then call `web_pickup_places` with those plus `latitude`/`longitude` and `types: [1]` — results come back distance-sorted. " +
-            "Also note: not every product is AlzaBox-eligible — Alza excludes large items (observed: 34\"+ monitors) from the AlzaBox network entirely, routing them to a small set of oversized-item pickup points instead; `delivery_options` reveals this per product. " +
-            "Read-only. Example: `find_pickup_points({postal_code: '110 00', radius_km: 10})`",
+            "Find AlzaBox parcel lockers and AlzaShop showrooms near a Czech/Slovak postal code: name, address, GPS, and distance, sorted nearest first. Showrooms also include opening hours. " +
+            "Use when the user asks where the nearest AlzaBox or Alza store is, or where they could pick up an order. No cart or login needed. " +
+            "Lockers come from Alza's public locker map and are cached; each has a `parcelShopId`. Locker opening hours are not part of that list. " +
+            "Important: a standalone locker list can't tell whether a given product fits. Alza excludes large items (observed: 34\"+ monitors) from the whole AlzaBox network and routes them to a few oversized-item pickup points. " +
+            "To check a specific product, add it to the cart and read `delivery_options` (or `web_pickup_places`, which is cart-scoped). " +
+            "Read-only. Example: `find_pickup_points({postal_code: '500 02', types: ['alzabox'], limit: 5})`",
           inputSchema,
           outputSchema: OUTPUT_SCHEMAS["find_pickup_points"],
           annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
         },
         async (args) =>
           errorWrap(name, async () => {
-            const points = await deps.pickup.findPickupPoints({
+            const { points, warnings } = await deps.pickup.findPickupPoints({
               postalCode: args.postal_code,
               radiusKm: args.radius_km,
               limit: args.limit,
               types: args.types,
             });
             return {
-              content: [{ type: "text", text: formatPickupPoints(points) }],
-              structuredContent: { points },
+              content: [{ type: "text", text: formatPickupPoints(points, warnings) }],
+              structuredContent: warnings.length > 0 ? { points, warnings } : { points },
             };
           })
       );

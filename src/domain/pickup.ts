@@ -6,20 +6,33 @@ import type { Locale } from "../infra/locale.js";
 import type { PickupPoint } from "./types.js";
 
 /**
- * AlzaBox locker discovery is not implemented in this release. This is not
- * just an omission: live-verified 2026-09-26, `GET /api/personalPickup/v1/places`
- * (and `pickupPlaceForm`) reject a request with no `orderId`/`groupId` with
- * HTTP 400 `{"OrderId":["The OrderId field is required."],"GroupId":[...]}`
- * — the endpoint is checkout-cart-scoped, not a standalone geo lookup. Those
- * ids only exist once a product is in the mobile cart and `delivery_options`
- * has registered a delivery group; a bare postal-code search has neither.
- * Getting real AlzaBox results therefore requires the live checkout-cart
- * flow (`add_to_cart` → `delivery_options` → `web_pickup_places` with the
- * `orderId`/`groupId` parsed from the AlzaBox delivery option's
- * `deliveryOption.href`), not a read-only geo endpoint — see
- * `find_pickup_points`'s description and docs/gap-analysis.md G3 for the
- * worked sequence. This module returns AlzaShop showrooms from the curated
- * branch dataset only.
+ * Pickup-point discovery: AlzaBox parcel lockers (live) + AlzaShop showrooms
+ * (curated branch dataset), merged and sorted by distance from a geocoded
+ * postal code.
+ *
+ * AlzaBox source — `GET {baseUrl}/api/salesNetwork/v1/places` (live-verified
+ * 2026-10-06, docs/gap-analysis.md "AlzaBox locker discovery"). This is the
+ * public "sales network" map behind https://www.alza.cz/alzabox and
+ * /seznam-prodejen-a-alzaboxu (`salesNetworkMap` article component →
+ * `/api/salesNetwork/v1/salesNetworkForm` → its `placesForm`). Unlike the
+ * checkout-scoped `/api/personalPickup/v1/places` (HTTP 400 without an
+ * `orderId`/`groupId`, verified 2026-09-26 and again 2026-10-06), it needs no
+ * cart, no login and no delivery group. `types[0]=1` selects AlzaBoxes,
+ * `ordering=0` sorts by distance from `latitude`/`longitude`, and `limit` is
+ * capped at 100 by the API (HTTP 400 above that). The upstream ignores
+ * `radius`, so the radius is applied locally.
+ *
+ * One request returns the 100 nearest lockers, which always covers the
+ * tool's `limit` (max 50). That list is cached per geocoded centre for
+ * {@link LOCKER_TTL_MS}, so repeated queries for the same postal code don't
+ * hit Alza again, and no call ever pages through the whole ~4000-locker
+ * network. The list carries name, address and GPS but not opening hours
+ * (those live in the per-place detail, `/places/{deliveryId}/{parcelShopId}`,
+ * which isn't fetched to keep this at one request).
+ *
+ * Product fit: the list says nothing about whether a given product fits a
+ * locker. Alza routes large items (observed: 34"+ monitors) away from the
+ * whole AlzaBox network; only the cart flow (`delivery_options`) knows.
  */
 export interface FindPickupOptions {
   postalCode: string;
@@ -29,16 +42,61 @@ export interface FindPickupOptions {
   types?: Array<"alzabox" | "branch">;
 }
 
-export class Pickup {
-  constructor(private readonly locale: Locale) {}
+export interface FindPickupResult {
+  points: PickupPoint[];
+  /** Non-fatal problems, e.g. lockers unavailable while branches were returned. */
+  warnings: string[];
+}
 
-  async findPickupPoints(opts: FindPickupOptions): Promise<PickupPoint[]> {
+/** GET a JSON document (absolute URL). Server wiring injects the
+ * Cloudflare-capable transport chain; plain fetch gets a 403 bot wall. */
+export type JsonGet = (url: string) => Promise<unknown>;
+
+export interface PickupDeps {
+  getJson?: JsonGet;
+  /** Override the postal-code geocoder (tests). */
+  geocode?: (postalCode: string) => Promise<{ lat: number; lng: number }>;
+}
+
+/** Locker list cache lifetime. The network changes rarely. */
+export const LOCKER_TTL_MS = 12 * 60 * 60 * 1000;
+/** Upstream page-size cap on `/api/salesNetwork/v1/places`. */
+const LOCKER_PAGE = 100;
+const ALZABOX_TYPE = 1;
+
+export interface AlzaBoxLocker {
+  id: string;
+  deliveryId?: number;
+  parcelShopId?: number;
+  name: string;
+  address: string;
+  city: string;
+  postalCode?: string;
+  latitude: number;
+  longitude: number;
+}
+
+export class Pickup {
+  private readonly getJson: JsonGet;
+  private readonly lockerCache = new TtlCache<string, AlzaBoxLocker[]>(LOCKER_TTL_MS, 200);
+
+  constructor(
+    private readonly locale: Locale,
+    private readonly deps: PickupDeps = {}
+  ) {
+    this.getJson = deps.getJson ?? plainGetJson;
+  }
+
+  async findPickupPoints(opts: FindPickupOptions): Promise<FindPickupResult> {
     const radius = opts.radiusKm ?? 15;
     const limit = Math.min(50, Math.max(1, opts.limit ?? 10));
     const types = new Set(opts.types ?? ["alzabox", "branch"]);
 
-    const center = await this.geocodePostalCode(opts.postalCode);
+    const center = this.deps.geocode
+      ? await this.deps.geocode(opts.postalCode)
+      : await this.geocodePostalCode(opts.postalCode);
     const results: PickupPoint[] = [];
+    const warnings: string[] = [];
 
     if (types.has("branch")) {
       const branches = this.branchesNear(center, radius)
@@ -46,10 +104,37 @@ export class Pickup {
         .map((b) => seedToPoint(b, distanceKm(center, { lat: b.latitude, lng: b.longitude })));
       results.push(...branches);
     }
-    // AlzaBox lockers — not implemented in this release (see module JSDoc).
+
+    if (types.has("alzabox")) {
+      try {
+        const lockers = await this.lockersNear(center);
+        for (const l of lockers) {
+          const d = distanceKm(center, { lat: l.latitude, lng: l.longitude });
+          if (d <= radius) results.push(lockerToPoint(l, d));
+        }
+      } catch (err) {
+        // Lockers alone were asked for: nothing useful to return.
+        if (!types.has("branch")) throw err;
+        warnings.push(`AlzaBox lockers could not be loaded (${errorMessage(err)}); showing showrooms only.`);
+      }
+    }
 
     results.sort((a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
-    return results.slice(0, limit);
+    return { points: results.slice(0, limit), warnings };
+  }
+
+  /** The 100 AlzaBoxes nearest to `center`, cached per ~100 m grid cell. */
+  private async lockersNear(center: { lat: number; lng: number }): Promise<AlzaBoxLocker[]> {
+    const lat = center.lat.toFixed(3);
+    const lng = center.lng.toFixed(3);
+    const key = `${this.locale.baseUrl}|${lat},${lng}`;
+    return this.lockerCache.memoize(key, async () => {
+      const url =
+        `${this.locale.baseUrl}/api/salesNetwork/v1/places` +
+        `?types%5B0%5D=${ALZABOX_TYPE}&latitude=${lat}&longitude=${lng}` +
+        `&ordering=0&limit=${LOCKER_PAGE}&offset=0`;
+      return parseSalesNetworkPlaces(await this.getJson(url));
+    });
   }
 
   private branchesNear(center: { lat: number; lng: number }, radius: number): BranchSeed[] {
@@ -92,6 +177,81 @@ export class Pickup {
       return { lat: Number(first.lat), lng: Number(first.lon) };
     });
   }
+}
+
+interface RawPlace {
+  id?: unknown;
+  deliveryId?: unknown;
+  parcelShopId?: unknown;
+  type?: unknown;
+  typeText?: unknown;
+  name?: unknown;
+  addressText?: unknown;
+  gpsPosition?: { latitude?: unknown; longitude?: unknown } | null;
+}
+
+/**
+ * Parse a `/api/salesNetwork/v1/places` page into AlzaBox lockers. Entries
+ * that aren't AlzaBoxes or lack GPS are dropped. `addressText` looks like
+ * "Hradecká 1151/9, 50003 Hradec Králové": the part after the last comma is
+ * "<PSČ> <city>".
+ */
+export function parseSalesNetworkPlaces(json: unknown): AlzaBoxLocker[] {
+  const value = (json as { pickupPlaces?: { value?: unknown } } | null)?.pickupPlaces?.value;
+  if (!Array.isArray(value)) {
+    throw new UpstreamError(502, "salesNetwork places: unexpected response shape (no pickupPlaces.value)");
+  }
+  const out: AlzaBoxLocker[] = [];
+  for (const raw of value as RawPlace[]) {
+    const isBox = raw.type === ALZABOX_TYPE || raw.typeText === "AlzaBox";
+    const lat = Number(raw.gpsPosition?.latitude);
+    const lng = Number(raw.gpsPosition?.longitude);
+    if (!isBox || !Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    const addressText = typeof raw.addressText === "string" ? raw.addressText.trim() : "";
+    const comma = addressText.lastIndexOf(",");
+    const street = comma >= 0 ? addressText.slice(0, comma).trim() : addressText;
+    const tail = comma >= 0 ? addressText.slice(comma + 1).trim() : "";
+    const m = /^(\d{3})\s?(\d{2})\s+(.+)$/.exec(tail);
+    out.push({
+      id: typeof raw.id === "string" ? raw.id : String(raw.parcelShopId ?? raw.id ?? ""),
+      deliveryId: typeof raw.deliveryId === "number" ? raw.deliveryId : undefined,
+      parcelShopId: typeof raw.parcelShopId === "number" ? raw.parcelShopId : undefined,
+      name: typeof raw.name === "string" && raw.name.trim() ? raw.name.replace(/\s+/g, " ").trim() : "AlzaBox",
+      address: street,
+      city: m?.[3] ?? tail,
+      postalCode: m ? `${m[1]} ${m[2]}` : undefined,
+      latitude: lat,
+      longitude: lng,
+    });
+  }
+  return out;
+}
+
+function lockerToPoint(l: AlzaBoxLocker, distanceKm: number): PickupPoint {
+  return {
+    type: "alzabox",
+    id: l.id,
+    name: /alza/i.test(l.name) ? l.name : `AlzaBox ${l.name}`,
+    address: l.address,
+    city: l.city,
+    postalCode: l.postalCode,
+    latitude: l.latitude,
+    longitude: l.longitude,
+    distanceKm,
+    parcelShopId: l.parcelShopId,
+    deliveryId: l.deliveryId,
+    note: "Self-service parcel locker; opening hours are not in Alza's locker list.",
+  };
+}
+
+async function plainGetJson(url: string): Promise<unknown> {
+  const res = await undiciFetch(url, { headers: { accept: "application/json" } });
+  if (!res.ok) throw new UpstreamError(res.status, `GET ${url} failed`);
+  return res.json();
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 function seedToPoint(seed: BranchSeed, distanceKm: number): PickupPoint {

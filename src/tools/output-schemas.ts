@@ -282,9 +282,12 @@ export const FIND_PICKUP_POINTS_OUTPUT = z
           distanceKm: z.number().optional(),
           openingHours: z.string().optional(),
           note: z.string().optional(),
+          parcelShopId: z.number().optional(),
+          deliveryId: z.number().optional(),
         })
         .passthrough(),
     ),
+    warnings: z.array(z.string()).optional(),
   })
   .passthrough();
 
