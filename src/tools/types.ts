@@ -2,6 +2,7 @@ import type { McpServer, RegisteredTool } from "@modelcontextprotocol/sdk/server
 import type { Catalog } from "../domain/catalog.js";
 import type { Reviews } from "../domain/reviews.js";
 import type { Pickup } from "../domain/pickup.js";
+import type { Alternatives } from "../domain/alternatives.js";
 import type { MobileAccount } from "../domain/mobile-account.js";
 
 export interface ToolDeps {
@@ -9,6 +10,7 @@ export interface ToolDeps {
   reviews: Reviews;
   pickup: Pickup;
   mobileAccount: MobileAccount;
+  alternatives: Alternatives;
 }
 
 export interface ToolResult {
