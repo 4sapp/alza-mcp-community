@@ -314,6 +314,55 @@ export const LIST_CATEGORY_FILTERS_OUTPUT = z
   })
   .passthrough();
 
+/** `pc_build_check` / `pc_build_suggest` result (issue #15, 2026-10-06). */
+const SPEC_VALUE = z.object({ value: z.unknown(), source: z.string(), raw: z.string() }).passthrough();
+export const PC_BUILD_OUTPUT = z
+  .object({
+    parts: z.array(
+      z
+        .object({
+          role: z.string(),
+          code: z.string(),
+          name: z.string(),
+          url: z.string(),
+          price: z.number().optional(),
+          currency: z.string(),
+          availability: z.string().optional(),
+          inStock: z.boolean().nullable(),
+          /** Normalised specs, each with the Czech spec row it came from. */
+          specs: z.record(z.string(), SPEC_VALUE),
+          specsFetched: z.boolean(),
+          origin: z.enum(["fixed", "suggested"]).optional(),
+        })
+        .passthrough(),
+    ),
+    total: z.number(),
+    currency: z.string(),
+    unpriced: z.array(z.string()),
+    verdicts: z.array(
+      z
+        .object({
+          rule: z.string(),
+          title: z.string(),
+          verdict: z.enum(["pass", "warn", "fail", "unknown", "not_applicable"]),
+          detail: z.string(),
+          values: z.record(z.string(), z.unknown()),
+        })
+        .passthrough(),
+    ),
+    overall: z.enum(["compatible", "incompatible", "needs_review"]),
+    powerEstimate: z.record(z.string(), z.unknown()).optional(),
+    notes: z.array(z.string()),
+    detailFetches: z.number().int(),
+    categoryPages: z.number().int(),
+    budget: z.number().optional(),
+    withinBudget: z.boolean().optional(),
+    profile: z.string().optional(),
+    allocation: z.record(z.string(), z.number()).optional(),
+  })
+  .passthrough()
+  .describe("PC build: parts with live price/stock and normalised specs, total, one verdict per compatibility rule with the values compared, power estimate, notes.");
+
 /** Map tool name → its output schema. Kept in one place so the registration
  * contract test can assert coverage per tool. */
 export const OUTPUT_SCHEMAS: Record<string, z.AnyZodObject> = {
@@ -376,4 +425,7 @@ export const OUTPUT_SCHEMAS: Record<string, z.AnyZodObject> = {
   phone_change: ACCOUNT_MUTATION,
   email_change: ACCOUNT_MUTATION,
   delete_account: ACCOUNT_MUTATION,
+  // PC builder (issue #15, 2026-10-06)
+  pc_build_check: PC_BUILD_OUTPUT,
+  pc_build_suggest: PC_BUILD_OUTPUT,
 };

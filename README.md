@@ -77,7 +77,7 @@ That's the agent calling four MCP tools across two parallel searches and synthes
 
 ## What it does
 
-With 54 domain tools (56 including `list_toolsets` and `set_toolset`), listing every tool on every `tools/list` call would front-load an agent's context with dozens of tools it may never touch in a given conversation. So they're grouped into **toolsets**, and only two are enabled by default, exposing 11 domain tools plus the two toolset controls:
+With 56 domain tools (58 including `list_toolsets` and `set_toolset`), listing every tool on every `tools/list` call would front-load an agent's context with dozens of tools it may never touch in a given conversation. So they're grouped into **toolsets**, and only two are enabled by default, exposing 11 domain tools plus the two toolset controls:
 
 | Toolset | Enabled by default? | Covers |
 |---|---|---|
@@ -88,6 +88,7 @@ With 54 domain tools (56 including `list_toolsets` and `set_toolset`), listing e
 | `orders_and_payments` | — | Order history, payment methods, after-order payments, claims, documents |
 | `reviews_and_subscriptions` | — | Reviews, complaints, AlzaSubscription, attachments, EAN lookup |
 | `chat` | — | Alza's in-app chatbot |
+| `pc_builder` | — | Compatibility-checked PC parts lists: `pc_build_check`, `pc_build_suggest` |
 | `advanced_raw` | — | `mobile_read`, the untyped escape hatch |
 
 Call **`list_toolsets`** to see every group and **`set_toolset({id, enabled: true})`** to turn one on before using its tools — e.g. enable `basket_and_checkout` before adding something to a cart. This is standard MCP progressive disclosure (`RegisteredTool.enable()`/`.disable()`, which fires the normal `tools/list_changed` notification) — no functionality is removed, it's just not all visible at once.
@@ -103,6 +104,13 @@ Catalog tools:
 | **`list_category_filters`** | Category brands (`brands[].valueId`) and attribute facets with live ids/counts — use `producer_ids` or `filters` with `category_id`; unsupported URL filters return an error |
 | **`list_categories`** | Top-level categories, or real subcategories when `parent_id` is supplied — feed the returned ids into `search_products` |
 | **`product_by_ean`** | Looks up catalog products by barcode/EAN (the app's camera barcode-scan API, AT3; read-only, no account required; enable `reviews_and_subscriptions`) |
+
+PC builder tools (enable `pc_builder`):
+
+| Tool | Purpose |
+|---|---|
+| **`pc_build_check`** | Checks a parts list (Alza codes). Checks socket, RAM generation/slots, PSU wattage + headroom, GPU length and cooler height/radiator vs case, form factors, and display output. Returns prices, total, stock, and one verdict per rule with the spec values used |
+| **`pc_build_suggest`** | Proposes a compatible build within a CZK budget from Alza's real component categories (gaming / workstation / office, pinned `fixed_parts`, bounded detail fetches) |
 
 Account and checkout tools:
 

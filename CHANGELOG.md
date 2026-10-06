@@ -6,10 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- PC builder ([#15](https://github.com/lukabudik/alza-mcp/issues/15)): new `pc_builder` toolset, off by default, with two tools.
+  - **`pc_build_check`** fetches the specs of a parts list and returns live prices, the total and stock. It gives one verdict per compatibility rule (pass / warn / fail / unknown / not_applicable), with the spec values compared and the Czech spec row each came from. The rules: CPU socket ↔ motherboard, RAM generation / DIMM type / slots ↔ motherboard, RAM ↔ CPU, PSU wattage vs estimated draw + headroom, GPU length ↔ case, cooler height or radiator size ↔ case, cooler ↔ CPU socket, motherboard and PSU form factor ↔ case, and display output.
+  - **`pc_build_suggest`** proposes a compatible build within a CZK budget (gaming / workstation / office profiles, `fixed_parts`, `cpu_vendor`). It picks from Alza's real component categories, and its product-detail fetches are bounded by `max_detail_fetches`.
+  - The rules are pure, unit-tested functions in `src/domain/pc-build.ts`. Live evidence: `docs/live-evidence/2026-10-06-pc-builder.md`.
+- `Catalog.getProductSpecs`: the same page load as `get_product`, but it keeps up to 80 spec rows. `get_product` still returns at most 30.
+
 ### Changed
 - `auth_exchange` accepts the full `alza://identity?code=…&state=…` redirect URL as `code` and reads `state` from it. Passing `state` is now optional in that case. The `auth_start` description and README explain the misleading "Při přihlášení došlo k chybě." message on desktop browsers (a client-side timer, not a failed sign-in) and how to get the redirect URL from DevTools ([#29](https://github.com/lukabudik/alza-mcp/issues/29)).
 
 ### Fixed
+- `get_product` no longer caches a product with an empty spec list when the spec table had not rendered by the `load` event (seen live on 2026-10-06 for a PSU page). If neither the DOM table nor the JSON-LD `additionalProperty` has rows, it waits up to 4 s for the table and reads the page again.
 - OAuth login from the npm package ([#29](https://github.com/lukabudik/alza-mcp/issues/29), [#30](https://github.com/lukabudik/alza-mcp/pull/30), thanks [@jankryh](https://github.com/jankryh)). `identity.alza.cz` is behind the same Cloudflare check as `www`, and `auth_start`/`auth_exchange` were getting HTTP 403. The package now ships the Chrome-fingerprint sidecar (`scripts/cf-transport.py`, `scripts/ensure-cf-venv.sh`) and the auth scripts, and `postinstall` sets up the `curl_cffi` venv when `python3` is present. OAuth discovery, token exchange and refresh go through the sidecar, and `URLSearchParams` bodies no longer skip it. If the sidecar is unavailable, OAuth uses plain fetch. If discovery fails, it uses the APK default endpoints instead of stopping.
 
 ## [0.3.1] — 2026-10-05
