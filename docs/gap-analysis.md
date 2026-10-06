@@ -514,3 +514,9 @@ about *how* the working tools relate to each other:
   product-page-level signal to build this from; `delivery_options` against a
   live cart remains the only way to learn AlzaBox eligibility. Not promoted
   to a numbered G-item — closed as a dead end, not deferred.
+
+## Search suggestions / autocomplete (issue #14, 2026-10-06)
+
+- **Endpoint** `GET https://webapi.alza.cz/api/anonymous/search/whisperer/v1/whisper?country=CZ&visitor={guid}&searchTerm={q}` — `live-verified` 2026-10-06 (browser capture + plain-HTTP replay via the CF sidecar, no auth). Companion `.../emptySearch` for the empty-box dropdown. Details in `docs/mobile-endpoint-coverage.md` C15/C16.
+- **Exposure** typed read-only `autocomplete` tool (catalog toolset). APK-side equivalent not separately mapped (`unresolved`); the response carries app-style `appLink` actions (`catalogSearch`, `catalogCategory`, `catalogProductDetail`, `webView`), so the mobile app evidently consumes the same route.
+- **Observed limits** ≤5 items per section; `phrases` is often empty for multi-word queries (categories/products still returned); the web UI sends no token for this call.

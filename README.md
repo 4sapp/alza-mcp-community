@@ -102,6 +102,7 @@ Catalog tools:
 | **`find_pickup_points`** | Nearest brick-and-mortar AlzaShop showrooms by postal code |
 | **`list_category_filters`** | Real per-category attribute filters (brand, contrast, panel type, resolution, interfaces, …) with live values/counts — feed the results into `search_products`'s `filters`/`producer_ids` |
 | **`list_categories`** | 20 top-level Alza categories with ids — feed `category_id` to `search_products` to narrow |
+| **`autocomplete`** | Search-box suggestions over plain HTTP (no page render): phrases, categories, brands and products with ids/codes — refine a messy Czech query before `search_products` |
 | **`product_by_ean`** | Looks up catalog products by barcode/EAN (the app's camera barcode-scan API, AT3; read-only, no account required) |
 
 Account and checkout tools:
