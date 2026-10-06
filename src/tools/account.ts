@@ -80,7 +80,9 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           description:
             "Start an OAuth 2.0 PKCE sign-in for the Alza mobile API: returns an authorization URL plus a state value. " +
             "Use when `account_status` reports no loaded token, or when account tools start failing with authentication errors. " +
-            "Flow: open the returned authorization URL in a browser, sign in to Alza, the app redirects to `alza://identity?code=...&state=...` — then call `auth_exchange` with that code and this state. " +
+            "Flow: open the returned authorization URL in a browser, sign in to Alza, the app redirects to `alza://identity?code=...&state=...` — then call `auth_exchange` with that redirect URL (or its code and this state). " +
+            "Desktop browsers cannot open the `alza://` scheme, so the page appears to stall and after ~40 s shows \"Při přihlášení došlo k chybě.\" — that message is a client-side timer, not a failed sign-in. " +
+            "Tell the user to open DevTools before signing in (Network tab with \"Preserve log\" on) and copy the `alza://identity?code=...` URL from the redirect's `Location` header, or from the Console error about failing to launch `alza://`. The code is short-lived, so exchange it promptly. " +
             "This call only creates a local PKCE session: the user's credentials never enter the MCP and nothing changes on Alza's side. " +
             "Do not call it repeatedly for one sign-in — each call supersedes the previous state.",
           inputSchema: {},
@@ -101,12 +103,12 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           description:
             "Complete the OAuth 2.0 PKCE sign-in: exchange the authorization code for mobile API tokens and load them into this server. " +
             "Use immediately after the user finishes the `auth_start` flow in the browser. " +
-            "Pass exactly the `code` and `state` from the `alza://identity` redirect — never a password and never a refresh token here. " +
+            "Pass the whole `alza://identity?code=...&state=...` redirect URL as `code` (state is then read from it), or the bare `code` plus `state` — never a password and never a refresh token here. " +
             "Fails if the state does not match a pending `auth_start` session (start over from `auth_start` in that case). " +
             "Side effect: replaces the token set currently loaded in this process; afterwards account tools such as `cart`, `profile`, and `order` are authenticated.",
           inputSchema: {
-            code: z.string().min(1).describe("Authorization code from the `alza://identity` redirect (the `code` query parameter)."),
-            state: z.string().min(1).describe("State value returned by `auth_start`; must match the pending PKCE session exactly."),
+            code: z.string().min(1).describe("Authorization code from the `alza://identity` redirect (the `code` query parameter), or the full redirect URL."),
+            state: z.string().min(1).optional().describe("State value returned by `auth_start`; must match the pending PKCE session exactly. Optional when `code` is the full redirect URL."),
           },
           annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["auth_exchange"],
