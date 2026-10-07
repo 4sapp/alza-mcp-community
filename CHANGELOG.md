@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-10-07
+
+Security hardening of the account and checkout path, a QA pass over the whole server (about 60 findings fixed), link attribution, `report_issue`, proxy support and `--setup-cf`.
+
+**Behaviour changes to know about:**
+- Confirmation tokens are single-use, bound to the action and payload, expire after a few minutes, and a failed attempt spends the token (prepare a new one to retry).
+- Product, category and suggestion links returned by the catalog tools carry `utm_source=alza-mcp-community&utm_medium=mcp`.
+- `search_products` accepts `page` 1–50 and one `producer_ids` value; unknown category ids return an error.
+- Tools marked read-only no longer run GET-based changes; a token for one AppAction tool no longer authorises other routes.
+
 ### Added
 - `alza-mcp --setup-cf` ([#80](https://github.com/lukabudik/alza-mcp/issues/80)): a cross-platform, Node-only command that creates the optional `.venv-cf` (finds `py -3`/`python3`/`python`, `python -m venv`, installs `curl_cffi>=0.16,<0.17`, verifies the import, exits 0/1; idempotent; removes a half-built venv; honours `ALZA_MCP_SKIP_VENV=1`) for `.mcpb`, `--ignore-scripts` and Windows installs where the bash script cannot run. The venv lives in the package copy that runs the command, so the `.mcpb` bundle needs `ALZA_CF_PYTHON` pointed at the printed interpreter. Nothing is installed automatically; when the sidecar is unavailable the server logs one info-level hint pointing to `npx -y alza-mcp --setup-cf`. Unit-tested with mocked processes, including Windows paths; still not run on a real Windows machine.
 - Alza storefront links returned by the catalog tools (`search_products`, `get_product`, `compare_products`, `recommend_alternatives`, `get_deals`, `autocomplete`, `list_categories`, `pc_build_check`, `pc_build_suggest`, `watchdog_list` and the `alza://product/{code}` resource) now carry `utm_source=alza-mcp-community&utm_medium=mcp`, at Alza's request, so Alza can attribute visits from the MCP. The parameters are added at output time on copies, so cached and internally navigated URLs stay untagged. Only `www.alza.*` storefront hosts are tagged; OAuth, API, PDF, image and payment URLs and the account/checkout passthrough tools are not. Live-checked 2026-10-07: tagged search, detail and autocomplete links open the right product page (HTTP 200).
