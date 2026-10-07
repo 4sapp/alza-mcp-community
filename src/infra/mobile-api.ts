@@ -700,7 +700,15 @@ export class MobileApi {
 
   async anonymousOrders(invoiceNumber: string): Promise<unknown> { return this.request(`/api/anonymous/v1/orders?invoiceNumber=${encodeURIComponent(invoiceNumber)}`); }
   async anonymousOrder(orderId: string): Promise<unknown> { return this.request(`/api/anonymous/v1/orders/${encodeURIComponent(orderId)}`); }
-  async userOrder(userFlag: number, orderId: string, initialCreated = false): Promise<unknown> { return this.request(`/api/users/${userFlag}/v1/orders/${encodeURIComponent(orderId)}${initialCreated ? "?initialCreated=1" : ""}`); }
+  /** OR1 (corrected 2026-10-07, issue #60): the path segment is the numeric
+   * Alza user id — the same `/api/users/{userId}/v1/orders/…` family as the
+   * archive/search reads, whose `self.href` links point here. The old code put
+   * the APK's 0/1 scope flag in that segment, which Alza answers with 403. */
+  async userOrder(userId: string, orderId: string, initialCreated = false): Promise<unknown> {
+    const query = new URLSearchParams({ country: "CZ" });
+    if (initialCreated) query.set("initialCreated", "1");
+    return this.request(`/api/users/${encodeURIComponent(userId)}/v1/orders/${encodeURIComponent(orderId)}?${query}`);
+  }
   async orderPart(orderId: string, partId: string): Promise<unknown> { return this.request(`/api/v1/orders/${encodeURIComponent(orderId)}/${encodeURIComponent(partId)}`); }
 
   /** OR11 (order cancellation, live-verified 2026-09-06/2026-09-16 and again
@@ -890,6 +898,21 @@ export class MobileApi {
     const q = new URLSearchParams({ hideCancelledOrders: hideCancelledOrders ? "true" : "false", productFilterType: "0" });
     if (limit !== undefined) q.set("limit", String(limit));
     return this.request(`/api/users/${encodeURIComponent(userId)}/v1/orders/archive?${q.toString()}`);
+  }
+
+  /** K1 (typed, issue #72): warranty-claim lists. The `warrantyClaims` section
+   * links `activeWarrantyClaims` → `.../v1/warrantyClaims/active` and
+   * `archiveWarrantyClaims` → `.../v1/warrantyClaims/archive` (both probed live
+   * 2026-09-22: 200, `docs/live-evidence/task5-a17-or6-or10-k2-2026-09-22.md`). */
+  async warrantyClaims(userId: string, scope: "active" | "archive"): Promise<unknown> {
+    return this.request(`/api/users/${encodeURIComponent(userId)}/v1/warrantyClaims/${scope}?country=CZ`);
+  }
+
+  /** S1 (typed, issue #72): the subscription section that the authenticated
+   * main navigation links as `userSubscription` (webapi host, observed live
+   * 2026-09-22 in `docs/live-evidence/task6-orders-sub-2026-09-22.json`). */
+  async userSubscription(userId: string): Promise<unknown> {
+    return this.request(`https://webapi.alza.cz/api/users/${encodeURIComponent(userId)}/v1/subscription?country=CZ`);
   }
 
   /** A17 (2026-09-22): the "Osobní údaje" section — APK `PersonalGdprDetails`

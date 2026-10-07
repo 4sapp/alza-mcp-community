@@ -2,7 +2,7 @@ import { z } from "zod";
 import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import type { MobileAccount } from "../domain/mobile-account.js";
 import type { RegisterableTool, ToolDeps, ToolResult } from "./types.js";
-import { formatAddToCart, formatCart, formatCheckoutPreview, withConciseText } from "./account-format.js";
+import { formatAddToCart, formatCart, formatCheckoutPreview, formatDeliveryOptions, jsonResult, withConciseText } from "./account-format.js";
 
 function apiAccount(deps: ToolDeps): MobileAccount {
   if (!deps.mobileAccount) throw new Error("mobile API account tools are not configured");
@@ -10,10 +10,8 @@ function apiAccount(deps: ToolDeps): MobileAccount {
 }
 
 function result(value: unknown): ToolResult {
-  return {
-    content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
-    structuredContent: value as Record<string, unknown>,
-  };
+  // Issue #73: the text channel is capped; structuredContent keeps the full value.
+  return jsonResult(value);
 }
 
 const jsonObject = z.record(z.string(), z.unknown());
@@ -129,7 +127,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           title: "Read a raw Alza mobile API operation",
           description:
             "Read-only escape hatch for Alza mobile API operations that have no dedicated tool. " +
-            "Prefer the typed tool when one exists — `cart` (operation `basket_info`), `profile` (`user_data`), `contacts` (`contacts`), `search_products` (`search`), `list_categories` (`category`), `order` (`user_order`) — and use `mobile_read` for the rest. " +
+            "Prefer the typed tool when one exists — `cart` (operation `basket_info`), `profile` (`user_data`), `contacts` (`contacts`), `search_products` (`search`), `list_categories` (`category`), `order` (`user_order` {order_id, user_id} — the numeric user id from `profile`, not a 0/1 flag) — and use `mobile_read` for the rest. " +
             "High-value operations: `router_product` {product_id} returns the full product envelope including the `parameterGroups` spec sheet (product_id is the numeric `d########` id from the product URL, e.g. 13078770 from https://www.alza.cz/...-d13078770.htm); `legacy_product` {product_id, ucik, pgrik, country} is the same with the server-required UCÍK/PGŘÍK values (copy them from a `router_product` response); also `alternatives` {product_id}, `ean_lookup`, `facets`, `hierarchical_filter`, `commodity_list(s)`, `cost_estimate`, `delivery_countries`, `web_after_payment_dialog` {order_id}, `order_part`/`order2_info` {order_id, ...}, `order_helpdesk_questions`, `user_review`, `discussion_posts`, `premium_trial`, `validate_login_name`, `validate_isic`, `o3_info`, `quick_order_summary`, `home_categories` (requires the server-side pgri/ui query values — copy them from an upstream `self` href in a navigation response, e.g. `?pgri=p__…&ui=u__…`), `zip_codes`/`web_zip_codes`, `branches`, `visitor_navigation`/`user_navigation`/`catalog_user_navigation`, `anonymous_orders`/`anonymous_order`, `url_info`. " +
             "This tool never accepts arbitrary URLs or credentials, and never mutates state. " +
             "Account-scoped operations " + AUTH_PREREQ + " Returns the raw upstream envelope (`err`/`msg`/`data`); `err:1` with a `msg` is an Alza-side validation (e.g. unknown product id).",
@@ -154,7 +152,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           description:
             "Start a two-step mutation by returning a one-time confirmation token bound to exactly one action. This call itself sends nothing to Alza. " +
             "Use it before the high-impact typed mutations — `register` (action `register`), `address_upsert` (`address_create` or `address_edit`), `address_delete` (`address_delete`), `pay_after_order` (`after_order_payment`), `web_place_order` (`web_place_order`), `web_pay_after_order` (`web_after_order_payment`), `cancel_order` (`cancel_order`), `review_submit` (`review_submit`), `subscription_activate` (`subscription_activate`), `subscription_update_installment` (`subscription_update_installment`), `upload_attachment` (`attachment_upload`), `watchdog_set` (`watchdog_set`), `watchdog_delete` (`watchdog_delete`) — and before any low-risk `mutate_list` action (" + LOW_RISK_ACTIONS.map((a) => "`" + a + "`").join(", ") + "). " +
-            "Pass the returned token as `confirmation_token` on the matching call; the token is single-use and only valid for the exact action you prepared. " +
+            "Pass the returned token as `confirmation_token` on the matching call; the token is single-use — the first call that presents it spends it, even if that call fails, so prepare a new one to retry — and only valid for the exact action you prepared. " +
             "Do not use for read-only tools, and not for `add_to_cart` (which is a low-risk cart write that needs no token).",
           inputSchema: {
             action: z.enum([...LOW_RISK_ACTIONS, ...HIGH_IMPACT_ACTIONS, ...TYPED_LOW_RISK_ACTIONS]).describe("Which mutation you are about to perform; the token will only be accepted by that action's tool."),
@@ -276,7 +274,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["delivery_options"],
         },
-        async (args) => wrap("delivery_options", async () => result(await apiAccount(deps).deliveryOptions(args.selected_delivery_option_id))),
+        async (args) => wrap("delivery_options", async () => withConciseText(await apiAccount(deps).deliveryOptions(args.selected_delivery_option_id), formatDeliveryOptions)),
       );
     },
   };

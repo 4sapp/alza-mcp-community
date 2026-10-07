@@ -72,10 +72,11 @@ const CHECKS = [
     name: "user_order",
     path: () => {
       const orderId = process.env.ALZA_SMOKE_ORDER_ID;
-      const flag = process.env.ALZA_SMOKE_USER_FLAG ?? "0";
-      return orderId ? `/api/users/${flag}/v1/orders/${encodeURIComponent(orderId)}` : null;
+      const id = process.env.ALZA_SMOKE_USER_ID;
+      // OR1 takes the numeric user id (issue #60), not the 0/1 user flag.
+      return orderId && id ? `/api/users/${encodeURIComponent(id)}/v1/orders/${encodeURIComponent(orderId)}?country=CZ` : null;
     },
-    skipHint: "set ALZA_SMOKE_ORDER_ID (and optionally ALZA_SMOKE_USER_FLAG)",
+    skipHint: "set ALZA_SMOKE_ORDER_ID and ALZA_SMOKE_USER_ID",
   },
 ];
 
