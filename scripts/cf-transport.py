@@ -7,10 +7,13 @@ fingerprint (verified 2026-09-15, residential IP, 5/5 fresh sessions).
 This sidecar provides that fingerprint to the Node server over stdio:
 
   request line:  {"id":1,"url":"https://…","method":"GET","headers":{…},
-                  "body":"<base64>","impersonate":"chrome","timeoutMs":60000}
+                  "body":"<base64>","impersonate":"chrome","timeoutMs":60000,
+                  "followRedirects":true}
   response line: {"id":1,"status":200,"headers":{…},"body":"<base64>","error":null}
 
-Body is base64 in both directions (binary-safe). One long-lived process;
+Body is base64 in both directions (binary-safe). `followRedirects` defaults to
+true; false returns a 3xx response as-is (status + `location` header) so the
+caller can validate the target before following it (fetch's redirect:"manual"). One long-lived process;
 requests are multiplexed by `id`. Exit codes: 0 normal, 1 startup failure.
 """
 import base64
@@ -56,8 +59,14 @@ def main() -> None:
             body = base64.b64decode(req["body"]) if req.get("body") else None
             profile = req.get("impersonate") or "chrome"
             timeout = float(req.get("timeoutMs") or 60000) / 1000.0
+            follow = req.get("followRedirects") is not False
             r = get_session(profile).request(
-                method, url, headers=headers, content=body, timeout=timeout
+                method,
+                url,
+                headers=headers,
+                content=body,
+                timeout=timeout,
+                allow_redirects=follow,
             )
             out = {
                 "id": rid,
