@@ -38,7 +38,7 @@ describe("per-tool outputSchema (N-1)", () => {
     const { client, built } = await clientAndServer();
     try {
       const res = await client.listTools();
-      expect(res.tools).toHaveLength(65); // 63 domain tools + list_toolsets + set_toolset
+      expect(res.tools).toHaveLength(66); // 63 domain tools + list_toolsets + set_toolset + report_issue
       for (const t of res.tools) {
         const os = t.outputSchema as Record<string, unknown> | undefined;
         expect(os, `missing outputSchema on ${t.name}`).toBeTruthy();

@@ -27,7 +27,7 @@ describe("progressive tool disclosure (toolsets)", () => {
     expect(seen.size).toBe(63);
   });
 
-  it("exposes only the catalog + auth toolsets plus list_toolsets/set_toolset by default", async () => {
+  it("exposes only the catalog + auth toolsets plus list_toolsets/set_toolset/report_issue by default", async () => {
     const { client, built } = await clientAndServer();
     try {
       const res = await client.listTools();
@@ -37,6 +37,7 @@ describe("progressive tool disclosure (toolsets)", () => {
         ...TOOLSET_DEFS.find((d) => d.id === "auth")!.tools,
         "list_toolsets",
         "set_toolset",
+        "report_issue",
       ].sort();
       expect(names).toEqual(expected);
     } finally {
@@ -92,12 +93,12 @@ describe("progressive tool disclosure (toolsets)", () => {
     const { client, built } = await clientAndServer();
     try {
       await client.callTool({ name: "set_toolset", arguments: { id: "all", enabled: true } });
-      expect((await client.listTools()).tools).toHaveLength(65);
+      expect((await client.listTools()).tools).toHaveLength(66);
 
       await client.callTool({ name: "set_toolset", arguments: { id: "all", enabled: false } });
       const names = (await client.listTools()).tools.map((t) => t.name).sort();
-      // list_toolsets/set_toolset are registered outside any toolset, so "all" doesn't touch them.
-      expect(names).toEqual(["list_toolsets", "set_toolset"]);
+      // list_toolsets/set_toolset/report_issue are registered outside any toolset, so "all" doesn't touch them.
+      expect(names).toEqual(["list_toolsets", "report_issue", "set_toolset"]);
     } finally {
       await client.close();
       await built.close();

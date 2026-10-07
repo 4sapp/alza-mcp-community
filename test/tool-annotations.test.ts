@@ -49,12 +49,12 @@ const DESTRUCTIVE = new Set([
   "delete_account",
 ]);
 
-const NO_OPEN_WORLD = new Set(["account_status", "prepare_mutation", "list_toolsets", "set_toolset"]);
+const NO_OPEN_WORLD = new Set(["account_status", "prepare_mutation", "list_toolsets", "set_toolset", "report_issue"]);
 
 describe("tool annotation contract", () => {
-  it("serves exactly 65 tools with bare, snake_case names (63 domain tools + list_toolsets + set_toolset, all toolsets enabled)", async () => {
+  it("serves exactly 66 tools with bare, snake_case names (63 domain tools + list_toolsets + set_toolset + report_issue, all toolsets enabled)", async () => {
     const tools = await listTools();
-    expect(tools).toHaveLength(65);
+    expect(tools).toHaveLength(66);
     for (const t of tools) {
       expect(t.name).toMatch(/^[a-z][a-z0-9_]*$/);
     }
@@ -77,13 +77,13 @@ describe("tool annotation contract", () => {
     expect([...marked].sort()).toEqual([...DESTRUCTIVE].sort());
   });
 
-  it("leaves openWorldHint false only on the 4 no-network tools", async () => {
+  it("leaves openWorldHint false only on the 5 no-network tools", async () => {
     const tools = await listTools();
     const noOpenWorld = new Set(
       tools.filter((t) => t.annotations?.openWorldHint === false).map((t) => t.name),
     );
     expect([...noOpenWorld].sort()).toEqual([...NO_OPEN_WORLD].sort());
-    // account_status, prepare_mutation, and list_toolsets are read-only + no-network;
+    // account_status, prepare_mutation, list_toolsets and report_issue (drafts only) are read-only + no-network;
     // set_toolset is also no-network but mutates which tools are exposed (readOnlyHint false).
     for (const name of NO_OPEN_WORLD) {
       const a = tools.find((t) => t.name === name)?.annotations ?? {};
