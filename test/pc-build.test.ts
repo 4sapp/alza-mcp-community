@@ -14,6 +14,7 @@ import {
   checkForcedRole,
   checkRamMotherboard,
   looksLikeRamKit,
+  backtrackCaps,
   rankCandidates,
   detectRole,
   estimatePower,
@@ -742,5 +743,50 @@ describe("pc_build_suggest: part selection", () => {
       LISTINGS[18893268] = saved!;
       delete PRODUCTS.RAM_STICK;
     }
+  });
+});
+
+describe("pc_build_suggest: backtracking across roles", () => {
+  it("backtrackCaps is deterministic, cheapest downgrade first, and bounded", () => {
+    expect(backtrackCaps({})).toEqual([]);
+    expect(backtrackCaps({ gpu: [9000, 7000], cpu: [5000] })).toEqual([{ gpu: 9000 }, { cpu: 5000 }, { gpu: 7000 }, { gpu: 9000, cpu: 5000 }, { gpu: 7000, cpu: 5000 }]);
+    const many = Array.from({ length: 30 }, (_, i) => 10000 - i);
+    expect(backtrackCaps({ gpu: many, cpu: many })).toHaveLength(20);
+  });
+
+  async function withGpus<T>(fn: () => Promise<T>): Promise<T> {
+    PRODUCTS.GPU_BIG = product("GPU_BIG", "GAINWARD GeForce RTX 5070 Ti", 13500, GPU_RTX);
+    const saved = LISTINGS[18842862];
+    LISTINGS[18842862] = ["GPU_BIG", "GPU1"];
+    try {
+      return await fn();
+    } finally {
+      LISTINGS[18842862] = saved!;
+      delete PRODUCTS.GPU_BIG;
+    }
+  }
+
+  it("greedy leaves a late role empty; a cheaper GPU completes the build within budget", async () => {
+    await withGpus(async () => {
+      // Greedy takes the 13500 GPU and leaves the 3000 PSU unaffordable (33000 budget); the 12000 GPU frees enough.
+      const { catalog } = fakeCatalog();
+      const r = await new PcBuilder(catalog).suggest({ budget: 33000, cpuVendor: "amd", maxDetailFetches: 24 });
+      expect(r.parts.find((p) => p.role === "psu")?.code).toBe("PSU1");
+      expect(r.parts.find((p) => p.role === "gpu")?.code).toBe("GPU1");
+      expect(r.total).toBeLessThanOrEqual(33000);
+      expect(r.withinBudget).toBe(true);
+      expect(r.notes.join(" ")).toMatch(/Backtracking: psu could not be filled/);
+      expect(r.notes.join(" ")).not.toMatch(/psu: .*left empty/);
+    });
+  });
+
+  it("keeps the clear note when no cheaper combination completes the build", async () => {
+    await withGpus(async () => {
+      const { catalog } = fakeCatalog();
+      const r = await new PcBuilder(catalog).suggest({ budget: 31000, cpuVendor: "amd", maxDetailFetches: 24 });
+      expect(r.total).toBeLessThanOrEqual(31000);
+      expect(r.notes.join(" ")).toMatch(/left empty/);
+      expect(r.notes.join(" ")).toMatch(/Backtracking: .*psu/);
+    });
   });
 });
