@@ -792,7 +792,8 @@ export class MobileAccount {
     let u: URL;
     try { u = new URL(href, this.api.baseUrl); } catch { throw new Error(`${what}.href is not a valid URL`); }
     const base = new URL(this.api.baseUrl);
-    if (u.protocol !== "https:" || (u.host !== base.host && !USER_LINK_HOSTS.has(u.hostname))) throw new Error(`${what}.href must be an https Alza API URL (${[...USER_LINK_HOSTS].join(", ")})`);
+    const onAlzaHost = u.host === base.host || (USER_LINK_HOSTS.has(u.hostname) && u.port === "");
+    if (u.protocol !== "https:" || !onAlzaHost || u.username !== "" || u.password !== "") throw new Error(`${what}.href must be an https Alza API URL (${[...USER_LINK_HOSTS].join(", ")})`);
     if (!family.test(u.pathname)) throw new Error(`${what}.href is outside the route family this tool reads`);
     return this.api.request(u.toString());
   }

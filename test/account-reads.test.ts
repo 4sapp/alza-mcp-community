@@ -118,6 +118,9 @@ describe("issue #72: claim / subscription / address reads work without a hand-ma
     await expect(account.claimDetail({ href: "http://www.alza.cz/api/users/1/v1/warrantyClaims/1" })).rejects.toThrow(/https Alza API URL/);
     await expect(account.claimDetail({ href: "https://www.alza.cz/api/users/1/v1/warrantyClaims/../../../services/restservice.svc/v1/addcoupon/X" })).rejects.toThrow(/route family/);
     await expect(account.subscriptionOverview({ href: "https://webapi.alza.cz/api/users/1/v1/warrantyClaims/active" })).rejects.toThrow(/route family/);
+    // non-default ports and embedded credentials are not the Alza API origin either
+    await expect(account.claimDetail({ href: "https://www.alza.cz:8443/api/users/1/v1/warrantyClaims/1" })).rejects.toThrow(/https Alza API URL/);
+    await expect(account.claimDetail({ href: "https://user:pw@webapi.alza.cz/api/users/1/v1/warrantyClaims/1" })).rejects.toThrow(/https Alza API URL/);
     expect(seen).toHaveLength(2);
   });
 
