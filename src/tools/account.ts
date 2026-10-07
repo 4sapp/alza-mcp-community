@@ -188,7 +188,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             confirmation_token: z.string().min(32).describe("One-time token from `prepare_mutation` prepared with this same `action`."),
             payload: jsonObject.describe("Mutation payload matching the mobile DTO for `action`, e.g. coupon_add: {coupon: \"CODE\"}; coupon_remove: {couponId: 123}; basket_update: {basket_id: 1, flag: true}."),
           },
-          annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
+          annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: true, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["mutate_list"],
         },
         async (args) => wrap("mutate_list", async () => result(await apiAccount(deps).mutateList(args.action, args.confirmation_token, args.payload))),
@@ -319,12 +319,13 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             "Run the read-side of the mobile checkout (sendOrder1 + delivery/payment-group reads) and return a one-time checkout token plus totals. " +
             "Use after `delivery_options`/`select_pickup_point` to preview fees and the final order shape before committing, and to obtain the token that `place_order` requires. " +
             "This never submits the order. " +
+            "Not read-only: it runs Alza's first checkout step (`sendOrder1`, which starts the server-side checkout state that `place_order` continues) and replaces any earlier checkout token (valid 5 minutes). " +
             "Requires a non-empty cart. " +
             AUTH_PREREQ + " Note: the mobile submission step (`sendOrder3`) currently returns HTTP 500 (docs/gap-analysis.md G1/G5) — the known-working submission path is `web_place_order`.",
           inputSchema: {
             selected_delivery_option_id: z.number().int().optional().describe("Delivery option id from `delivery_options` to preview that specific delivery method. Omit for the server default."),
           },
-          annotations: { readOnlyHint: true, idempotentHint: false, destructiveHint: false, openWorldHint: true },
+          annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["checkout_preview"],
         },
         async (args) => wrap("checkout_preview", async () => withConciseText(await apiAccount(deps).previewOrder(args.selected_delivery_option_id), formatCheckoutPreview)),
