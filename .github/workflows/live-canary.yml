@@ -51,8 +51,11 @@ jobs:
           node-version: 22
           cache: npm
 
-      # postinstall (scripts/postinstall.cjs) downloads chromium headless-shell.
+      # postinstall (scripts/postinstall.cjs) is a no-op in this repository's own
+      # checkout, so set up the runtime helpers explicitly.
       - run: npm ci
+      - run: npx playwright install chromium --only-shell
+      - run: npm run setup:cf
 
       - name: Run live checks
         id: validate

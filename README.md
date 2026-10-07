@@ -356,7 +356,9 @@ For deeper architecture notes — including why we don't ship the HTTP/okhttp re
 ```bash
 git clone https://github.com/lukabudik/alza-mcp.git
 cd alza-mcp
-npm install                 # auto-installs Chromium via postinstall
+npm install                 # dev checkout: postinstall is skipped on purpose
+npm run setup:cf            # optional curl_cffi venv (needs bash + python3)
+npx playwright install chromium --only-shell   # browser for live runs
 npm test                    # unit tests, no network
 npm run typecheck
 npm run build               # → dist/
