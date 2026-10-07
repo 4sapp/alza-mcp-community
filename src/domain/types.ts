@@ -1,7 +1,7 @@
 export interface Product {
   /** Alza product code, e.g. "WEXOA002B0". This is the canonical identifier. */
   code: string;
-  /** Numeric internal id used by REST endpoints. */
+  /** Numeric internal id used by REST endpoints (the `d<id>` in the product URL); 0 when unknown. */
   id: number;
   name: string;
   url: string;
@@ -11,7 +11,14 @@ export interface Product {
   /** Original / strike-through price, if discounted. */
   originalPrice?: number;
   currency: string;
+  /**
+   * Normalised stock label shared by every tool (see availability.ts): "in
+   * stock", "limited stock", "preorder", "out of stock", "discontinued", or —
+   * search cards only — "not purchasable now".
+   */
   availability?: string;
+  /** The upstream text (schema.org token or CZ/SK display text) when it differs from `availability`. */
+  availabilityText?: string;
   /** Rating on 0–5 scale (Alza serves 0–100, we normalize). */
   rating?: number;
   brand?: string;
@@ -29,7 +36,18 @@ export interface SearchResult {
   query: string;
   total: number;
   page: number;
+  /**
+   * How many organic cards one rendered Alza page holds (~24), i.e. the real
+   * page capacity — not the requested `limit`.
+   */
   pageSize: number;
+  /**
+   * True when Alza renders further result pages beyond the last one scanned
+   * (pass `page` to read them). Absent for results that were never paged.
+   */
+  hasMore?: boolean;
+  /** The `page` value that continues after the last scanned page; present when `hasMore`. */
+  nextPage?: number;
   products: Product[];
   /**
    * How many candidate cards were scanned before filtering/sorting (one

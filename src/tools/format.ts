@@ -31,6 +31,7 @@ export function formatSearchResult(res: SearchResult): string {
     "",
     ...res.products.map(formatProductLine),
   ];
+  if (res.hasMore && res.nextPage) lines.push("", `More results exist: pass page=${res.nextPage} to continue.`);
   return lines.join("\n");
 }
 
@@ -44,7 +45,7 @@ export function formatProduct(p: Product): string {
     }
     lines.push(line);
   }
-  if (p.availability) lines.push(`Availability: ${p.availability}`);
+  if (p.availability) lines.push(`Availability: ${p.availability}${p.availabilityText ? ` (${p.availabilityText})` : ""}`);
   if (p.rating !== undefined) lines.push(`Rating: ★ ${p.rating.toFixed(1)} / 5`);
   if (p.brand) lines.push(`Brand: ${p.brand}`);
   if (p.category) lines.push(`Category: ${p.category}`);
@@ -68,7 +69,15 @@ export function formatReviews(r: ProductReviews): string {
     lines.push("", "_No individual reviews available._");
     return lines.join("\n");
   }
-  lines.push("", "## Recent reviews");
+  // The count comes from the product page's aggregate; the list comes from the
+  // reviews API, which can also include reviews from the other storefront
+  // (live 2026-10-07: 11 on the page, 18 listed incl. Slovak ones).
+  if (r.reviewCount !== undefined && r.reviews.length > r.reviewCount) {
+    lines.push(
+      `_Note: the list has ${r.reviews.length} reviews, more than the aggregate count of ${r.reviewCount}; it also includes reviews from other storefronts (for example Slovak), which the aggregate does not cover._`
+    );
+  }
+  lines.push("", "## Recent reviews (newest first)");
   for (const rev of r.reviews) {
     const head = [rev.author ?? "Anonymous", rev.date, rev.rating !== undefined ? `★ ${rev.rating}` : null]
       .filter(Boolean)
@@ -109,7 +118,7 @@ export function formatCategoryFilters(filters: CategoryFilters): string {
       ? " (not filterable via search_products — informational only)"
       : isRange
         ? " — range filter: {param_id, min?, max?} using the `value` numbers below"
-        : "";
+        : " — checkbox filter: {param_id, value_id}; Alza only honours values it has a landing page for (e.g. HDMI), others (often panel type, resolution) make search_products error";
     lines.push(`**${g.name}** (param_id: ${g.paramId}, ${g.renderType})${flag}`);
     const last = g.values[g.values.length - 1];
     const shown = isRange && last && g.values.length > 15 ? [...g.values.slice(0, 14), last] : g.values.slice(0, 15);

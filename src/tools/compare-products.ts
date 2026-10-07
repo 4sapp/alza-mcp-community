@@ -5,6 +5,7 @@ import type { Product } from "../domain/types.js";
 import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import type { RegisterableTool, ToolDeps } from "./types.js";
 import { tagLinks } from "./tracking.js";
+import { formatPrice as formatMoney } from "./format.js";
 
 /** Product-page loads run at most this many at a time (issue #11: 2–3, polite to Cloudflare). */
 export const COMPARE_CONCURRENCY = 2;
@@ -39,12 +40,12 @@ export interface ComparisonTable {
   rows: ComparisonRow[];
 }
 
-export const FIXED_ROWS = ["Price", "Availability", "Rating"] as const;
+export const FIXED_ROWS = ["Price", "Availability", "Rating", "Brand"] as const;
 
 function formatPrice(p: Product): string | null {
   if (p.price === undefined) return null;
-  const base = `${p.price} ${p.currency}`;
-  return p.originalPrice !== undefined && p.originalPrice > p.price ? `${base} (was ${p.originalPrice} ${p.currency})` : base;
+  const base = formatMoney(p.price, p.currency);
+  return p.originalPrice !== undefined && p.originalPrice > p.price ? `${base} (was ${formatMoney(p.originalPrice, p.currency)})` : base;
 }
 
 function fixedValue(row: (typeof FIXED_ROWS)[number], p: Product): string | null {
@@ -52,9 +53,11 @@ function fixedValue(row: (typeof FIXED_ROWS)[number], p: Product): string | null
     case "Price":
       return formatPrice(p);
     case "Availability":
-      return p.availability ?? null;
+      return p.availability ? `${p.availability}${p.availabilityText ? ` (${p.availabilityText})` : ""}` : null;
     case "Rating":
       return p.rating !== undefined ? `${Math.round(p.rating * 10) / 10}/5` : null;
+    case "Brand":
+      return p.brand ?? null;
   }
 }
 
@@ -204,13 +207,31 @@ export async function summarizeComparison(host: SamplingHost, table: ComparisonT
   }
 }
 
+/** Trim and de-duplicate codes (case-insensitively, keeping the first spelling); returns what was dropped. */
+export function dedupeCodes(input: string[]): { codes: string[]; duplicates: string[] } {
+  const seen = new Set<string>();
+  const codes: string[] = [];
+  const duplicates: string[] = [];
+  for (const raw of input) {
+    const c = raw.trim();
+    const key = c.toLowerCase();
+    if (seen.has(key)) {
+      if (!duplicates.includes(c)) duplicates.push(c);
+      continue;
+    }
+    seen.add(key);
+    codes.push(c);
+  }
+  return { codes, duplicates };
+}
+
 const inputSchema = {
   codes: z
     .array(z.string().trim().min(1))
     .min(COMPARE_MIN_CODES)
     .max(COMPARE_MAX_CODES)
     .describe(
-      "2–6 Alza product codes to compare side by side, e.g. ['WEXOA002B0', 'JA190b1']. These are the `code` values from `search_products` (not numeric ids). Duplicates are collapsed."
+      "2–6 Alza product codes to compare side by side, e.g. ['WEXOA002B0', 'JA190b1']. These are the `code` values from `search_products` (not numeric ids). Duplicates (same code, any letter case) are collapsed and reported; at least 2 distinct codes are required."
     ),
   summarize: z
     .boolean()
@@ -231,7 +252,7 @@ export function createCompareProductsTool(deps: ToolDeps): RegisterableTool {
           title: "Compare products side by side",
           description:
             "Fetch 2–6 products by their Alza codes (the `code` from `search_products`) and return one aligned comparison table: a column per product, " +
-            "rows for price, availability and rating, then every spec row present in any of them (exact spec-name matching; a product missing a row shows —). " +
+            "rows for price, availability, rating and brand, then every spec row present in any of them (exact spec-name matching; a product missing a row shows —). " +
             "Use instead of calling `get_product` repeatedly when the user asks which of several candidates is better. " +
             "A code that fails to load is reported in its own column (`ok: false`, `error`) while the others still compare. " +
             "Pages load at most two at a time, so 6 products take roughly 15–30 s on a cold cache. " +
@@ -242,7 +263,12 @@ export function createCompareProductsTool(deps: ToolDeps): RegisterableTool {
         },
         async (args, extra) =>
           errorWrap(name, async () => {
-            const codes = [...new Set(args.codes.map((c) => c.trim()))];
+            const { codes, duplicates } = dedupeCodes(args.codes);
+            if (codes.length < COMPARE_MIN_CODES) {
+              throw new Error(
+                `compare_products needs at least ${COMPARE_MIN_CODES} distinct product codes, but only ${codes.length} remained after removing duplicates (${duplicates.join(", ") || "none"}). Pass different codes.`
+              );
+            }
             const entries = await mapWithConcurrency(codes, COMPARE_CONCURRENCY, async (code): Promise<CompareEntry> => {
               try {
                 return { code, product: tagLinks(await deps.catalog.getProduct(code)) };
@@ -252,7 +278,12 @@ export function createCompareProductsTool(deps: ToolDeps): RegisterableTool {
             });
             const table = buildComparisonTable(entries);
             let text = formatComparisonMarkdown(table);
-            const structured: Record<string, unknown> = { products: table.products, rows: table.rows };
+            if (duplicates.length > 0) text = `${text}\n\nDuplicate codes ignored: ${duplicates.join(", ")}.`;
+            const structured: Record<string, unknown> = {
+              products: table.products,
+              rows: table.rows,
+              ...(duplicates.length > 0 ? { duplicatesIgnored: duplicates } : {}),
+            };
             if (args.summarize) {
               const summary = await summarizeComparison(server.server, table, extra.signal);
               structured.summary = summary;
