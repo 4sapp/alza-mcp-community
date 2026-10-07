@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { MobileApi, OAuthStart } from "../infra/mobile-api.js";
-import type { AppActionFilePart, AppActionValue, ServerAppAction } from "../infra/app-action.js";
+import { APP_ACTION_ROUTE_POLICIES, type AppActionFilePart, type AppActionRoutePolicy, type AppActionValue, type ServerAppAction } from "../infra/app-action.js";
 import { WATCHDOG_ID_RE, parseWatchdogDialog, parseWatchdogList, type WatchdogEntry } from "./watchdog.js";
 
 /** Every guarded mutation accepted by `prepare_mutation` (and the typed tools). */
@@ -276,12 +276,13 @@ export class MobileAccount {
     return a;
   }
 
-  private executeAction(action: ServerAppAction, opts: { token?: string; extraValues?: AppActionValue[]; files?: AppActionFilePart[] } = {}): Promise<unknown> {
+  private executeAction(action: ServerAppAction, routePolicy: AppActionRoutePolicy, opts: { token?: string; extraValues?: AppActionValue[]; files?: AppActionFilePart[] } = {}): Promise<unknown> {
     return this.api.executeAppAction(action, {
       allowMutation: true,
       confirmationToken: opts.token,
       extraValues: opts.extraValues,
       files: opts.files,
+      routePolicy,
     });
   }
 
@@ -304,7 +305,7 @@ export class MobileAccount {
     if (addressType) extra.push({ name: "addressType", value: addressType, kind: "text" });
     const addressId = optionalInt(payload, "address_id");
     if (kind === "edit" && addressId !== undefined) extra.push({ name: "id", value: addressId, kind: "integer" });
-    const result = await this.executeAction(this.actionFrom(action), { token, extraValues: extra });
+    const result = await this.executeAction(this.actionFrom(action), APP_ACTION_ROUTE_POLICIES.addressWrite, { token, extraValues: extra });
     return result;
   }
 
@@ -312,14 +313,14 @@ export class MobileAccount {
   async addressDelete(action: Record<string, unknown>, payload: Record<string, unknown>, token: string): Promise<unknown> {
     this.assertMutationToken("address_delete", token);
     const addressId = requireInt(payload, "address_id");
-    const result = await this.executeAction(this.actionFrom(action), { token, extraValues: [{ name: "id", value: addressId, kind: "integer" }] });
+    const result = await this.executeAction(this.actionFrom(action), APP_ACTION_ROUTE_POLICIES.addressWrite, { token, extraValues: [{ name: "id", value: addressId, kind: "integer" }] });
     return result;
   }
 
   /** Address search/autocomplete (read, no token). */
   async addressSearch(action: Record<string, unknown>, query: string): Promise<unknown> {
     if (typeof query !== "string" || query.length === 0 || query.length > 50) throw new Error("query must be a non-empty string (max 50)");
-    return this.api.executeAppAction(this.actionFrom(action), { extraValues: [{ name: "search", value: query, kind: "text" }] });
+    return this.api.executeAppAction(this.actionFrom(action), { extraValues: [{ name: "search", value: query, kind: "text" }], routePolicy: APP_ACTION_ROUTE_POLICIES.addressSearch });
   }
 
   /** OR6 (2026-09-22): order search — typed read over the server-provided
@@ -453,7 +454,7 @@ export class MobileAccount {
    * `detailAction` copied verbatim from the `complaint_claims` list response
    * (same executor pattern as K1; read-only, no token). */
   async claimDetail(action: Record<string, unknown>): Promise<unknown> {
-    return this.api.executeAppAction(this.actionFrom(action));
+    return this.api.executeAppAction(this.actionFrom(action), { routePolicy: APP_ACTION_ROUTE_POLICIES.claimsRead });
   }
 
   /** OR10 (2026-09-22): invoice/document download. `document` is the
@@ -733,16 +734,16 @@ export class MobileAccount {
       if (!Array.isArray(values)) throw new Error("values must be an array of {name, value, kind?}");
       extra.push(...validateTypedValues(values));
     }
-    const result = await this.executeAction(this.actionFrom(action), { token, extraValues: extra });
+    const result = await this.executeAction(this.actionFrom(action), APP_ACTION_ROUTE_POLICIES.reviewWrite, { token, extraValues: extra });
     return result;
   }
 
   async complaintClaims(action: Record<string, unknown>): Promise<unknown> {
-    return this.api.executeAppAction(this.actionFrom(action));
+    return this.api.executeAppAction(this.actionFrom(action), { routePolicy: APP_ACTION_ROUTE_POLICIES.claimsRead });
   }
 
   async subscriptionOverview(action: Record<string, unknown>): Promise<unknown> {
-    return this.api.executeAppAction(this.actionFrom(action));
+    return this.api.executeAppAction(this.actionFrom(action), { routePolicy: APP_ACTION_ROUTE_POLICIES.subscriptionRead });
   }
 
   async subscriptionActivate(action: Record<string, unknown>, payload: Record<string, unknown>, token: string): Promise<unknown> {
@@ -750,7 +751,7 @@ export class MobileAccount {
     const values = payload.values;
     if (values !== undefined && !Array.isArray(values)) throw new Error("values must be an array of {name, value, kind?}");
     const extra = values === undefined ? undefined : validateTypedValues(values);
-    const result = await this.executeAction(this.actionFrom(action), { token, extraValues: extra });
+    const result = await this.executeAction(this.actionFrom(action), APP_ACTION_ROUTE_POLICIES.subscriptionWrite, { token, extraValues: extra });
     return result;
   }
 
@@ -759,7 +760,7 @@ export class MobileAccount {
     const values = payload.values;
     if (values !== undefined && !Array.isArray(values)) throw new Error("values must be an array of {name, value, kind?}");
     const extra = values === undefined ? undefined : validateTypedValues(values);
-    const result = await this.executeAction(this.actionFrom(action), { token, extraValues: extra });
+    const result = await this.executeAction(this.actionFrom(action), APP_ACTION_ROUTE_POLICIES.subscriptionWrite, { token, extraValues: extra });
     return result;
   }
 
@@ -771,7 +772,7 @@ export class MobileAccount {
     const values = payload.values;
     if (values !== undefined && !Array.isArray(values)) throw new Error("values must be an array of {name, value, kind?}");
     const extra = values === undefined ? undefined : validateTypedValues(values);
-    const result = await this.executeAction(this.actionFrom(action), { token, extraValues: extra, files: fileParts });
+    const result = await this.executeAction(this.actionFrom(action), APP_ACTION_ROUTE_POLICIES.attachmentUpload, { token, extraValues: extra, files: fileParts });
     return result;
   }
 

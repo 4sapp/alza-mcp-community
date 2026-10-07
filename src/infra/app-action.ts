@@ -66,7 +66,42 @@ export interface ExecuteAppActionOptions {
   extraValues?: AppActionValue[];
   /** Multipart file parts (only for `multipart` rel actions). */
   files?: AppActionFilePart[];
+  /** Route family + method allowlist of the calling tool (issues #61/#62).
+   * Checked against the action href and every redirect target. */
+  routePolicy?: AppActionRoutePolicy;
 }
+
+/** Per-tool AppAction route policy: the decoded, lower-cased request path must
+ * match one of `pathPatterns`, and the resolved method must be in `methods`. */
+export interface AppActionRoutePolicy {
+  readonly family: string;
+  readonly pathPatterns: readonly RegExp[];
+  readonly methods: readonly AppActionMethod[];
+}
+
+/** Route policies of the typed AppAction tools. The hrefs are server-provided
+ * (source-confirmed families, mostly not live-captured), so each family is a
+ * keyword match on the path; readers are GET-only, writers POST-only. */
+export const APP_ACTION_ROUTE_POLICIES = {
+  addressWrite: { family: "address", pathPatterns: [/address/], methods: ["POST"] },
+  addressSearch: { family: "address search", pathPatterns: [/address/], methods: ["GET"] },
+  reviewWrite: { family: "review", pathPatterns: [/review|rating/], methods: ["POST"] },
+  claimsRead: { family: "warranty claim / complaint", pathPatterns: [/claim|complaint/], methods: ["GET"] },
+  subscriptionRead: { family: "subscription", pathPatterns: [/subscription/], methods: ["GET"] },
+  subscriptionWrite: { family: "subscription", pathPatterns: [/subscription|installment/], methods: ["POST"] },
+  attachmentUpload: { family: "attachment", pathPatterns: [/attachment|upload|image|claim|complaint/], methods: ["POST"] },
+} as const satisfies Record<string, AppActionRoutePolicy>;
+
+/** Routes the executor never calls, whatever the tool or token (issues #61/#62):
+ * GET-shaped writes that have their own token-gated tools (coupons, basket,
+ * order services, discussion ratings, checkout steps), and credential, payment,
+ * order-submission, account-identity and device routes. */
+const DENIED_ROUTES: RegExp[] = [
+  /\/(?:addcoupon|delcoupon|updbasket|unlockbasket|addorderservice|ratecommoditydiscussionposts|approveorder\d*|sendorder\d*|orderfinished|afterorderpayment|createafterpayment|createuser|gdprinformation|cancellations|pushdevice)(?:\/|$)/,
+  /\/(?:account|useraccount)\/password(?:\/|$)/,
+  /\/(?:2fa|second-factor)(?:\/|$)/,
+  /\/v\d+\/account\/?$/,
+];
 
 const ALLOWED_FILE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "image/bmp", "image/avif"]);
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -78,7 +113,22 @@ function relHasMultipart(meta: AppActionMeta): boolean {
   return (meta.rel ?? []).includes("multipart");
 }
 const MUTATING_METHODS = new Set<AppActionMethod>(["POST", "PUT", "PATCH", "DELETE"]);
-const BLOCKED_FIELD = /(?:^|_|-)(?:password|passwd|secret|token|authorization|cookie|refresh|access[_-]?token|card|cvv|cvc|iban|bic|payment|encrypted|client[_-]?secret)(?:$|_|-)/i;
+/** Sensitive field names, matched as case-insensitive substrings so camelCase
+ * names (`oldPassword`, `password1`, `paymentId`, `cardId`, `refreshToken`,
+ * `ibanNumber`) are caught too (issue #61). `bic` is too short for a substring
+ * match, so it is matched as a whole name segment. */
+const BLOCKED_FIELD_SUBSTRING = /passw|pwd|secret|token|authori[sz]ation|cookie|refresh|card|cvv|cvc|iban|payment|encrypted/i;
+const BLOCKED_FIELD_SEGMENTS = new Set(["bic"]);
+
+export function isSensitiveFieldName(name: string): boolean {
+  if (BLOCKED_FIELD_SUBSTRING.test(name)) return true;
+  const segments = name
+    .replace(/([a-z\d])([A-Z])/g, "$1 $2")
+    .replace(/([A-Za-z])(\d)/g, "$1 $2")
+    .toLowerCase()
+    .split(/[^a-z\d]+/);
+  return segments.some((segment) => BLOCKED_FIELD_SEGMENTS.has(segment));
+}
 
 export class AppActionExecutor {
   private readonly fetchImpl: FetchLike;
@@ -101,8 +151,11 @@ export class AppActionExecutor {
     if (!action || !action.form || !action.form.meta) throw new Error("AppAction form metadata is required");
     if (action.enabled === false) throw new Error("AppAction is disabled");
 
-    let target = this.validateTarget(action.form.meta.href);
+    let target = this.validateTarget(action.form.meta.href, options.routePolicy);
     const method = this.resolveMethod(action.form.meta);
+    if (options.routePolicy && !options.routePolicy.methods.includes(method)) {
+      throw new Error(`AppAction method ${method} is not allowed for this tool (${options.routePolicy.family} actions allow ${options.routePolicy.methods.join("/")})`);
+    }
     const values = this.normalizedValues([
       ...(action.form.values ?? []),
       { name: "visitorId", value: this.options.visitorId, kind: "text" as const },
@@ -133,7 +186,7 @@ export class AppActionExecutor {
     for (let redirectCount = 0; response.status >= 300 && response.status < 400 && redirectCount < 3; redirectCount += 1) {
       const location = response.headers.get("location");
       if (!location) throw new Error("AppAction redirect has no location");
-      target = this.validateTarget(location);
+      target = this.validateTarget(location, options.routePolicy);
       if (method !== "GET") throw new Error("AppAction mutation redirects are blocked");
       response = await this.requestWithCookies(target, { ...init, method: "GET", body: undefined });
     }
@@ -145,11 +198,17 @@ export class AppActionExecutor {
     return body;
   }
 
-  private validateTarget(href: string): string {
+  private validateTarget(href: string, policy?: AppActionRoutePolicy): string {
     if (!href || typeof href !== "string") throw new Error("AppAction href is required");
     const target = new URL(href, this.origin);
     if (target.protocol !== "https:" || target.origin !== this.origin) throw new Error("AppAction href is outside the allowed origin");
     if (!this.pathPrefixes.some((prefix) => target.pathname.startsWith(prefix))) throw new Error("AppAction path is outside the allowlist");
+    let path: string;
+    try { path = decodeURIComponent(target.pathname).toLowerCase(); } catch { throw new Error("AppAction path is not valid percent-encoding"); }
+    if (DENIED_ROUTES.some((re) => re.test(path))) throw new Error(`AppAction route is blocked: ${target.pathname} has its own guarded tool or is a credential/payment/order route`);
+    if (policy && !policy.pathPatterns.some((re) => re.test(path))) {
+      throw new Error(`AppAction route ${target.pathname} is outside the ${policy.family} family this tool may call; pass the matching action from a prior response`);
+    }
     return target.toString();
   }
 
@@ -163,7 +222,7 @@ export class AppActionExecutor {
   private normalizedValues(values: AppActionValue[]): AppActionValue[] {
     return values.map((item) => {
       if (!item || typeof item.name !== "string" || !item.name) throw new Error("AppAction value name is required");
-      if (BLOCKED_FIELD.test(item.name)) throw new Error(`Sensitive AppAction field is blocked: ${item.name}`);
+      if (isSensitiveFieldName(item.name)) throw new Error(`Sensitive AppAction field is blocked: ${item.name}`);
       return item;
     });
   }
