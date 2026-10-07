@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { parseCliConfig, startHttpServer } from "./http.js";
-import { informationalOutput, replyForTransportError } from "./cli.js";
+import { informationalOutput, isSetupCf, replyForTransportError } from "./cli.js";
 import { ConfigurationError } from "./infra/errors.js";
 import { resolveLocale } from "./infra/locale.js";
 import { log } from "./infra/logger.js";
@@ -12,6 +12,11 @@ async function main(): Promise<void> {
   const info = informationalOutput(process.argv.slice(2));
   if (info !== undefined) {
     process.stdout.write(info);
+    return;
+  }
+  if (isSetupCf(process.argv.slice(2))) {
+    const { runSetupCf } = await import("./infra/setup-cf.js");
+    process.exitCode = await runSetupCf();
     return;
   }
   const config = parseCliConfig(process.argv.slice(2));

@@ -3,11 +3,15 @@ import { VERSION } from "./server.js";
 export const USAGE = `alza-mcp ${VERSION} - unofficial MCP server for Alza.cz
 
 Usage: alza-mcp [--stdio | --http [--port N] [--host H]]
+       alza-mcp --setup-cf
 
   --stdio        Serve MCP over stdin/stdout (default)
   --http         Serve MCP over Streamable HTTP (default 127.0.0.1:3000/mcp)
   --port N       HTTP port (needs --http); also ALZA_HTTP_PORT or PORT
   --host H       HTTP bind address (needs --http); also ALZA_HTTP_HOST
+  --setup-cf     Create the optional curl_cffi venv (.venv-cf) with Python, then exit.
+                 Cross-platform (no bash); for .mcpb and --ignore-scripts installs.
+                 Honours ALZA_MCP_SKIP_VENV=1. Never runs automatically.
   -h, --help     Show this help and exit
   -v, --version  Print the version and exit
 
@@ -20,6 +24,11 @@ export function informationalOutput(argv: string[]): string | undefined {
   if (argv.includes("-h") || argv.includes("--help")) return USAGE;
   if (argv.includes("-v") || argv.includes("--version")) return `${VERSION}\n`;
   return undefined;
+}
+
+/** `--setup-cf` is a one-shot command, handled before any server config is parsed. */
+export function isSetupCf(argv: string[]): boolean {
+  return argv.includes("--setup-cf");
 }
 
 /** Wire-format JSON-RPC reply for a line the stdio transport could not parse (id is unknowable, so null). */
