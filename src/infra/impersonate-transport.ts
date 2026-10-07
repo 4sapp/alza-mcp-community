@@ -54,7 +54,7 @@ interface Pending {
   timer: NodeJS.Timeout;
 }
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+export const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 /** Candidate interpreters, in priority order (first that imports curl_cffi wins).
  * `platform` is injectable for tests; Windows venvs use Scripts\\python.exe and
@@ -140,6 +140,7 @@ export class ImpersonateTransport {
       }
       this.dead = true;
       log.warn("cf-transport: no interpreter with curl_cffi found (run scripts/ensure-cf-venv.sh)");
+      log.info("cf-transport: to create the curl_cffi venv without bash, run: npx -y alza-mcp --setup-cf");
       return false;
     })();
     return this.spawnPromise;
