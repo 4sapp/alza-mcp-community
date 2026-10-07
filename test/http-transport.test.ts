@@ -188,7 +188,7 @@ describe("Streamable HTTP transport (ALZA_HTTP_ENABLE_ACCOUNT opt-in)", () => {
     expect(sa.visitorId).not.toBe(sb.visitorId);
 
     // Mutation tokens: a token prepared in A is rejected in B (before any Alza request).
-    const prepared = await a.callTool({ name: "prepare_mutation", arguments: { action: "create" } });
+    const prepared = await a.callTool({ name: "prepare_mutation", arguments: { action: "create", payload: { name: "x" } } });
     const token = (prepared.structuredContent as { confirmationToken: string }).confirmationToken;
     expect(token).toMatch(/^[0-9a-f]{48}$/);
     await b.callTool({ name: "set_toolset", arguments: { id: "basket_and_checkout", enabled: true } });

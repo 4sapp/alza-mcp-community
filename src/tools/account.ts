@@ -158,15 +158,18 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           description:
             "Start a two-step mutation by returning a one-time confirmation token bound to exactly one action. This call itself sends nothing to Alza. " +
             "Use it before the high-impact typed mutations — `register` (action `register`), `address_upsert` (`address_create` or `address_edit`), `address_delete` (`address_delete`), `pay_after_order` (`after_order_payment`), `web_place_order` (`web_place_order`), `web_pay_after_order` (`web_after_order_payment`), `cancel_order` (`cancel_order`), `review_submit` (`review_submit`), `subscription_activate` (`subscription_activate`), `subscription_update_installment` (`subscription_update_installment`), `upload_attachment` (`attachment_upload`), `watchdog_set` (`watchdog_set`), `watchdog_delete` (`watchdog_delete`) — and before any low-risk `mutate_list` action (" + LOW_RISK_ACTIONS.map((a) => "`" + a + "`").join(", ") + "). " +
-            "Pass the returned token as `confirmation_token` on the matching call; the token is single-use — the first call that presents it spends it, even if that call fails, so prepare a new one to retry — and only valid for the exact action you prepared. " +
+            "Pass `payload`: exactly the arguments you will send to that tool, all except `confirmation_token` (for `mutate_list`, the object you will pass as its `payload`). The token is bound to the action and to that payload — a call with different arguments is refused and spends the token. " +
+            "Pass the returned token as `confirmation_token` on the matching call; the token is single-use — the first call that presents it spends it, even if that call fails, so prepare a new one to retry — and it expires 5 minutes after it is issued (`expiresAt`). " +
+            "Each action has its own pending token: preparing the same action again replaces its earlier token, tokens prepared for other actions stay valid. " +
             "Do not use for read-only tools, and not for `add_to_cart` (which is a low-risk cart write that needs no token).",
           inputSchema: {
             action: z.enum([...LOW_RISK_ACTIONS, ...HIGH_IMPACT_ACTIONS, ...TYPED_LOW_RISK_ACTIONS]).describe("Which mutation you are about to perform; the token will only be accepted by that action's tool."),
+            payload: jsonObject.describe("The exact arguments of the mutation call, without `confirmation_token` — e.g. cancel_order: {order_id, part_id, hash, reason}; mutate_list coupon_add: {coupon: \"CODE\"}. Show these to the user when asking for confirmation; the call must repeat them unchanged (omitted defaulted arguments are fine)."),
           },
           annotations: { readOnlyHint: true, idempotentHint: false, destructiveHint: false, openWorldHint: false },
           outputSchema: OUTPUT_SCHEMAS["prepare_mutation"],
         },
-        async (args) => wrap("prepare_mutation", async () => result(apiAccount(deps).prepareMutation(args.action))),
+        async (args) => wrap("prepare_mutation", async () => result(apiAccount(deps).prepareMutation(args.action, args.payload))),
       );
     },
   };
@@ -185,7 +188,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             "Side effect: persists the change on the user's Alza account. Example: `mutate_list({action: \"coupon_add\", confirmation_token: \"...\", payload: {coupon: \"WELCOME10\"}})`.",
           inputSchema: {
             action: z.enum(LOW_RISK_ACTIONS).describe("Which whitelisted mutation to execute; determines the expected `payload` shape."),
-            confirmation_token: z.string().min(32).describe("One-time token from `prepare_mutation` prepared with this same `action`."),
+            confirmation_token: z.string().min(32).describe("One-time token from `prepare_mutation` prepared with this same `action` and this same `payload`."),
             payload: jsonObject.describe("Mutation payload matching the mobile DTO for `action`, e.g. coupon_add: {coupon: \"CODE\"}; coupon_remove: {couponId: 123}; basket_update: {basket_id: 1, flag: true}."),
           },
           annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: true, openWorldHint: true },

@@ -426,14 +426,15 @@ async function run() {
     const cardId = num(afterItem.cardId) ?? num(firstMatch(afterPays, (o) => o && typeof o === "object" && num(o.cardId) !== undefined)?.cardId);
     console.log(`after-order payment: paymentId=${afterPaymentId}${cardId !== undefined ? ` cardId=${cardId}` : ""}`);
 
-    const prep = await call("alza_prepare_mutation", { action: "after_order_payment" }, "prepare after_order_payment token");
-    const paid = await call("alza_pay_after_order", {
+    // The token is bound to the exact call arguments (#79).
+    const payArgs = {
       order_id: orderId,
       invoice_number: String(invoiceNumber),
       payment_id: afterPaymentId,
       ...(cardId !== undefined ? { card_id: cardId } : {}),
-      confirmation_token: prep.confirmationToken,
-    }, "after-order payment execution (afterOrderPayment)");
+    };
+    const prep = await call("alza_prepare_mutation", { action: "after_order_payment", payload: payArgs }, "prepare after_order_payment token");
+    const paid = await call("alza_pay_after_order", { ...payArgs, confirmation_token: prep.confirmationToken }, "after-order payment execution (afterOrderPayment)");
 
     const finalOrder = await call("alza_order", { order_id: orderId, part_id: String(partId) }, "final order read (payment state)");
 

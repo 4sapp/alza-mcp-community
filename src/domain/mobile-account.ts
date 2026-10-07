@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { z, ZodError } from "zod";
 import { assertNotRejected } from "../infra/errors.js";
 import type { MobileApi, OAuthStart } from "../infra/mobile-api.js";
@@ -25,6 +25,44 @@ export const MUTATION_ACTIONS = [
   // native price/stock watchdog (B9/B9b, live-verified 2026-10-06): typed tools
   "watchdog_set", "watchdog_delete",
 ] as const;
+
+/** How long a `prepare_mutation` / `checkout_preview` token stays valid. */
+export const MUTATION_TOKEN_TTL_MS = 5 * 60 * 1000;
+
+/** Defaults the typed tools' input schemas fill in when an argument is omitted.
+ * They are merged into both the prepared and the presented payload before
+ * hashing, so leaving a defaulted argument out of `prepare_mutation` still
+ * matches the call (kept in sync with the tool schemas by a test). */
+export const MUTATION_PAYLOAD_DEFAULTS: Readonly<Partial<Record<string, Readonly<Record<string, unknown>>>>> = {
+  cancel_order: { reason: 0 },
+  web_place_order: { register_user: false, country_id: 0, quotation: false },
+  web_after_order_payment: { invoice_id: "0" },
+  watchdog_set: { track_stock: true },
+};
+
+/** Stable JSON: object keys sorted, `undefined` members dropped, recursively. */
+function canonicalJson(value: unknown): string {
+  if (value === undefined) return "null";
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
+}
+
+/** SHA-256 over the action and the canonical payload (with the action's schema defaults). */
+export function mutationPayloadHash(action: string, payload: Record<string, unknown>): string {
+  const merged: Record<string, unknown> = { ...(MUTATION_PAYLOAD_DEFAULTS[action] ?? {}) };
+  for (const [k, v] of Object.entries(payload)) if (v !== undefined) merged[k] = v;
+  return createHash("sha256").update(action).update("\0").update(canonicalJson(merged)).digest("hex");
+}
+
+function tokensEqual(a: string, b: string): boolean {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
+}
 
 const WHITELISTED_MUTATIONS = new Set<string>([
   "create", "rename", "delete", "add", "remove", "move", "set_country", "set_isic",
@@ -220,8 +258,9 @@ function validateReadArgs(operation: string, args: Record<string, unknown>): voi
 }
 
 export class MobileAccount {
-  private pending?: MobileCheckoutPreview;
-  private pendingMutation?: { token: string; action: string };
+  private pending?: MobileCheckoutPreview & { expiresAt: number };
+  /** One pending token per action (several actions may be pending at once). */
+  private readonly pendingMutations = new Map<string, { token: string; payloadHash?: string; expiresAt: number }>();
   constructor(private readonly api: MobileApi) {}
 
   async authStart(): Promise<OAuthStart> { return this.api.startOAuth(); }
@@ -306,7 +345,7 @@ export class MobileAccount {
 
   /** Registration (APK `Register` DTO) — high-impact, one-time token. */
   async register(payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("register", token);
+    this.assertMutationToken("register", token, payload);
     validateRegisterPayload(payload);
     const result = await this.api.register({ email: payload.email as string, phone: payload.phone as string, pwd: payload.pwd as string, code: optionalString(payload, "code", 32) });
     return result;
@@ -316,11 +355,22 @@ export class MobileAccount {
    * caller's first `await` (issue #56): concurrent calls carrying the same
    * token cannot all pass, and a failed or rejected attempt also spends it —
    * a retry needs a fresh `prepare_mutation`. A token presented for a
-   * different action is not consumed. */
-  private assertMutationToken(action: string, token: string, message = `Invalid or expired ${action} confirmation token; call prepare_mutation again.`): void {
-    const pending = this.pendingMutation;
-    if (!pending || pending.action !== action || pending.token !== token) throw new Error(message);
-    this.pendingMutation = undefined;
+   * different action is not consumed.
+   *
+   * Issue #79: each action has its own pending slot; a token expires after
+   * MUTATION_TOKEN_TTL_MS; and a token prepared with a payload is accepted only
+   * for the same payload (canonical SHA-256, see `mutationPayloadHash`). An
+   * expired or payload-mismatched token is spent, so nothing is sent. */
+  private assertMutationToken(action: string, token: string, bound: Record<string, unknown>, message = `Invalid or expired ${action} confirmation token; call prepare_mutation again.`): void {
+    const pending = this.pendingMutations.get(action);
+    if (!pending || typeof token !== "string" || !tokensEqual(pending.token, token)) throw new Error(message);
+    this.pendingMutations.delete(action);
+    if (Date.now() >= pending.expiresAt) {
+      throw new Error(`The ${action} confirmation token expired (tokens are valid for ${MUTATION_TOKEN_TTL_MS / 60_000} minutes); nothing was sent — call prepare_mutation again.`);
+    }
+    if (pending.payloadHash !== undefined && mutationPayloadHash(action, bound) !== pending.payloadHash) {
+      throw new Error(`The ${action} arguments differ from the payload confirmed with prepare_mutation; nothing was sent and the token is spent. Call prepare_mutation again with exactly the arguments you will pass (all except confirmation_token).`);
+    }
   }
 
   private actionFrom(action: Record<string, unknown>): ServerAppAction {
@@ -344,7 +394,7 @@ export class MobileAccount {
   /** Address-book create/edit (dynamic form action from the profile response). */
   async addressUpsert(kind: "create" | "edit", action: Record<string, unknown>, payload: Record<string, unknown>, token: string): Promise<unknown> {
     const op = kind === "create" ? "address_create" : "address_edit";
-    this.assertMutationToken(op, token);
+    this.assertMutationToken(op, token, { kind, action, ...payload });
     validateAddressPayload(payload);
     const extra: AppActionValue[] = [
       { name: "name", value: payload.name, kind: "text" },
@@ -366,7 +416,7 @@ export class MobileAccount {
 
   /** Address-book delete (per-address delete action from the profile response). */
   async addressDelete(action: Record<string, unknown>, payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("address_delete", token);
+    this.assertMutationToken("address_delete", token, { action, ...payload });
     const addressId = requireInt(payload, "address_id");
     const result = await this.executeAction(this.actionFrom(action), APP_ACTION_ROUTE_POLICIES.addressWrite, { token, extraValues: [{ name: "id", value: addressId, kind: "integer" }] });
     return result;
@@ -447,7 +497,7 @@ export class MobileAccount {
   /** A17 (2026-09-22): GDPR export trigger (low-risk mutation, one-time token).
    * Sends the XML personal-data export to the account's own login email. */
   async gdprExport(payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("gdpr_export", token);
+    this.assertMutationToken("gdpr_export", token, payload);
     return this.sendGdprExport(payload);
   }
 
@@ -461,7 +511,7 @@ export class MobileAccount {
   /** A14 (2026-09-22): change the account password (credential mutation, one-time
    * token). Logs the user out of every device on success. */
   async changePassword(payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("change_password", token);
+    this.assertMutationToken("change_password", token, payload);
     const uid = requireUserId(payload.user_id);
     const oldPassword = requireString(payload, "old_password", 64);
     const newPassword = requireString(payload, "new_password", 64);
@@ -475,7 +525,7 @@ export class MobileAccount {
 
   /** A15 (2026-09-22): enable/disable SMS two-factor (one-time token). */
   async twoFactorSet(payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("two_factor_set", token);
+    this.assertMutationToken("two_factor_set", token, payload);
     const uid = requireUserId(payload.user_id);
     const enabled = payload.enabled;
     if (typeof enabled !== "boolean") throw new Error("enabled must be a boolean (true to turn 2FA on, false to turn it off)");
@@ -487,7 +537,7 @@ export class MobileAccount {
    * Accepts separators (`+420 777 123 456`); sends the compact international
    * form (the account's stored shape, e.g. `+420601234567`). */
   async phoneChange(payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("phone_change", token);
+    this.assertMutationToken("phone_change", token, payload);
     const uid = requireUserId(payload.user_id);
     const phone = requireString(payload, "phone", 24).replace(/[\s-]/g, "");
     if (!/^\+\d{1,3}\d{5,15}$/.test(phone)) throw new Error("phone must be an international number, e.g. '+420777123456' (separators allowed)");
@@ -497,7 +547,7 @@ export class MobileAccount {
 
   /** A16 bonus (2026-09-22): change the contact email (one-time token). */
   async emailChange(payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("email_change", token);
+    this.assertMutationToken("email_change", token, payload);
     const uid = requireUserId(payload.user_id);
     const email = requireString(payload, "email", 100);
     if (!EMAIL_RE.test(email)) throw new Error("email must be a valid address");
@@ -507,7 +557,7 @@ export class MobileAccount {
 
   /** A18 (2026-09-22): delete the account (irreversible, one-time token). */
   async deleteAccount(payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("delete_account", token);
+    this.assertMutationToken("delete_account", token, payload);
     const uid = requireUserId(payload.user_id);
     const result = await this.api.deleteAccount(uid);
     return result ?? { deleted: true };
@@ -555,7 +605,7 @@ export class MobileAccount {
 
   /** After-order payment execution (APK `AfterOrderRequestBody`) — money movement, one-time token. */
   async payAfterOrder(payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("after_order_payment", token);
+    this.assertMutationToken("after_order_payment", token, payload);
     validateAfterOrderPaymentPayload(payload);
     const result = await this.api.afterOrderPayment({
       id: payload.order_id as string,
@@ -657,7 +707,7 @@ export class MobileAccount {
    * 113-gate retry → CheckOrder4 → SendOrder4). High-impact, one-time token.
    * The `save2` state skips the AlzaPlus/leasing gates (subscription/leasing id 0). */
   async webPlaceOrder(payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("web_place_order", token);
+    this.assertMutationToken("web_place_order", token, payload);
     const deliveryId = requireInt(payload, "delivery_id");
     if (deliveryId < 1) throw new Error("delivery_id must be a positive integer");
     const groupId = optionalInt(payload, "delivery_group_id");
@@ -747,7 +797,7 @@ export class MobileAccount {
    * the verified real-payment path (2026-09-06: MojePlatba → KB SSO).
    * Money movement, high-impact, one-time token. */
   async webAfterOrderPayment(payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("web_after_order_payment", token);
+    this.assertMutationToken("web_after_order_payment", token, payload);
     const orderId = requireString(payload, "order_id", 64);
     const paymentId = requireInt(payload, "payment_id");
     if (paymentId < 1) throw new Error("payment_id must be a positive integer");
@@ -782,7 +832,7 @@ export class MobileAccount {
    * order re-read may briefly show a "processing changes" transitional state
    * before settling to cancelled. */
   async cancelOrder(orderId: string, hash: string, partId: string, reason: number, token: string): Promise<unknown> {
-    this.assertMutationToken("cancel_order", token);
+    this.assertMutationToken("cancel_order", token, { order_id: orderId, hash, part_id: partId, reason });
     if (typeof orderId !== "string" || orderId.length === 0 || orderId.length > 64) throw new Error("order_id must be a non-empty string (max 64)");
     if (typeof hash !== "string" || hash.length === 0 || hash.length > 128) throw new Error("hash must be a non-empty string (max 128)");
     if (typeof partId !== "string" || partId.length === 0 || partId.length > 64) throw new Error("part_id must be a non-empty string (max 64)");
@@ -794,7 +844,7 @@ export class MobileAccount {
 
   /** Reviews / complaints / subscriptions / attachments (server-provided AppAction forms). */
   async reviewSubmit(action: Record<string, unknown>, payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("review_submit", token);
+    this.assertMutationToken("review_submit", token, { action, ...payload });
     const rating = requireInt(payload, "rating");
     if (rating < 1 || rating > 5) throw new Error("rating must be an integer between 1 and 5");
     const text = optionalString(payload, "text", 10000);
@@ -853,7 +903,7 @@ export class MobileAccount {
   }
 
   async subscriptionActivate(action: Record<string, unknown>, payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("subscription_activate", token);
+    this.assertMutationToken("subscription_activate", token, { action, ...payload });
     const values = payload.values;
     if (values !== undefined && !Array.isArray(values)) throw new Error("values must be an array of {name, value, kind?}");
     const extra = values === undefined ? undefined : validateTypedValues(values);
@@ -862,7 +912,7 @@ export class MobileAccount {
   }
 
   async subscriptionUpdateInstallment(action: Record<string, unknown>, payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("subscription_update_installment", token);
+    this.assertMutationToken("subscription_update_installment", token, { action, ...payload });
     const values = payload.values;
     if (values !== undefined && !Array.isArray(values)) throw new Error("values must be an array of {name, value, kind?}");
     const extra = values === undefined ? undefined : validateTypedValues(values);
@@ -872,7 +922,7 @@ export class MobileAccount {
 
   /** Attachment upload (multipart AppAction, one-time token). */
   async uploadAttachment(action: Record<string, unknown>, payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("attachment_upload", token);
+    this.assertMutationToken("attachment_upload", token, { action, ...payload });
     if (!Array.isArray(payload.files)) throw new Error("files must be an array of file parts");
     const fileParts = validateFileParts(payload.files as Array<Record<string, unknown>>);
     const values = payload.values;
@@ -894,7 +944,7 @@ export class MobileAccount {
    * (one-time token). Refuses when one already exists for the product — there
    * is no live-verified update path, so delete-then-set is the supported flow. */
   async watchdogSet(payload: Record<string, unknown>, token: string): Promise<Record<string, unknown>> {
-    this.assertMutationToken("watchdog_set", token);
+    this.assertMutationToken("watchdog_set", token, payload);
     const uid = requireUserId(payload.user_id);
     const commodityId = requireInt(payload, "commodity_id");
     if (commodityId < 1) throw new Error("commodity_id must be a positive integer");
@@ -922,7 +972,7 @@ export class MobileAccount {
   /** B9b (2026-10-06): delete a watchdog by id (from watchdog_list) or by the
    * product it watches (resolved through the dialog's deleteAction). One-time token. */
   async watchdogDelete(payload: Record<string, unknown>, token: string): Promise<Record<string, unknown>> {
-    this.assertMutationToken("watchdog_delete", token);
+    this.assertMutationToken("watchdog_delete", token, payload);
     const uid = requireUserId(payload.user_id);
     let watchdogId: string | undefined;
     let commodityId: number | undefined;
@@ -941,16 +991,23 @@ export class MobileAccount {
     return { deleted: true, watchdog_id: watchdogId, ...(commodityId === undefined ? {} : { commodity_id: commodityId }) };
   }
 
-  prepareMutation(action: string): { action: string; confirmationToken: string } {
+  /** Issues a one-time token for `action`, valid for MUTATION_TOKEN_TTL_MS.
+   * With `payload`, the token is bound to it: the mutation call must carry the
+   * same arguments (the `prepare_mutation` tool always passes one). Preparing
+   * the same action again replaces that action's earlier token; tokens for
+   * other actions stay valid. */
+  prepareMutation(action: string, payload?: Record<string, unknown>): { action: string; confirmationToken: string; expiresAt: string; payloadBound: boolean } {
     if (!(MUTATION_ACTIONS as readonly string[]).includes(action)) throw new Error(`Unknown mutation action: ${action}`);
+    if (payload !== undefined && (payload === null || typeof payload !== "object" || Array.isArray(payload))) throw new Error("payload must be a JSON object");
     const confirmationToken = randomBytes(24).toString("hex");
-    this.pendingMutation = { action, token: confirmationToken };
-    return { action, confirmationToken };
+    const expiresAt = Date.now() + MUTATION_TOKEN_TTL_MS;
+    this.pendingMutations.set(action, { token: confirmationToken, payloadHash: payload === undefined ? undefined : mutationPayloadHash(action, payload), expiresAt });
+    return { action, confirmationToken, expiresAt: new Date(expiresAt).toISOString(), payloadBound: payload !== undefined };
   }
 
   async mutateList(action: string, token: string, payload: Record<string, unknown>): Promise<unknown> {
     if (!WHITELISTED_MUTATIONS.has(action)) throw new Error(`Mutation ${action} is not a whitelisted low-risk mutation; use the matching typed tool instead.`);
-    this.assertMutationToken(action, token, "Invalid or expired mutation confirmation token; call prepare_mutation again.");
+    this.assertMutationToken(action, token, payload, "Invalid or expired mutation confirmation token; call prepare_mutation again.");
     validateListPayload(action, payload);
     const result = action === "create" ? await this.api.createCommodityList(payload)
       : action === "rename" ? await this.api.renameCommodityList(payload)
@@ -990,14 +1047,16 @@ export class MobileAccount {
     const checkoutState = await this.api.sendOrder1();
     const deliveryPaymentGroups = await this.api.deliveryPaymentGroups(selectedDeliveryOptionId);
     const preview = { cart: await this.cart(), deliveryPaymentGroups, checkoutState, confirmationToken: randomBytes(24).toString("hex") };
-    this.pending = preview;
+    this.pending = { ...preview, expiresAt: Date.now() + MUTATION_TOKEN_TTL_MS };
     return preview;
   }
 
   async submitOrder(token: string, deliveryPayment: Record<string, unknown>, userInfo: Record<string, unknown>, completeOrder: Record<string, unknown>): Promise<unknown> {
-    if (!this.pending || this.pending.confirmationToken !== token) throw new Error("Invalid or expired confirmation token; call checkout_preview again.");
+    const pending = this.pending;
+    if (!pending || typeof token !== "string" || !tokensEqual(pending.confirmationToken, token)) throw new Error("Invalid or expired confirmation token; call checkout_preview again.");
     // Consume before the first await (issue #56): one checkout_preview token, one submission.
     this.pending = undefined;
+    if (Date.now() >= pending.expiresAt) throw new Error(`The checkout token expired (tokens are valid for ${MUTATION_TOKEN_TTL_MS / 60_000} minutes); nothing was sent — call checkout_preview again.`);
     const selected = await this.api.sendOrder2(deliveryPayment);
     const user = await this.api.sendOrder3(userInfo);
     const approved = await this.api.approveOrder4();

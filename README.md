@@ -136,7 +136,7 @@ Account and checkout tools:
 | **`auth_exchange`** | Exchanges the returned authorization code for mobile-API tokens |
 | **`auth_discovery`** | Reads live OIDC metadata from `identity.alza.cz` |
 | **`mobile_read`** | Reads fixed APK-confirmed catalog, navigation, account, order-history, list, branch, alternative-product, basket, cost-estimate, web after-payment-dialog, web zip-code (WCF `GetZipCodes` twin), and chatbot-navigation capabilities |
-| **`prepare_mutation`** | Creates a one-time token for a fixed, source-confirmed mutation without sending a request |
+| **`prepare_mutation`** | Creates a one-time token for a fixed, source-confirmed mutation without sending a request; the token is bound to the action and the exact call arguments (`payload`) and expires after 5 minutes |
 | **`mutate_list`** | Executes a validated APK-confirmed low-risk mutation (lists, coupons, basket, country/ISIC, gift, watchdog, feedback, discussion) with that token |
 | **`account_status`** | Checks whether a mobile API access token is loaded |
 | **`cart`** | Reads the current cart and total |
@@ -387,7 +387,7 @@ Alza's bot protection can challenge ordinary HTTP requests. The catalog uses hea
 
 1. OAuth sign-in does not pass the Alza password as an MCP tool argument — sign-in happens in the user's browser (OAuth PKCE) and the MCP only exchanges the returned code. Tools that necessarily carry credentials as arguments (`register`, `change_password`, `phone_change`, `email_change`) require an explicit one-time token and should only be called with the user's direct instruction.
 2. `checkout_preview` creates a one-time confirmation token after the cart and delivery choice are reviewed; `place_order` refuses arbitrary tokens.
-3. `web_place_order` (the currently working submission path — mobile `place_order` returns HTTP 500 server-side) and every other high-impact mutation (`cancel_order`, `pay_after_order`, `delete_account`, …) require a one-time token from `prepare_mutation`. Tokens are single-use and bound to one action. MFA and 3-D Secure remain user-controlled browser interactions.
+3. `web_place_order` (the currently working submission path — mobile `place_order` returns HTTP 500 server-side) and every other high-impact mutation (`cancel_order`, `pay_after_order`, `delete_account`, …) require a one-time token from `prepare_mutation`. Tokens are single-use, bound to one action and to the exact arguments passed as `payload`, and expire after 5 minutes. MFA and 3-D Secure remain user-controlled browser interactions.
 4. These tools create, change and cancel **real orders and accounts**. The token is a guard against accidental calls by an agent, not a substitute for the user confirming the action — have your agent show the order summary and ask first.
 
 ### Can I avoid the Chromium download?

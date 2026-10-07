@@ -66,6 +66,10 @@ export const PREPARE_MUTATION = z
     action: z.string(),
     /** Single-use token; pass as confirmation_token on the matching tool. */
     confirmationToken: z.string(),
+    /** When the token stops being accepted (ISO 8601; 5 minutes after issue). */
+    expiresAt: z.string(),
+    /** Whether the token is bound to the prepared payload (always true via the tool). */
+    payloadBound: z.boolean(),
   })
   .passthrough();
 
