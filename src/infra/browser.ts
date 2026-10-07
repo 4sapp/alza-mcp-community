@@ -227,7 +227,7 @@ export class AlzaBrowser {
       this.browser = undefined;
       this.context = undefined;
       this.contextPromise = undefined;
-    this.contextGeneration++;
+      this.contextGeneration++;
     });
   }
 
