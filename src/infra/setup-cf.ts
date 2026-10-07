@@ -91,5 +91,6 @@ export async function runSetupCf(opts: SetupCfOptions = {}): Promise<number> {
   r = run(venvPy, ["-c", "import curl_cffi; print(curl_cffi.__version__)"]);
   if (r.error || r.status !== 0) return fail("curl_cffi installed but cannot be imported", r);
   out(`cf-venv: ready (${venv}, curl_cffi ${r.stdout.trim()})`);
+  out(`cf-venv: only a server running from this same package directory finds it automatically; for any other install (e.g. the .mcpb bundle) set ALZA_CF_PYTHON=${venvPy}`);
   return 0;
 }

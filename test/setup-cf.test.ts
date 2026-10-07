@@ -46,6 +46,7 @@ describe("alza-mcp --setup-cf", () => {
     expect(h.calls.some((c) => c.includes("-m pip install --quiet curl_cffi>=0.16,<0.17"))).toBe(true);
     expect(h.calls.some((c) => c.startsWith(path.join(root, ".venv-cf", "bin", "python")))).toBe(true);
     expect(h.out.join("\n")).toContain("ready");
+    expect(h.out.join("\n")).toContain(`ALZA_CF_PYTHON=${path.join(root, ".venv-cf", "bin", "python")}`);
   });
 
   it("is idempotent when the venv already imports curl_cffi", async () => {
