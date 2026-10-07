@@ -148,6 +148,7 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
       storefront: browser.locale.baseUrl,
       transport: opts.transport ?? "stdio",
       fingerprintSidecar: cfTransport.available ? "enabled" : "unavailable",
+      proxy: process.env.ALZA_PROXY_URL?.trim() ? "set" : "not set",
     }),
   });
 

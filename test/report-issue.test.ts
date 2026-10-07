@@ -13,6 +13,7 @@ const DIAG: Diagnostics = {
   storefront: "https://www.alza.cz",
   transport: "stdio",
   fingerprintSidecar: "enabled",
+  proxy: "not set",
 };
 
 describe("redact", () => {
@@ -63,6 +64,7 @@ describe("buildIssueDraft", () => {
     expect(draft.title).toBe("Endpoint broken: search_products returns HTTP 500 for 'monitor'");
     expect(draft.body).not.toContain("jan@example.cz");
     expect(draft.body).toContain("- alza-mcp version: 9.9.9");
+    expect(draft.body).toContain("- Proxy (`ALZA_PROXY_URL`): not set");
     expect(draft.body).toContain("1. search_products({query: \"monitor\"})");
     // The ring buffer keeps the 3 most recent errors.
     expect(draft.recent_errors_included).toBe(3);

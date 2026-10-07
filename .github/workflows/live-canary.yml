@@ -18,7 +18,10 @@ name: Live canary
 # 2026-10-07 (run 37578987022): the `curl_cffi` Chrome-fingerprint sidecar gets
 # the same 403 challenge from the runner, and so do curl_cffi, headless and
 # headed Chromium after routing the runner through Cloudflare WARP. The block
-# is on the egress IP's reputation, not the client fingerprint. To get a real
+# is on the egress IP's reputation, not the client fingerprint. Two fixes: a
+# self-hosted runner (CANARY_RUNS_ON, below) or an ALZA_PROXY_URL repository
+# secret pointing at a residential/office HTTP(S) or SOCKS5 proxy, which the
+# browser and the curl_cffi sidecar both use. To get a real
 # signal, register a self-hosted runner on a residential/office IP and set the
 # repository variable CANARY_RUNS_ON to its label (e.g. `self-hosted`). This is
 # a public repo: read GitHub's self-hosted runner security notes first (a fork
@@ -53,6 +56,10 @@ jobs:
 
       - name: Run live checks
         id: validate
+        env:
+          # Optional residential/office proxy (repository secret). GitHub-hosted
+          # runner IPs are challenged by Alza's Cloudflare whatever the client.
+          ALZA_PROXY_URL: ${{ secrets.ALZA_PROXY_URL }}
         run: |
           set +e
           npm run validate:api -- --markdown "$RUNNER_TEMP/canary.md" 2>&1 | tee "$RUNNER_TEMP/canary.log"

@@ -104,6 +104,8 @@ export interface Diagnostics {
   storefront: string;
   transport: string;
   fingerprintSidecar: string;
+  /** Whether ALZA_PROXY_URL is set — never the URL itself (it can carry credentials). */
+  proxy: string;
 }
 
 export interface IssueDraft {
@@ -156,6 +158,7 @@ export function buildIssueDraft(input: IssueInput, diag: Diagnostics, recent: Re
     `- Storefront (\`ALZA_BASE_URL\`): ${diag.storefront}`,
     `- Transport: ${diag.transport}`,
     `- Chrome-fingerprint sidecar: ${diag.fingerprintSidecar}`,
+    `- Proxy (\`ALZA_PROXY_URL\`): ${diag.proxy}`,
   );
   if (errors.length) {
     sections.push(
