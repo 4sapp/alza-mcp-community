@@ -34,6 +34,10 @@ export interface CfRequest {
   timeoutMs?: number;
 }
 
+/** The request was never handed to the sidecar (disabled, dead, or failed to
+ * spawn), so it provably did not reach Alza and may be sent another way. Any
+ * other failure (timeout, a curl error, the sidecar exiting mid-request) is
+ * ambiguous: the request may already have been sent. */
 export class TransportUnavailableError extends Error {
   constructor(reason: string) {
     super(`Chrome-fingerprint transport unavailable: ${reason}`);
@@ -144,11 +148,11 @@ export class ImpersonateTransport {
     });
     child.on("error", (err) => {
       log.warn("cf-transport: child error", { error: String(err) });
-      this.killAll(new TransportUnavailableError(String(err)));
+      this.killAll(String(err));
     });
     child.on("exit", (code) => {
       log.warn("cf-transport: sidecar exited", { code });
-      this.killAll(new TransportUnavailableError(`sidecar exited (${code})`));
+      this.killAll(`sidecar exited (${code})`);
     });
   }
 
@@ -176,11 +180,13 @@ export class ImpersonateTransport {
     });
   }
 
-  private killAll(err: Error): void {
+  /** In-flight requests were already written to the sidecar, so they fail with
+   * an ambiguous error, never TransportUnavailableError (see its doc). */
+  private killAll(reason: string): void {
     this.dead = true;
     for (const p of this.pending.values()) {
       clearTimeout(p.timer);
-      p.reject(err);
+      p.reject(new Error(`cf-transport: ${reason} while a request was in flight`));
     }
     this.pending.clear();
   }
@@ -221,7 +227,7 @@ export class ImpersonateTransport {
 
   close(): void {
     this.closed = true;
-    this.killAll(new TransportUnavailableError("transport closed"));
+    this.killAll("transport closed");
     this.child?.kill();
     this.child = null;
   }

@@ -199,7 +199,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
         {
           title: "Check mobile API auth status",
           description:
-            "Report whether a mobile API access token is loaded in this server process. " +
+            "Report whether a mobile API access token is loaded in this server process, and when it expires (`expiresAt`, `expired`) if that is known. An expired token is refreshed automatically before the next account call when a refresh token is loaded. " +
             "Use as a first check before account-scoped tools (`cart`, `profile`, `order`, `add_to_cart`), or to diagnose \"not authenticated\" failures. " +
             "If no token is loaded, run `auth_start`, have the user complete the browser sign-in, then `auth_exchange`. " +
             "Read-only; no network call.",
@@ -243,7 +243,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             "Use when the user wants a product put into their Alza account; pass `quantity` (default 1, max 99). " +
             "Side effect: mutates the cart — the item stays there until removed or ordered (there is no basket-remove tool). " +
             "Do not use for the separate HATEOAS web checkout cart — that is `web_add_to_cart` (does not share state with this tool; see its description). " +
-            "LIVE NOTE (2026-09-26): despite the usual auth prerequisite, this call also succeeds with no OAuth token loaded — it falls back to an anonymous, visitor-keyed (Balancer-Guid) WCF cart (`account_status` still reports `authenticated: true` but `user_id: -1`). " +
+            "LIVE NOTE (2026-09-26): despite the usual auth prerequisite, this call also succeeds with no OAuth token loaded — it falls back to an anonymous, visitor-keyed (Balancer-Guid) WCF cart (`user_id: -1`). With a token loaded, an anonymous answer means the token is stale: it is refreshed before the call when expired, and an anonymous answer to a loaded token is reported as an error (not retried) so nothing lands in the visitor cart unnoticed. " +
             "That anonymous cart is exactly what `delivery_options` + `web_place_order` need for the working (non-500) anonymous order pipeline — do NOT use `checkout_preview`/`place_order` for anonymous checkout, their `sendOrder3` step 500s unconditionally (docs/gap-analysis.md G1/G5). " +
             AUTH_PREREQ + " The response echoes the added line and the new basket count; verify with `cart` if in doubt. Example: `add_to_cart({code: \"RI054b1\", quantity: 1})`.",
           inputSchema: {

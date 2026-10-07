@@ -241,8 +241,8 @@ export class MobileAccount {
     }
   }
 
-  status(): { authenticated: boolean; visitorId: string; apiBaseUrl: string } {
-    return { authenticated: this.api.isAuthenticated, visitorId: this.api.visitorId, apiBaseUrl: this.api.baseUrl };
+  status(): { authenticated: boolean; visitorId: string; apiBaseUrl: string; expiresAt?: string; expired?: boolean } {
+    return { authenticated: this.api.isAuthenticated, visitorId: this.api.visitorId, apiBaseUrl: this.api.baseUrl, ...this.api.tokenExpiry };
   }
 
   /** Typed user-management reads (profile/address book, contacts). */
