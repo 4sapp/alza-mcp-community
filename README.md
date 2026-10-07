@@ -251,6 +251,7 @@ On HTTP the server is stricter than on stdio, because a network endpoint can be 
 | Env var / flag | Default | Purpose |
 |---|---|---|
 | `--http`, `ALZA_TRANSPORT=http` | stdio | Serve over Streamable HTTP |
+| `--help`, `--version` (`-h`, `-v`) | | Print usage or the version and exit |
 | `--port N`, `ALZA_HTTP_PORT` (or `PORT`) | `3000` | Listen port (`0` picks a free one) |
 | `--host H`, `ALZA_HTTP_HOST` | `127.0.0.1` | Bind address |
 | `ALZA_HTTP_ALLOWED_HOSTS` | loopback names when bound to loopback, otherwise no check | Comma-separated hostnames accepted in `Host`/`Origin` |

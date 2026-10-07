@@ -1,3 +1,5 @@
+import { ConfigurationError } from "./errors.js";
+
 export interface Locale {
   baseUrl: string;
   acceptLanguage: string;
@@ -53,8 +55,8 @@ export function resolveLocale(baseUrl?: string): Locale {
   const url = (pick(baseUrl) ?? pick(process.env.ALZA_BASE_URL) ?? DEFAULT_BASE_URL).replace(/\/$/, "");
   const locale = LOCALES[url];
   if (!locale) {
-    throw new Error(
-      `Unsupported ALZA_BASE_URL: ${url}. Supported: ${Object.keys(LOCALES).join(", ")}`
+    throw new ConfigurationError(
+      `Unsupported ALZA_BASE_URL: ${redactUrl(url)}. Supported: ${Object.keys(LOCALES).join(", ")}`
     );
   }
   return locale;
@@ -62,4 +64,14 @@ export function resolveLocale(baseUrl?: string): Locale {
 
 export function listSupportedLocales(): string[] {
   return Object.keys(LOCALES);
+}
+
+/** Origin + path only: never echo userinfo, query or fragment of a configured URL. */
+function redactUrl(raw: string): string {
+  try {
+    const u = new URL(raw);
+    return `${u.protocol}//${u.host}${u.pathname === "/" ? "" : u.pathname}`.slice(0, 80);
+  } catch {
+    return "<not a valid URL>";
+  }
 }
