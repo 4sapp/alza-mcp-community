@@ -2,7 +2,7 @@ import { z } from "zod";
 import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import type { MobileAccount } from "../domain/mobile-account.js";
 import type { RegisterableTool, ToolDeps, ToolResult } from "./types.js";
-import { formatOrder, formatProfile, withConciseText } from "./account-format.js";
+import { formatOrder, formatOrderDocument, formatPaymentMethods, formatProfile, jsonResult, withConciseText } from "./account-format.js";
 
 function apiAccount(deps: ToolDeps): MobileAccount {
   if (!deps.mobileAccount) throw new Error("mobile API account tools are not configured");
@@ -10,10 +10,8 @@ function apiAccount(deps: ToolDeps): MobileAccount {
 }
 
 function result(value: unknown): ToolResult {
-  return {
-    content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
-    structuredContent: value as Record<string, unknown>,
-  };
+  // Issue #73: the text channel is capped; structuredContent keeps the full value.
+  return jsonResult(value);
 }
 
 const jsonObject = z.record(z.string(), z.unknown());
@@ -47,7 +45,8 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
           title: "Read Alza user profile and address book",
           description:
             "Read the authenticated user's Alza profile: personal data, the delivery-address book with per-address HATEOAS actions (create/edit/delete/search), and account sections. " +
-            "Use to inspect the account, to confirm the account binding (`user_id`, email), and to obtain the `action` objects required by `address_upsert`, `address_delete`, `address_search`, `complaint_claims`, and the subscription tools. " +
+            "Use to inspect the account, to confirm the account binding (`user_id`, email), and to obtain the per-address `action` objects required by `address_upsert` and `address_delete` (present only when the account has saved addresses; `address_search` works without one). " +
+            "The numeric `user_id` is the input for the user-scoped reads (`order`, `order_archive`, `order_search`, `complaint_claims`, `subscription_overview`). " +
             AUTH_PREREQ +
             " Read-only. Honest caveat: with a stale or missing token the API may still answer HTTP 200 with an anonymous shape (`user_id: -1`, null email) — treat `user_id` as the binding signal, and refresh the token via `auth_start`/`auth_exchange` if it is -1.",
           inputSchema: {},
@@ -175,18 +174,18 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
         {
           title: "Search delivery addresses",
           description:
-            "Search the address database (zip/city) by following the server-provided addressSearchAction from the `profile` response. " +
-            "Use to suggest a valid address before `address_upsert`, or to verify a zip/city combination. " +
-            "Pass the `action` object verbatim from `profile` — never hand-craft it. " +
-            "Read-only; no confirmation token required (but the profile action needs a loaded access token).",
+            "Search Alza's zip/city database. Use to suggest a valid address before `address_upsert`, or to verify a zip/city combination. " +
+            "Without `action` it uses the live-verified zip-code lookup (`getZipCodes`, no token needed). " +
+            "If a `profile` response carries an `addressSearchAction`, you may pass that object verbatim as `action` instead — never hand-craft it. " +
+            "Read-only; no confirmation token required.",
           inputSchema: {
-            action: appAction,
+            action: appAction.optional().describe("Optional `addressSearchAction` copied verbatim from `profile` (it must contain form.meta.href). Omit to use the zip-code lookup."),
             query: z.string().min(1).max(50).describe("Zip or city query, e.g. '110 00' or 'Brno'."),
           },
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["address_search"],
         },
-        async (args) => wrap("address_search", async () => result(await apiAccount(deps).addressSearch(args.action, args.query))),
+        async (args) => wrap("address_search", async () => result(args.action ? await apiAccount(deps).addressSearch(args.action, args.query) : await apiAccount(deps).zipCitySearch(args.query))),
       );
     },
   };
@@ -208,7 +207,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["payment_methods"],
         },
-        async (args) => wrap("payment_methods", async () => result(await apiAccount(deps).paymentMethods(args.selected_delivery_option_id))),
+        async (args) => wrap("payment_methods", async () => withConciseText(await apiAccount(deps).paymentMethods(args.selected_delivery_option_id), formatPaymentMethods)),
       );
     },
   };
@@ -272,18 +271,18 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
           description:
             "Read an authenticated user's Alza order: lines, parts, milestones/tracking, and invoice document references; with `part_id`, the part detail as well. " +
             "Use to check order status, delivery tracking, or to collect the order/part ids needed by `after_order_payments`/`pay_after_order`. " +
-            "`user_flag` 0/1 selects the order scope exactly as the mobile app does. " +
+            "Pass `user_id` — the numeric Alza user id from the `profile`/`user_data` read (`user_id` field); the read is `GET /api/users/{user_id}/v1/orders/{order_id}`. " +
             AUTH_PREREQ + " Read-only.",
           inputSchema: {
-            order_id: z.string().min(1).max(64).describe("The order id to read."),
+            order_id: z.string().min(1).max(64).describe("The order id to read (e.g. from `order_archive`/`order_search`)."),
             part_id: z.string().min(1).max(64).optional().describe("Order part id for the part detail read. Omit for the whole order."),
-            user_flag: z.union([z.literal(0), z.literal(1)]).default(0).describe("Order scope selector, 0/1, exactly as the mobile app sends it. Default 0."),
+            user_id: z.string().regex(/^\d{1,16}$/).describe("Numeric Alza user id (the `user_id` field of the `profile`/`user_data` response)."),
             initial_created: z.boolean().default(false).describe("Include the initial-creation view of the order. Default false."),
           },
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["order"],
         },
-        async (args) => wrap("order", async () => withConciseText(await apiAccount(deps).order(args.order_id, args.part_id, args.user_flag, args.initial_created), formatOrder)),
+        async (args) => wrap("order", async () => withConciseText(await apiAccount(deps).order(args.order_id, args.part_id, args.user_id, args.initial_created), formatOrder)),
       );
     },
   };
@@ -348,16 +347,19 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
         {
           title: "List warranty claims",
           description:
-            "List the account's active warranty claims by following the server-provided warranty-claims action (activeWarrantyClaimsAction / showActiveWarrantyClaimsAction) from authenticated navigation or order detail. " +
-            "Use to show the user their open claims before filing or attaching evidence (see `upload_attachment`). " +
-            "Pass the `action` object verbatim — never hand-craft it. Read-only.",
+            "List the account's warranty claims (row K1): `GET /api/users/{user_id}/v1/warrantyClaims/{scope}` — `scope` `active` (default) or `archive`. " +
+            "Use to show the user their claims before filing or attaching evidence (see `upload_attachment`); each claim's `detailAction` goes to `claim_detail`. " +
+            "Pass `user_id` (the numeric id from `profile`). Alternatively pass a warranty-claims link or AppAction verbatim from a prior response as `action`. " +
+            AUTH_PREREQ + " Read-only.",
           inputSchema: {
-            action: appAction,
+            user_id: z.string().regex(/^\d{1,16}$/).optional().describe("Numeric Alza user id (the `user_id` field of the `profile`/`user_data` response). Required unless `action` is given."),
+            scope: z.enum(["active", "archive"]).default("active").describe("Which claim list to read: 'active' (open claims, default) or 'archive' (closed claims)."),
+            action: jsonObject.optional().describe("Optional: a warranty-claims link (`{href}`) or AppAction copied verbatim from a prior response. Omit to use `user_id` + `scope`."),
           },
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["complaint_claims"],
         },
-        async (args) => wrap("complaint_claims", async () => result(await apiAccount(deps).complaintClaims(args.action))),
+        async (args) => wrap("complaint_claims", async () => result(args.action ? await apiAccount(deps).complaintClaims(args.action) : await apiAccount(deps).warrantyClaims(args.user_id, args.scope))),
       );
     },
   };
@@ -369,16 +371,19 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
         {
           title: "Read AlzaSubscription overview",
           description:
-            "Read the AlzaSubscription overview (phases, savings, trial settings) by following the server-provided subscriptionAction from the account menu or authenticated navigation. " +
+            "Read the account's subscription section — the resource Alza's authenticated navigation links as `userSubscription` (`GET https://webapi.alza.cz/api/users/{user_id}/v1/subscription?country=CZ`). " +
             "Use to show the user their subscription state before `subscription_activate` or `subscription_update_installment`. " +
-            "Pass the `action` object verbatim — never hand-craft it. Read-only.",
+            "Caveat: the link is observed live but its response has not been verified yet, so treat the returned shape as unverified (row S1). " +
+            "Pass `user_id` (the numeric id from `profile`), or pass the `userSubscription` link / an AppAction verbatim as `action`. " +
+            AUTH_PREREQ + " Read-only.",
           inputSchema: {
-            action: appAction,
+            user_id: z.string().regex(/^\d{1,16}$/).optional().describe("Numeric Alza user id (the `user_id` field of the `profile`/`user_data` response). Required unless `action` is given."),
+            action: jsonObject.optional().describe("Optional: the `userSubscription` link (`{href}`) or an AppAction copied verbatim from a prior response. Omit to use `user_id`."),
           },
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["subscription_overview"],
         },
-        async (args) => wrap("subscription_overview", async () => result(await apiAccount(deps).subscriptionOverview(args.action))),
+        async (args) => wrap("subscription_overview", async () => result(args.action ? await apiAccount(deps).subscriptionOverview(args.action) : await apiAccount(deps).userSubscription(args.user_id))),
       );
     },
   };
@@ -636,12 +641,13 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
         {
           title: "Read a warranty claim detail",
           description:
-            "Read the detail of a single warranty claim/complaint (row K2) by executing that claim's `detailAction`, copied verbatim from a `complaint_claims` list response. " +
+            "Read the detail of a single warranty claim/complaint (row K2) by following that claim's `detailAction`, copied verbatim from a `complaint_claims` list response. " +
             "Use to show the full claim state, message banners, and complaint items for one claim. " +
-            "Pass the `action` object verbatim — never hand-craft it. Read-only (no token). " +
+            "Pass the `action` object verbatim — never hand-craft it; plain links (`{href}`) must point at the account's `.../v1/warrantyClaims/...` routes. " +
+            "Read-only; no confirmation token. " +
             AUTH_PREREQ,
           inputSchema: {
-            action: appAction,
+            action: jsonObject.describe("The claim's `detailAction` copied verbatim from `complaint_claims`: a link `{href, appLink?}` or an AppAction with form.meta.href."),
           },
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["claim_detail"],
@@ -660,7 +666,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
           description:
             "Download an order invoice or document (row OR10) by following the server-provided `self.href` of a `Document`/`Attachment` object copied verbatim from a prior MCP response (e.g. the `documents[]` entries of `order_search` results or an order detail). " +
             "The href is origin-validated to Alza's host family (invoices serve from `pdf.alza.cz`) — no arbitrary URLs. " +
-            "Returns the content as UTF-8 `text` (JSON/XML/text) or `base64` (PDF/binary), with `contentType` and `byteLength` (max 8 MiB). " +
+            "Returns the content in structuredContent as UTF-8 `text` (JSON/XML/text) or `base64` (PDF/binary), with `contentType` and `byteLength` (max 8 MiB); the text reply carries only the metadata (plus a capped preview of text documents), never the base64 body. " +
             "Read-only; no token required. " +
             "Example: `order_document({document: {name: 'Faktura', self: {href: 'https://pdf.alza.cz/Apps/pdfdoc.asp?d=…'}}})`.",
           inputSchema: {
@@ -675,7 +681,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["order_document"],
         },
-        async (args) => wrap("order_document", async () => result(await apiAccount(deps).orderDocument(args.document))),
+        async (args) => wrap("order_document", async () => withConciseText(await apiAccount(deps).orderDocument(args.document), formatOrderDocument)),
       );
     },
   };
