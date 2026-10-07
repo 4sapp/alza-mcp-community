@@ -29,11 +29,34 @@ exposed, and how it was verified.
 - Server-driven hypermedia actions (`AppAction`) are accepted only as JSON captured from a
   **prior MCP tool response** (e.g. `alza_profile`), executed by `AppActionExecutor`:
   same-origin + HTTPS, path allowlist (`/api/`, `/services/restservice.svc/`), GET/POST only,
-  sensitive field-name blocklist (password/token/card/cvv/iban/payment...), one-time
-  confirmation token for every mutation.
+  sensitive field-name blocklist (password/token/card/cvv/iban/payment..., matched as
+  case-insensitive substrings so camelCase names such as `oldPassword`/`paymentId` are caught),
+  one-time confirmation token for every mutation.
+- Each typed AppAction tool carries a route policy (issues #61/#62, `APP_ACTION_ROUTE_POLICIES`
+  in `src/infra/app-action.ts`), checked on the href and on every redirect target: the decoded
+  path must contain the tool's family keyword (`address` for `address_upsert`/`address_delete`/
+  `address_search`; `review|rating` for `review_submit`; `claim|complaint` for `complaint_claims`/
+  `claim_detail`; `subscription` for `subscription_overview`, `subscription|installment` for
+  the two subscription writers; `attachment|upload|image|claim|complaint` for
+  `upload_attachment`). Readers are GET-only, writers POST-only. The executor also refuses, for
+  every tool, the GET-shaped writes that have their own token-gated tools (`addcoupon`,
+  `delcoupon`, `updBasket`, `unlockbasket`, `addOrderService`, `rateCommodityDiscussionPosts`,
+  `approveOrder4`, `sendOrder*`) and credential/payment/order/identity routes
+  (`account/password`, `2fa`, `afterOrderPayment`, `orderfinished`, `CreateUser`,
+  `gdprInformation`, `cancellations`, `pushDevice`, `/v{n}/account`). These hrefs are
+  server-provided and mostly `source-confirmed` (not live-captured), so the families are keyword
+  matches; an in-family href that Alza serves under a different name is refused (fail closed).
+  Paths a server could route differently from what these checks see are refused outright:
+  `;` path parameters, encoded `/` or `\` (`%2F`/`%5C`), control characters, and segments
+  ending in a dot or whitespace (e.g. `/afterOrderPayment;address`, `/account/password.`).
 - Mutating or high-impact tools require a one-time token from `alza_prepare_mutation`
-  (or the `alza_checkout_preview` token for the order flow). The token is single-use.
+  (or the `alza_checkout_preview` token for the order flow). The token is single-use and is
+  consumed synchronously by the first call that presents it, before any request is sent, so
+  concurrent calls with one token run at most once; a failed attempt also spends it (issue #56).
 - OAuth stays PKCE authorization-code flow; credentials never enter the MCP.
+- A 2xx response whose body is not a JSON object (204/202 empty body, `null`, an array, text) is
+  returned as `{accepted: true, data, note}` instead of failing output validation after the
+  request was sent and the token spent (issue #63); object bodies are returned unchanged.
 
 ## In-scope families (12)
 

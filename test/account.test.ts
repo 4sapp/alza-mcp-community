@@ -232,9 +232,9 @@ describe("typed user-management, payment, and order tools", () => {
     const { calls, restore } = mockFetch(() => json());
     try {
       const bad = account.prepareMutation("review_submit");
-      await expect(account.reviewSubmit(action(), { rating: 6 }, bad.confirmationToken)).rejects.toThrow(/rating/);
+      await expect(account.reviewSubmit(action("/services/restservice.svc/v1/writeReview"), { rating: 6 }, bad.confirmationToken)).rejects.toThrow(/rating/);
       const ok = account.prepareMutation("review_submit");
-      await account.reviewSubmit(action(), { rating: 5, text: "super", values: [{ name: "pro", value: "great", kind: "text" }] }, ok.confirmationToken);
+      await account.reviewSubmit(action("/services/restservice.svc/v1/writeReview"), { rating: 5, text: "super", values: [{ name: "pro", value: "great", kind: "text" }] }, ok.confirmationToken);
       const body = JSON.parse(String(calls.at(-1)?.init?.body)) as Record<string, unknown>;
       expect(body).toMatchObject({ rating: 5, text: "super", pro: "great" });
       await expect(account.complaintClaims({ form: { meta: {} } })).rejects.toThrow(/form\.meta\.href/);
@@ -251,7 +251,7 @@ describe("typed user-management, payment, and order tools", () => {
       const none = account.prepareMutation("attachment_upload");
       await expect(account.uploadAttachment(action(), { files: [] }, none.confirmationToken)).rejects.toThrow(/files/);
       const notMultipart = account.prepareMutation("attachment_upload");
-      await expect(account.uploadAttachment(action(), { files: [{ part_name: "attachments", file_name: "a.jpg", mime_type: "image/jpeg", data_url: "data:image/jpeg;base64,AAA=" }] }, notMultipart.confirmationToken)).rejects.toThrow(/multipart/);
+      await expect(account.uploadAttachment(action("/api/complaints/1/attachments"), { files: [{ part_name: "attachments", file_name: "a.jpg", mime_type: "image/jpeg", data_url: "data:image/jpeg;base64,AAA=" }] }, notMultipart.confirmationToken)).rejects.toThrow(/multipart/);
       const badMime = account.prepareMutation("attachment_upload");
       const multipart = (rel: string[] = ["multipart"]) => ({ form: { meta: { href: "/api/complaints/1/attachments", method: "POST", rel }, values: [] } });
       await expect(account.uploadAttachment(multipart(), { files: [{ part_name: "attachments", file_name: "a.bin", mime_type: "application/pdf", data_url: "data:application/pdf;base64,AAA=" }] }, badMime.confirmationToken)).rejects.toThrow(/MIME/);

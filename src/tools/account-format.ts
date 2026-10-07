@@ -28,6 +28,7 @@ function scalar(v: unknown): string | undefined {
 const FOOTER = "_Full envelope (identifiers, line details, raw fields) is in structuredContent._";
 
 import type { ToolResult } from "./types.js";
+import { toStructuredContent } from "./structured.js";
 
 /** Tool result with a concise text channel; the full envelope stays in structuredContent. */
 export function withConciseText(value: unknown, format: (v: unknown) => string): ToolResult {
@@ -37,7 +38,7 @@ export function withConciseText(value: unknown, format: (v: unknown) => string):
   } catch {
     text = capText(JSON.stringify(value, null, 2) ?? "null");
   }
-  return { content: [{ type: "text", text }], structuredContent: value as Record<string, unknown> };
+  return { content: [{ type: "text", text }], structuredContent: toStructuredContent(value) };
 }
 
 export function formatCart(env: unknown): string {
@@ -170,9 +171,10 @@ export function capText(text: string, limit = TEXT_CHANNEL_LIMIT): string {
   return `${text.slice(0, limit)}\n… [text truncated: showed ${limit} of ${text.length} characters. The complete result is in structuredContent.]`;
 }
 
-/** Generic JSON result: pretty JSON text (capped) + the full value as structuredContent. */
+/** Generic JSON result: pretty JSON text (capped) + the full value as structuredContent (non-object bodies wrapped, #63). */
 export function jsonResult(value: unknown): ToolResult {
-  return { content: [{ type: "text", text: capText(JSON.stringify(value, null, 2) ?? "null") }], structuredContent: value as Record<string, unknown> };
+  const structured = toStructuredContent(value);
+  return { content: [{ type: "text", text: capText(JSON.stringify(structured, null, 2)) }], structuredContent: structured };
 }
 
 /** Strip tags/whitespace from Alza's HTML snippets (warnings, legends). */
