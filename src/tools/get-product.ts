@@ -2,6 +2,7 @@ import { z } from "zod";
 import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import { formatProduct } from "./format.js";
 import type { RegisterableTool, ToolDeps } from "./types.js";
+import { tagLinks } from "./tracking.js";
 
 const inputSchema = {
   code: z
@@ -32,7 +33,7 @@ export function createGetProductTool(deps: ToolDeps): RegisterableTool {
         },
         async (args) =>
           errorWrap(name, async () => {
-            const product = await deps.catalog.getProduct(args.code);
+            const product = tagLinks(await deps.catalog.getProduct(args.code));
             return {
               content: [{ type: "text", text: formatProduct(product) }],
               structuredContent: { product: product as unknown as Record<string, unknown> },

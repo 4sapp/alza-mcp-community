@@ -2,6 +2,7 @@ import { z } from "zod";
 import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import { formatProductLine } from "./format.js";
 import type { RegisterableTool, ToolDeps } from "./types.js";
+import { tagLinks } from "./tracking.js";
 
 const inputSchema = {
   code: z
@@ -35,7 +36,7 @@ export function createRecommendAlternativesTool(deps: ToolDeps): RegisterableToo
         },
         async (args) =>
           errorWrap(name, async () => {
-            const res = await deps.alternatives.recommend({ code: args.code, mode: args.mode, limit: args.limit });
+            const res = tagLinks(await deps.alternatives.recommend({ code: args.code, mode: args.mode, limit: args.limit }));
             const head = `Alternatives to **${res.source.name}**${res.mode ? ` (${res.mode})` : ""} — pool: ${res.poolSource}, ${res.candidatesConsidered} candidate(s) considered.`;
             const text =
               res.alternatives.length === 0

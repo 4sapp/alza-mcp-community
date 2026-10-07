@@ -2,6 +2,7 @@ import { z } from "zod";
 import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import type { AutocompleteResult } from "../domain/autocomplete.js";
 import type { RegisterableTool, ToolDeps } from "./types.js";
+import { tagLinks } from "./tracking.js";
 
 const inputSchema = {
   query: z
@@ -47,7 +48,7 @@ export function createAutocompleteTool(deps: ToolDeps): RegisterableTool {
         },
         async (args) =>
           errorWrap(name, async () => {
-            const result = await deps.autocomplete.suggest(args.query, args.limit ?? 5);
+            const result = tagLinks(await deps.autocomplete.suggest(args.query, args.limit ?? 5));
             return {
               content: [{ type: "text", text: formatAutocomplete(result) }],
               structuredContent: { ...result },

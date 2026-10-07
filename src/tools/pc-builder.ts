@@ -3,6 +3,7 @@ import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import { PcBuilder, DEFAULT_MAX_DETAIL_FETCHES, MAX_CHECK_PARTS, MAX_DETAIL_FETCHES, type BuildReport } from "../domain/pc-build-service.js";
 import { PC_ROLES } from "../domain/pc-build.js";
 import type { RegisterableTool, ToolDeps } from "./types.js";
+import { tagLinks } from "./tracking.js";
 
 const ROLE = z
   .enum(PC_ROLES)
@@ -120,7 +121,7 @@ export function createPcBuildCheckTool(deps: ToolDeps): RegisterableTool {
         },
         async (args) =>
           errorWrap(name, async () => {
-            const report = await builder.check({ parts: args.parts, psuHeadroom: args.psu_headroom });
+            const report = tagLinks(await builder.check({ parts: args.parts, psuHeadroom: args.psu_headroom }));
             return {
               content: [{ type: "text", text: formatBuildReport(report, "PC build check") }],
               structuredContent: toStructured(report),
@@ -151,7 +152,7 @@ export function createPcBuildSuggestTool(deps: ToolDeps): RegisterableTool {
         },
         async (args) =>
           errorWrap(name, async () => {
-            const report = await builder.suggest({
+            const report = tagLinks(await builder.suggest({
               budget: args.budget,
               profile: args.profile,
               cpuVendor: args.cpu_vendor,
@@ -159,7 +160,7 @@ export function createPcBuildSuggestTool(deps: ToolDeps): RegisterableTool {
               skipRoles: args.skip_roles,
               maxDetailFetches: args.max_detail_fetches,
               psuHeadroom: args.psu_headroom,
-            });
+            }));
             return {
               content: [{ type: "text", text: formatBuildReport(report, `PC build suggestion (${report.profile ?? "gaming"}, ${args.budget} CZK)`) }],
               structuredContent: toStructured(report),
