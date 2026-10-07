@@ -194,7 +194,7 @@ export class MobileAccount {
       case "catalog_user_navigation": return this.api.catalogUserNavigation();
       case "anonymous_orders": return this.api.anonymousOrders(String(args.invoice_number ?? ""));
       case "anonymous_order": return this.api.anonymousOrder(String(args.order_id ?? ""));
-      case "user_order": return this.api.userOrder(Number(args.user_flag ?? 0), String(args.order_id ?? ""), Boolean(args.initial_created));
+      case "user_order": return this.order(String(args.order_id ?? ""), undefined, args.user_id === undefined ? undefined : String(args.user_id), Boolean(args.initial_created)).then((r) => (r as { order: unknown }).order);
       case "order_part": return this.api.orderPart(String(args.order_id ?? ""), String(args.part_id ?? ""));
       case "after_order_payments": return this.api.afterOrderPayments(String(args.order_id ?? ""), String(args.part_id ?? ""));
       case "order_add_info": return this.api.orderAddInfo();
@@ -696,11 +696,13 @@ export class MobileAccount {
   }
 
   /** Orders family: order read (+ optional part detail). */
-  async order(orderId: string, partId?: string, userFlag = 0, initialCreated = false): Promise<unknown> {
+  async order(orderId: string, partId?: string, userId?: string, initialCreated = false): Promise<unknown> {
     if (typeof orderId !== "string" || orderId.length === 0 || orderId.length > 64) throw new Error("order_id must be a non-empty string (max 64)");
-    if (userFlag !== 0 && userFlag !== 1) throw new Error("user_flag must be 0 or 1");
     if (partId !== undefined && (typeof partId !== "string" || partId.length === 0 || partId.length > 64)) throw new Error("part_id must be a non-empty string (max 64)");
-    const order = await this.api.userOrder(userFlag, orderId, initialCreated);
+    // Issue #60: the route segment is the numeric user id, never the 0/1 flag.
+    const uid = requireUserId(userId ?? this.api.userId);
+    if (uid === "0" || uid === "1") throw new Error("user_id must be the numeric Alza user id from profile/user_data, not the old 0/1 user_flag");
+    const order = await this.api.userOrder(uid, orderId, initialCreated);
     if (partId === undefined) return { order };
     const part = await this.api.orderPart(orderId, partId);
     return { order, part };

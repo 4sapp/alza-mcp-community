@@ -524,7 +524,15 @@ export class MobileApi {
 
   async anonymousOrders(invoiceNumber: string): Promise<unknown> { return this.request(`/api/anonymous/v1/orders?invoiceNumber=${encodeURIComponent(invoiceNumber)}`); }
   async anonymousOrder(orderId: string): Promise<unknown> { return this.request(`/api/anonymous/v1/orders/${encodeURIComponent(orderId)}`); }
-  async userOrder(userFlag: number, orderId: string, initialCreated = false): Promise<unknown> { return this.request(`/api/users/${userFlag}/v1/orders/${encodeURIComponent(orderId)}${initialCreated ? "?initialCreated=1" : ""}`); }
+  /** OR1 (corrected 2026-10-07, issue #60): the path segment is the numeric
+   * Alza user id — the same `/api/users/{userId}/v1/orders/…` family as the
+   * archive/search reads, whose `self.href` links point here. The old code put
+   * the APK's 0/1 scope flag in that segment, which Alza answers with 403. */
+  async userOrder(userId: string, orderId: string, initialCreated = false): Promise<unknown> {
+    const query = new URLSearchParams({ country: "CZ" });
+    if (initialCreated) query.set("initialCreated", "1");
+    return this.request(`/api/users/${encodeURIComponent(userId)}/v1/orders/${encodeURIComponent(orderId)}?${query}`);
+  }
   async orderPart(orderId: string, partId: string): Promise<unknown> { return this.request(`/api/v1/orders/${encodeURIComponent(orderId)}/${encodeURIComponent(partId)}`); }
 
   /** OR11 (order cancellation, live-verified 2026-09-06/2026-09-16 and again

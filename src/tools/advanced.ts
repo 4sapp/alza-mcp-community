@@ -272,18 +272,18 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
           description:
             "Read an authenticated user's Alza order: lines, parts, milestones/tracking, and invoice document references; with `part_id`, the part detail as well. " +
             "Use to check order status, delivery tracking, or to collect the order/part ids needed by `after_order_payments`/`pay_after_order`. " +
-            "`user_flag` 0/1 selects the order scope exactly as the mobile app does. " +
+            "Pass `user_id` — the numeric Alza user id from the `profile`/`user_data` read (`user_id` field); the read is `GET /api/users/{user_id}/v1/orders/{order_id}`. " +
             AUTH_PREREQ + " Read-only.",
           inputSchema: {
-            order_id: z.string().min(1).max(64).describe("The order id to read."),
+            order_id: z.string().min(1).max(64).describe("The order id to read (e.g. from `order_archive`/`order_search`)."),
             part_id: z.string().min(1).max(64).optional().describe("Order part id for the part detail read. Omit for the whole order."),
-            user_flag: z.union([z.literal(0), z.literal(1)]).default(0).describe("Order scope selector, 0/1, exactly as the mobile app sends it. Default 0."),
+            user_id: z.string().regex(/^\d{1,16}$/).describe("Numeric Alza user id (the `user_id` field of the `profile`/`user_data` response)."),
             initial_created: z.boolean().default(false).describe("Include the initial-creation view of the order. Default false."),
           },
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["order"],
         },
-        async (args) => wrap("order", async () => withConciseText(await apiAccount(deps).order(args.order_id, args.part_id, args.user_flag, args.initial_created), formatOrder)),
+        async (args) => wrap("order", async () => withConciseText(await apiAccount(deps).order(args.order_id, args.part_id, args.user_id, args.initial_created), formatOrder)),
       );
     },
   };
