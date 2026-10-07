@@ -1,11 +1,16 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { parseCliConfig, startHttpServer } from "./http.js";
+import { ConfigurationError } from "./infra/errors.js";
 import { log } from "./infra/logger.js";
+import { proxyFromEnv } from "./infra/proxy.js";
 import { buildServer } from "./server.js";
 
 async function main(): Promise<void> {
   const config = parseCliConfig(process.argv.slice(2));
+  // Fail fast on a bad ALZA_PROXY_URL instead of starting and silently
+  // sending traffic some other way (the browser only parses it on first use).
+  proxyFromEnv();
   if (config.transport === "http") return mainHttp(config.http);
 
   const { server, close } = buildServer({
@@ -53,6 +58,10 @@ async function mainHttp(opts: Parameters<typeof startHttpServer>[0]): Promise<vo
 }
 
 main().catch((err) => {
+  if (err instanceof ConfigurationError) {
+    process.stderr.write(`alza-mcp: ${err.message}\n`);
+    process.exit(1);
+  }
   log.error("fatal", { error: (err as Error).message, stack: (err as Error).stack });
   process.exit(1);
 });
