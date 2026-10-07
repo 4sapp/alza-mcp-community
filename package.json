@@ -17,6 +17,7 @@
     "scripts/alza-auth-login-noninteractive.mjs",
     "scripts/alza-auth-exchange.mjs",
     "scripts/alza-auth-refresh.mjs",
+    "scripts/alza-auth-smoke.mjs",
     "README.md",
     "LICENSE"
   ],
@@ -35,6 +36,7 @@
     "live:endpoint-matrix": "python3 scripts/live-endpoint-matrix.py",
     "live:user-journeys": "python3 scripts/live-user-journeys.py",
     "postinstall": "node scripts/postinstall.cjs",
+    "setup:cf": "bash scripts/ensure-cf-venv.sh",
     "prepublishOnly": "npm run build",
     "version": "node scripts/sync-version.cjs && git add server.json mcpb/manifest.json src/server.ts",
     "version:check": "node scripts/sync-version.cjs --check",

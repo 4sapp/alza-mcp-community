@@ -53,12 +53,18 @@ interface Pending {
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-/** Candidate interpreters, in priority order (first that imports curl_cffi wins). */
-export function candidatePythons(): string[] {
+/** Candidate interpreters, in priority order (first that imports curl_cffi wins).
+ * `platform` is injectable for tests; Windows venvs use Scripts\\python.exe and
+ * the system interpreter is `python` (or the `py` launcher), not `python3`. */
+export function candidatePythons(platform: NodeJS.Platform = process.platform): string[] {
+  const win = platform === "win32";
   const cands: string[] = [];
   if (process.env.ALZA_CF_PYTHON) cands.push(process.env.ALZA_CF_PYTHON);
-  cands.push(path.join(repoRoot, ".venv-cf", "bin", "python"));
-  cands.push("python3");
+  cands.push(
+    win ? path.win32.join(repoRoot, ".venv-cf", "Scripts", "python.exe") : path.join(repoRoot, ".venv-cf", "bin", "python"),
+  );
+  if (win) cands.push("python", "py");
+  else cands.push("python3");
   return [...new Set(cands)];
 }
 
