@@ -153,3 +153,31 @@ describe("read-only AppAction tools only fetch their own read routes (#62)", () 
     expect(seen).toHaveLength(1);
   });
 });
+
+describe("route checks cannot be sidestepped by path forms a server may route differently (#61/#62)", () => {
+  it("refuses ;path parameters, encoded slashes, control characters and trailing dots/spaces", async () => {
+    const { calls } = countingFetch();
+    const account = makeAccount();
+    const writes = [
+      "/api/users/999/v2/account/password;review",
+      "/api/orders/v4/afterOrderPayment;rating=1",
+      "/api/users/999/v1/account;review",
+      "/api/users/999/v2/account/password./review",
+      "/api/orders/v4/afterOrderPayment%20/review",
+      "/api/orders/v4/afterOrderPayment%00review",
+      "/api/review%2F..%2F..%2Forders/v4/afterOrderPayment",
+    ];
+    for (const href of writes) {
+      await expect(account.reviewSubmit(act(href), { rating: 5 }, account.prepareMutation("review_submit").confirmationToken), href).rejects.toThrow(/refused|blocked/);
+    }
+    const reads = [
+      "/services/restservice.svc/v1/unlockbasket;claim",
+      "/services/restservice.svc/v1/addcoupon;claim=1/FREE",
+      "/services/restservice.svc/v1/addcoupon./claim",
+    ];
+    for (const href of reads) {
+      await expect(account.claimDetail(act(href, "GET")), href).rejects.toThrow(/refused|blocked/);
+    }
+    expect(calls).toHaveLength(0);
+  });
+});

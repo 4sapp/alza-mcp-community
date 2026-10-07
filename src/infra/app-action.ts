@@ -205,6 +205,13 @@ export class AppActionExecutor {
     if (!this.pathPrefixes.some((prefix) => target.pathname.startsWith(prefix))) throw new Error("AppAction path is outside the allowlist");
     let path: string;
     try { path = decodeURIComponent(target.pathname).toLowerCase(); } catch { throw new Error("AppAction path is not valid percent-encoding"); }
+    // Path forms a server may route differently from the plain path the
+    // denylist and family checks see: `;` path parameters, encoded slashes,
+    // control characters, and segments with a trailing dot or whitespace
+    // (e.g. `/afterOrderPayment;address`, `/account/password.`). Fail closed.
+    if (/%2f|%5c/i.test(target.pathname) || /[;\\\x00-\x1f\x7f]/.test(path) || /[.\s](?:\/|$)/.test(path)) {
+      throw new Error(`AppAction path ${target.pathname} contains a path parameter, encoded separator, control character or trailing dot/space and is refused`);
+    }
     if (DENIED_ROUTES.some((re) => re.test(path))) throw new Error(`AppAction route is blocked: ${target.pathname} has its own guarded tool or is a credential/payment/order route`);
     if (policy && !policy.pathPatterns.some((re) => re.test(path))) {
       throw new Error(`AppAction route ${target.pathname} is outside the ${policy.family} family this tool may call; pass the matching action from a prior response`);

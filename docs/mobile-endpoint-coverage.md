@@ -46,6 +46,9 @@ exposed, and how it was verified.
   `gdprInformation`, `cancellations`, `pushDevice`, `/v{n}/account`). These hrefs are
   server-provided and mostly `source-confirmed` (not live-captured), so the families are keyword
   matches; an in-family href that Alza serves under a different name is refused (fail closed).
+  Paths a server could route differently from what these checks see are refused outright:
+  `;` path parameters, encoded `/` or `\` (`%2F`/`%5C`), control characters, and segments
+  ending in a dot or whitespace (e.g. `/afterOrderPayment;address`, `/account/password.`).
 - Mutating or high-impact tools require a one-time token from `alza_prepare_mutation`
   (or the `alza_checkout_preview` token for the order flow). The token is single-use and is
   consumed synchronously by the first call that presents it, before any request is sent, so
