@@ -115,7 +115,7 @@ const CARDS_PER_ROLE = 24;
 export function inStockFrom(availability: string | undefined): boolean | null {
   if (!availability) return null;
   if (/^(InStock|in stock)$/i.test(availability)) return true;
-  if (/OutOfStock|not purchasable|SoldOut|Discontinued|PreOrder|BackOrder/i.test(availability)) return false;
+  if (/out ?of ?stock|not purchasable|sold ?out|discontinued|pre ?order|back ?order/i.test(availability)) return false;
   return null;
 }
 

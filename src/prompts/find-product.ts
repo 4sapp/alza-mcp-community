@@ -32,7 +32,7 @@ export const findProductPrompt = {
       `Help them find the right product:`,
       `1. Use \`search_products\` to find candidates. If the need is vague, ask one clarifying question first.`,
       `2. If results are too broad, refine using \`list_categories\` to find a relevant category id and search again.`,
-      `3. Pick 2–4 strong candidates and call \`get_product\` for each to compare specs and price.`,
+      `3. Pick 2–4 strong candidates and call \`compare_products\` once with their codes to get one side-by-side table of price, availability, rating and specs (do not call \`get_product\` per candidate). If a candidate is out of stock or over budget, call \`recommend_alternatives\` for it.`,
       `4. For the top 1–2 candidates, call \`get_product_reviews\` to surface real-world feedback.`,
       `5. Recommend a clear top pick with one alternative, citing concrete reasons (price, specs, reviews).`,
       `6. If the user asks where to pick it up, call \`find_pickup_points\` with their postal code.`,
