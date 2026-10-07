@@ -74,6 +74,15 @@ describe("#57: no automatic replay of mutations after an ambiguous sidecar failu
     expect(plainCalls).toEqual([{ url: "https://alza.test/Services/EShopService.svc/SendOrder4", method: "POST" }]);
   });
 
+  it("does not replay a legacy GET-shaped write (addcoupon, addOrderService) after an ambiguous failure", async () => {
+    const { httpFetch, sent } = failingSidecar(AMBIGUOUS[0]!);
+    const api = new MobileApi({ baseUrl: "https://alza.test", httpFetch, loadTokenFile: false });
+    await expect(api.addCoupon("CODE1")).rejects.toBeInstanceOf(OutcomeUnknownError);
+    await expect(api.addOrderService(1, true, true)).rejects.toBeInstanceOf(OutcomeUnknownError);
+    expect(sent).toHaveLength(2);
+    expect(plainCalls).toHaveLength(0);
+  });
+
   it("still falls back for an idempotent GET after an ambiguous failure", async () => {
     const { httpFetch } = failingSidecar(AMBIGUOUS[0]!);
     const api = new MobileApi({ baseUrl: "https://alza.test", httpFetch, loadTokenFile: false });

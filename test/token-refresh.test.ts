@@ -133,6 +133,24 @@ describe("#59: an expired stored access token is refreshed for legacy account re
     await expect(api.userData()).resolves.toMatchObject({ user_id: 100000001 });
   });
 
+  it("returns anonymous catalog data (GET and POST reads) instead of a sign-in error when the token cannot be refreshed", async () => {
+    writeStore({ access_token: "opaque-stale", refresh_token: "rt-revoked" });
+    const alza = mockAlza({ initialAccess: "something-else" });
+    const api = new MobileApi({ baseUrl: "https://alza.test", httpFetch: alza.httpFetch });
+    await expect(api.alternatives(12345)).resolves.toMatchObject({ user_id: -1 });
+    await expect(api.search("monitor")).resolves.toMatchObject({ user_id: -1 });
+    expect(alza.log).toEqual([]);
+    expect(alza.calls).toEqual(["GET /services/restservice.svc/v1/alternatives/12345", "POST /services/restservice.svc/v5/search"]);
+  });
+
+  it("never replays a legacy GET-shaped write (addcoupon) that Alza answered anonymously", async () => {
+    writeStore({ access_token: "opaque-stale", refresh_token: "rt-0" });
+    const alza = mockAlza({ initialAccess: "something-else" });
+    const api = new MobileApi({ baseUrl: "https://alza.test", httpFetch: alza.httpFetch });
+    await expect(api.addCoupon("CODE1")).rejects.toThrow(/NOT retried/);
+    expect(alza.calls).toEqual(["GET /services/restservice.svc/v1/addcoupon/CODE1"]);
+  });
+
   it("keeps the anonymous visitor answer when no token is loaded", async () => {
     process.env.ALZA_TOKEN_FILE = "none";
     const alza = mockAlza({ initialAccess: "something-else" });

@@ -366,7 +366,7 @@ export class MobileApi {
    * (TransportUnavailableError). Anything else may already have reached Alza —
    * replaying it could pay, order or delete twice. */
   private assertFallbackAllowed(method: string, url: string, err: unknown): void {
-    if (isIdempotentMethod(method) || isPreSendFailure(err)) return;
+    if (isReplaySafe(method, url) || isPreSendFailure(err)) return;
     throw new OutcomeUnknownError(method.toUpperCase(), displayTarget(url), err);
   }
 
@@ -390,12 +390,12 @@ export class MobileApi {
     };
     const first = await send();
     let value = first.value;
-    if (first.sentWith && isLegacyRestRoute(url) && isAnonymousEnvelope(value)) {
+    if (first.sentWith && isLegacyRestRoute(url) && !LEGACY_CATALOG_READ_ROUTE.test(url) && isAnonymousEnvelope(value)) {
       // The legacy restservice routes answer a stale token with 200 + user_id -1
       // instead of 401. Renew the token (or pick up one a parallel request already
       // renewed), then retry reads once; never replay a write.
       const renewed = this.accessToken !== first.sentWith || (Boolean(this.refreshToken) && (await this.refreshAccessToken()));
-      if (!isIdempotentMethod(method)) {
+      if (!isReplaySafe(method, url)) {
         throw new AuthenticationError(
           `Alza answered ${method} ${path} as an anonymous visitor (user_id -1) although an access token is loaded; the token ${renewed ? "has now been refreshed" : "could not be refreshed"}. ` +
             "The request was NOT retried. It may have been applied to the anonymous visitor basket instead of the account — check `cart` before retrying." +
@@ -1171,6 +1171,22 @@ function isIdempotentMethod(method: string): boolean {
   const m = method.toUpperCase();
   return m === "GET" || m === "HEAD";
 }
+
+/** Legacy restservice writes that are sent as GET (coupon, basket flag/unlock,
+ * order service, discussion rating). Their method looks idempotent, so they are
+ * named here to keep them out of every automatic replay. */
+const LEGACY_GET_WRITE_ROUTE = /\/services\/restservice\.svc\/v\d+\/(?:addcoupon|delcoupon|updBasket|unlockbasket|addOrderService|rateCommodityDiscussionPosts)(?:[/?]|$)/i;
+
+/** May this request be sent a second time without risk of applying twice? */
+function isReplaySafe(method: string, url: string): boolean {
+  return isIdempotentMethod(method) && !LEGACY_GET_WRITE_ROUTE.test(url);
+}
+
+/** Anonymous catalog reads on the legacy restservice. Their answer is valid for
+ * a visitor, so a user_id -1 envelope there is not treated as a stale token:
+ * the data is returned as before instead of spending a refresh or raising a
+ * sign-in error (POST search/EAN/filter reads included). */
+const LEGACY_CATALOG_READ_ROUTE = /\/services\/restservice\.svc\/v\d+\/(?:search|category|alternatives|params|getProductByEANlist|hierarchicalFilter|getCommodityDiscussionPosts|getAllDeliveryCountries|getZipCodes)(?:[/?]|$)/i;
 
 function isPreSendFailure(err: unknown): boolean {
   return err instanceof TransportUnavailableError || (err instanceof Error && err.name === "TransportUnavailableError");
