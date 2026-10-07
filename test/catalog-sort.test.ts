@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildFilteredCategoryUrl, compareForSort, droppedFilterSegments, parseFacetsResponse, parseProducers, parseScreenInches, passesInStock, pickAdditionalProperties, sortSweepPages } from "../src/domain/catalog.js";
+import { buildFilteredCategoryUrl, compareForSort, droppedFilterSegments, parseFacetsResponse, parseProducers, parseScreenInches, passesInStock, pickAdditionalProperties, sortSweepPages, stripHtmlEntities } from "../src/domain/catalog.js";
 import type { Product } from "../src/domain/types.js";
 
 const p = (over: Partial<Product>): Product => ({
@@ -224,5 +224,19 @@ describe("pickAdditionalProperties", () => {
     expect(pickAdditionalProperties([{ name: "X" }, { value: "Y" }, null, "not an object"])).toEqual([]);
     expect(pickAdditionalProperties(undefined)).toEqual([]);
     expect(pickAdditionalProperties(null)).toEqual([]);
+  });
+});
+
+describe("stripHtmlEntities (product and category names)", () => {
+  it("keeps the inch mark from single- and double-encoded JSON-LD names", () => {
+    expect(stripHtmlEntities("27&quot; Philips 27E1N1600AE")).toBe('27" Philips 27E1N1600AE');
+    expect(stripHtmlEntities("27&amp;quot; Philips 27E1N1600AE")).toBe('27" Philips 27E1N1600AE');
+    expect(parseScreenInches(stripHtmlEntities("34&amp;quot; AOC CU34G4"))).toBe(34);
+  });
+
+  it("decodes ampersands and numeric references, and drops unknown named entities", () => {
+    expect(stripHtmlEntities("Kabely &amp; redukce")).toBe("Kabely & redukce");
+    expect(stripHtmlEntities("Herní&#160;myš &#x2013; bezdrátová")).toBe("Herní\u00a0myš – bezdrátová");
+    expect(stripHtmlEntities("A&shy;B &unknownentity; C")).toBe("AB  C");
   });
 });
