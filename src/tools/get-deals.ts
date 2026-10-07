@@ -3,6 +3,7 @@ import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import { formatPrice } from "./format.js";
 import type { Deal } from "../domain/deals.js";
 import type { RegisterableTool, ToolDeps } from "./types.js";
+import { tagLinks } from "./tracking.js";
 
 const inputSchema = {
   category_id: z
@@ -50,11 +51,11 @@ export function createGetDealsTool(deps: ToolDeps): RegisterableTool {
         },
         async (args) =>
           errorWrap(name, async () => {
-            const res = await deps.catalog.getDeals({
+            const res = tagLinks(await deps.catalog.getDeals({
               categoryId: args.category_id,
               minDiscountPercent: args.min_discount_percent,
               limit: args.limit,
-            });
+            }));
             return {
               content: [{ type: "text", text: formatDeals(res.deals, res.candidatesScanned) }],
               structuredContent: {

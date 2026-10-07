@@ -2,6 +2,7 @@ import { z } from "zod";
 import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import { formatSearchResult } from "./format.js";
 import type { RegisterableTool, ToolDeps } from "./types.js";
+import { tagLinks } from "./tracking.js";
 
 const inputSchema = {
   query: z.string().min(1).describe("Search keywords. Required. Example: 'iPhone 15 Pro', 'PlayStation 5', 'gaming mouse Logitech'."),
@@ -133,7 +134,7 @@ export function createSearchProductsTool(deps: ToolDeps): RegisterableTool {
         },
         async (args) =>
           errorWrap(name, async () => {
-            const result = await deps.catalog.searchProducts({
+            const raw = await deps.catalog.searchProducts({
               query: args.query,
               limit: args.limit,
               page: args.page,
@@ -147,6 +148,7 @@ export function createSearchProductsTool(deps: ToolDeps): RegisterableTool {
               producerIds: args.producer_ids,
               ...splitFilterArgs(args.filters),
             });
+            const result = tagLinks(raw);
             return {
               content: [{ type: "text", text: formatSearchResult(result) }],
               structuredContent: {

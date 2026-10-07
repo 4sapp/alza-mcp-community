@@ -4,6 +4,7 @@ import type { ClientCapabilities, CreateMessageRequest } from "@modelcontextprot
 import type { Product } from "../domain/types.js";
 import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import type { RegisterableTool, ToolDeps } from "./types.js";
+import { tagLinks } from "./tracking.js";
 
 /** Product-page loads run at most this many at a time (issue #11: 2–3, polite to Cloudflare). */
 export const COMPARE_CONCURRENCY = 2;
@@ -244,7 +245,7 @@ export function createCompareProductsTool(deps: ToolDeps): RegisterableTool {
             const codes = [...new Set(args.codes.map((c) => c.trim()))];
             const entries = await mapWithConcurrency(codes, COMPARE_CONCURRENCY, async (code): Promise<CompareEntry> => {
               try {
-                return { code, product: await deps.catalog.getProduct(code) };
+                return { code, product: tagLinks(await deps.catalog.getProduct(code)) };
               } catch (err) {
                 return { code, error: err instanceof Error ? err.message : String(err) };
               }

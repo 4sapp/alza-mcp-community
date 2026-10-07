@@ -3,6 +3,7 @@ import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import type { MobileAccount } from "../domain/mobile-account.js";
 import type { WatchdogEntry } from "../domain/watchdog.js";
 import type { RegisterableTool, ToolDeps, ToolResult } from "./types.js";
+import { tagLinks } from "./tracking.js";
 
 /**
  * Typed wrapper over Alza's native price/stock watchdog (issue #17, rows
@@ -56,7 +57,7 @@ export function createWatchdogTools(deps: ToolDeps): RegisterableTool[] {
           outputSchema: OUTPUT_SCHEMAS["watchdog_list"],
         },
         async (args) => wrap("watchdog_list", async () => {
-          const out = await apiAccount(deps).watchdogList(args.user_id, args.limit);
+          const out = tagLinks(await apiAccount(deps).watchdogList(args.user_id, args.limit));
           return result(out, formatList(out.items, out.empty_message));
         }),
       );

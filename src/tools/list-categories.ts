@@ -2,6 +2,7 @@ import { z } from "zod";
 import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import { formatCategories } from "./format.js";
 import type { RegisterableTool, ToolDeps } from "./types.js";
+import { tagLinks } from "./tracking.js";
 
 const inputSchema = {
   parent_id: z
@@ -30,7 +31,7 @@ export function createListCategoriesTool(deps: ToolDeps): RegisterableTool {
         },
         async (args) =>
           errorWrap(name, async () => {
-            const categories = await deps.catalog.listCategories(args.parent_id);
+            const categories = tagLinks(await deps.catalog.listCategories(args.parent_id));
             return {
               content: [{ type: "text", text: formatCategories(categories) }],
               structuredContent: { categories },
