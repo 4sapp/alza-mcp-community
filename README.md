@@ -29,7 +29,7 @@ Ask: *"Find me the best pro-grade wheel cleaner under 600 Kč and tell me where 
 [![Install in Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=alza&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImFsemEtbWNwIl19)
 [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_alza--mcp-0098FF?logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=alza&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22alza-mcp%22%5D%7D)
 
-Both buttons install the same thing as the manual config below: `npx -y alza-mcp`, no environment variables, no secrets. The first tool call downloads Playwright's headless Chromium (~92 MB, ~30 s); every call after that is a few seconds. For Claude Desktop, download the one-click `alza-mcp-<version>.mcpb` bundle from the [latest release](https://github.com/lukabudik/alza-mcp/releases/latest) (attached from the next release onward) and open it, or use the JSON config below.
+Both buttons install the same thing as the manual config below: `npx -y alza-mcp`, no environment variables, no secrets. With `npx`/`npm`, install runs a postinstall step that downloads Playwright's headless Chromium (~92 MB) and sets up the optional `curl_cffi` venv, so the first install takes a while and later starts take a few seconds. The `.mcpb` bundle and `--ignore-scripts` installs skip postinstall: Chromium is then downloaded on the first browser-backed call (~30 s) and the venv is not created (see [Install paths](#install-paths-and-the-curl_cffi-venv)). For Claude Desktop, download the one-click `alza-mcp-<version>.mcpb` bundle from the [latest release](https://github.com/lukabudik/alza-mcp/releases/latest) and open it, or use the JSON config below.
 
 ### Claude Code
 
@@ -37,7 +37,7 @@ Both buttons install the same thing as the manual config below: `npx -y alza-mcp
 claude mcp add alza --scope user -- npx -y alza-mcp
 ```
 
-That's it. Restart Claude Code, type `/mcp` to confirm, and start asking. First call takes ~30 s while Playwright downloads its headless Chromium browser (~92 MB) — every call after that is a few seconds.
+That's it. Restart Claude Code, type `/mcp` to confirm, and start asking. The install downloads Playwright's headless Chromium browser (~92 MB) via postinstall; if that was skipped, the first browser-backed call downloads it (~30 s).
 
 ### Claude Desktop
 
@@ -54,7 +54,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 }
 ```
 
-Restart the app. Same first-call download.
+Restart the app. Same install-time download.
 
 ### Cursor / Continue / any MCP client
 
@@ -202,6 +202,9 @@ Mobile API environment variables:
 |---|---|
 | `ALZA_API_BASE_URL` | Mobile API base URL, default `https://www.alza.cz` |
 | `ALZA_VISITOR_ID` | Optional anonymous visitor UUID; otherwise generated per process |
+| `ALZA_OAUTH_CLIENT_ID` | OAuth client id used by `auth_start`, `auth_exchange` and token refresh, default `alza_Android`. Change it only together with `ALZA_OAUTH_CLIENT_SECRET` |
+| `ALZA_OAUTH_REDIRECT_URI` | OAuth redirect URI, default `alza://identity` |
+| `ALZA_COUNTRY` / `ALZA_CULTURE` | `countryCode` / `culture` sent on the OAuth authorize URL, defaults `CZ` / `cs-CZ` |
 | `ALZA_OAUTH_AUTHORITY` | OAuth authority, default `https://identity.alza.cz` |
 | `ALZA_OAUTH_CLIENT_SECRET` | The `alza_Android` OAuth client is confidential — token requests need its APK-embedded secret (default: the source-verified value; set `""` to omit it for public clients). Used by `auth_exchange` and token refresh |
 | `ALZA_CLIENT_SECRET` | Same secret for the PKCE exchange scripts (`scripts/e2e-order-payment.browser.mjs exchange`, `scripts/alza-auth-exchange.mjs`) |
@@ -226,7 +229,24 @@ All optional — `alza-mcp` works out of the box.
 | `ALZA_HEADLESS` | `true` | Set `false` to show the browser used for scraping and API fallback; OAuth/MFA/payment interactions remain user-controlled |
 | `ALZA_IDLE_TTL_MS` | `180000` | Close the headless Chromium after this many ms with no tool calls. Lower it on memory-constrained machines; raise it (or disable by setting absurdly high) if you make many calls in quick succession and don't want the relaunch latency. |
 | `ALZA_PROXY_URL` | _unset_ | Route Alza traffic through an HTTP(S) or SOCKS5 proxy (`http://user:pass@host:port`, `socks5://host:port`), for example a residential proxy when this machine's IP gets Cloudflare challenges (datacenter and CI IPs do). Used by the managed Chromium and the `curl_cffi` sidecar. While it is set, the account stack never falls back to an un-proxied plain fetch (only to the managed browser), and with the sidecar disabled (`ALZA_CF_TRANSPORT=0`) OAuth, AppAction and document requests are refused instead of sent directly, so a proxy failure is reported instead of bypassed. An invalid value stops the server at startup with a one-line error. Not proxied: `ALZA_CDP_URL` browsers and multipart uploads (`upload_attachment`), which the sidecar cannot carry. |
-| `ALZA_DEBUG` | `false` | Verbose stderr logging |
+| `ALZA_DEBUG` | `false` | Verbose stderr logging (equivalent to `ALZA_LOG_LEVEL=debug`) |
+| `ALZA_LOG_LEVEL` | `info` | Minimum stderr log level: `debug`, `info`, `warn` or `error` |
+| `ALZA_CF_TRANSPORT` | _enabled_ | Set `0` to disable the Chrome-fingerprint `curl_cffi` sidecar (the account stack then uses plain fetch and the browser) |
+| `ALZA_CF_PYTHON` | _auto_ | Python interpreter that has `curl_cffi`. Default search order: this variable, `.venv-cf` in the package (`bin/python`, or `Scripts\python.exe` on Windows), then `python3` (`python`/`py` on Windows) |
+
+### Install paths and the curl_cffi venv
+
+The Chrome-fingerprint sidecar needs a Python venv with `curl_cffi` (pinned to `>=0.16,<0.17`, the tested range). What each install path does:
+
+| Install path | Chromium headless-shell | `curl_cffi` venv |
+|---|---|---|
+| `npx -y alza-mcp` / `npm i alza-mcp` (Linux, macOS, WSL, MSYS bash) | downloaded by postinstall | created by postinstall if `bash` and `python3` (with `venv`) exist; a failed attempt removes the partial venv |
+| `ALZA_MCP_SKIP_INSTALL=1` or `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` | skipped (downloaded at runtime when needed) | still created |
+| `ALZA_MCP_SKIP_VENV=1` | downloaded | skipped |
+| `--ignore-scripts`, or the `.mcpb` bundle | downloaded at runtime when needed | **not created**. Run `bash scripts/ensure-cf-venv.sh` in the package directory, or point `ALZA_CF_PYTHON` at any interpreter that has `curl_cffi` |
+| This repository's own checkout (`npm ci`) | skipped | skipped; run `npm run setup:cf` and `npx playwright install chromium --only-shell` yourself |
+
+Without the venv the server still works: the account stack falls back to plain fetch and the browser, which Cloudflare challenges more often. Windows: the interpreter lookup also tries `.venv-cf\Scripts\python.exe`, `python` and `py`, but the setup script is bash-only, so on plain Windows create the venv by hand (`py -m venv .venv-cf` then `.venv-cf\Scripts\pip install "curl_cffi>=0.16,<0.17"`) or set `ALZA_CF_PYTHON`. The Windows path is `unresolved` (not tested live).
 
 ---
 
@@ -277,7 +297,7 @@ Register the local build in pi's global MCP config (`~/.pi/agent/mcp.json`):
 }
 ```
 
-Run `/reload` (or `mcp connect alza` — the gateway respawns the stdio process, so a freshly built `dist/` takes effect without `/reload`). The gateway exposes the tools (55 domain tools plus `list_toolsets`/`set_toolset`; only the `catalog` and `auth` toolsets are enabled until you call `set_toolset`) under the `alza_` prefix (`alza_search_products`, `alza_get_product`, `alza_cart`, …). Auth auto-loads from `~/.alza-mcp/tokens.json`. Verified in both modes: (a) in-session through the gateway — search/filter/detail, authenticated add-to-cart, bogus-coupon round-trip → server-side `err:1` envelope ([docs/live-evidence/pi-integration-2026-09-10.md](docs/live-evidence/pi-integration-2026-09-10.md)); and (b) **headless** (`pi -p` one-shot prompt), where the agent discovers the `alza_*` tools, calls `search_products` with the right args, and reports the correct cheapest in-stock product ([docs/live-evidence/headless-pi-2026-09-12.json](docs/live-evidence/headless-pi-2026-09-12.json)); the 2026-09-13 re-run adds three more headless scenarios — catalog search with price-ascending sort, the authenticated account stack (`account_status` + `cart`), and the one-time mutation token flow (`prepare_mutation`) — all captured in [docs/live-evidence/headless-pi-2026-09-13.json](docs/live-evidence/headless-pi-2026-09-13.json).
+Run `/reload` (or `mcp connect alza` — the gateway respawns the stdio process, so a freshly built `dist/` takes effect without `/reload`). The gateway exposes the tools (the domain tools plus `list_toolsets`/`set_toolset`/`report_issue`; only the `catalog` and `auth` toolsets are enabled until you call `set_toolset`) under the `alza_` prefix (`alza_search_products`, `alza_get_product`, `alza_cart`, …). Auth auto-loads from `~/.alza-mcp/tokens.json`. Verified in both modes: (a) in-session through the gateway — search/filter/detail, authenticated add-to-cart, bogus-coupon round-trip → server-side `err:1` envelope ([docs/live-evidence/pi-integration-2026-09-10.md](docs/live-evidence/pi-integration-2026-09-10.md)); and (b) **headless** (`pi -p` one-shot prompt), where the agent discovers the `alza_*` tools, calls `search_products` with the right args, and reports the correct cheapest in-stock product ([docs/live-evidence/headless-pi-2026-09-12.json](docs/live-evidence/headless-pi-2026-09-12.json)); the 2026-09-13 re-run adds three more headless scenarios — catalog search with price-ascending sort, the authenticated account stack (`account_status` + `cart`), and the one-time mutation token flow (`prepare_mutation`) — all captured in [docs/live-evidence/headless-pi-2026-09-13.json](docs/live-evidence/headless-pi-2026-09-13.json).
 
 ---
 
@@ -337,7 +357,9 @@ For deeper architecture notes — including why we don't ship the HTTP/okhttp re
 ```bash
 git clone https://github.com/lukabudik/alza-mcp.git
 cd alza-mcp
-npm install                 # auto-installs Chromium via postinstall
+npm install                 # dev checkout: postinstall is skipped on purpose
+npm run setup:cf            # optional curl_cffi venv (needs bash + python3)
+npx playwright install chromium --only-shell   # browser for live runs
 npm test                    # unit tests, no network
 npm run typecheck
 npm run build               # → dist/

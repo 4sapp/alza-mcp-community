@@ -18,15 +18,15 @@ boundary (no new transports, typed + validated + one-time-token flows only).
   (113-gate retry) → CheckOrder4 → SendOrder4`), live-verified twice
   (2026-09-06 real order + 2026-09-08 re-checks). It is *documented* (O11,
   W16, PA8–PA10) but **not exposed as a typed tool** — the mobile typed
-  `alza_place_order` is blocked at `sendOrder3` (HTTP 500, G3). Same for the
+  `place_order` is blocked at `sendOrder3` (HTTP 500, G3). Same for the
   after-order payment: the web `CreateAfterPayment` (PA9) executed a real
   payment (MojePlatba → KB SSO) but is documented-only.
 - **Why P0:** this is the difference between "MCP can talk about orders" and
   "MCP can place and pay for a real order end-to-end through typed,
   validated, token-guarded tools."
 - **Implementation (task 6):**
-  - `alza_web_place_order` (high-impact, one-time token from
-    `alza_prepare_mutation`): explicit inputs — delivery group/delivery/
+  - `web_place_order` (high-impact, one-time token from
+    `prepare_mutation`): explicit inputs — delivery group/delivery/
     parcel-shop, payment method, user-info block (validated subset of the
     O11 `SaveOrder3` DTO: name, street, city, zip, phone, email,
     countryId), consents. Server-side flow: `SaveOrder2` (with
@@ -35,11 +35,11 @@ boundary (no new transports, typed + validated + one-time-token flows only).
     `ErrorLevel:113`, the documented AlzaPlus promo gate) → `CheckOrder4` →
     `SendOrder4`; returns the created order id + `GetOrderDetailAction`
     hash link.
-  - `alza_web_pay_after_order` (high-impact, one-time token):
+  - `web_pay_after_order` (high-impact, one-time token):
     `GetAfterPaymentDialog` (method list, read) + `CreateAfterPayment`
     execution with a validated `paymentId` from the dialog; returns the
     gateway hand-off (e.g. KB SSO URL) — the recorded MojePlatba flow.
-  - Whitelist additions to `alza_prepare_mutation`:
+  - Whitelist additions to `prepare_mutation`:
     `web_place_order`, `web_after_order_payment` (high-impact set).
   - Unit tests for input validation + the 113-retry logic (mocked
     transport); live verification (task 7) on the real account with a
@@ -49,7 +49,7 @@ boundary (no new transports, typed + validated + one-time-token flows only).
 
 - **The gap:** app 2026.17 (latest release) calls
   `getDeliveryPaymentGroups` **v13**; v12 is served in parallel. The typed
-  tools (`alza_delivery_options`, `alza_payment_methods`) and the
+  tools (`delivery_options`, `payment_methods`) and the
   `delivery_payment_groups` read path still call **v12**. Both versions are
   live (re-verified 2026-09-07 *and* 2026-09-08).
 - **Why P1:** small, safe, keeps the typed surface current with the app;
@@ -65,12 +65,12 @@ boundary (no new transports, typed + validated + one-time-token flows only).
 - **The gap:** the new HATEOAS web pickup family
   (`/api/personalPickup/v1/pickupPlaceForm|points|places|places/{id}`,
   live-mapped task 2) is the pickup surface of the *current* web checkout.
-  The mobile `find_pickup_points` / `alza_select_pickup_point` cover the
+  The mobile `find_pickup_points` / `select_pickup_point` cover the
   mobile equivalents only; the web family is documented but not exposed.
 - **Why P1:** read-only, no token needed, directly usable for web-checkout
   delivery selection (pairs with G1: the `parcelShopId`/`deliveryId` that
-  `alza_web_place_order` needs come from this tool's responses).
-- **Implementation (task 6):** typed `alza_web_pickup_places` (read, no
+  `web_place_order` needs come from this tool's responses).
+- **Implementation (task 6):** typed `web_pickup_places` (read, no
   token) — inputs: optional type filter, latitude/longitude, paging;
   returns the form (type availability) + list + place detail (deliveryId,
   parcelShopId, isFree, typeText, openingHours). Origin-validated
@@ -81,11 +81,11 @@ boundary (no new transports, typed + validated + one-time-token flows only).
 ### G4. HATEOAS web cart family (W3/W4/W5) — **implemented 2026-09-09**
 
 `checkout/cart`, `checkout/cart/items`, `POST basket/v1/items` (HATEOAS
-`appAction` responses). Implemented as two typed tools: **`alza_web_add_to_cart`**
+`appAction` responses). Implemented as two typed tools: **`web_add_to_cart`**
 (commodity_id + count → POST `basket/v1/items`; extracts the basket id from the
 response's `order/{basketId}/item/{itemId}` link; the basket is visitor-keyed and
 the cookie-less add with a Balancer-Guid header was live-verified 2026-09-09) and
-**`alza_web_cart`** (basket_id → the W3 cart state + W4 item list). Unit-tested
+**`web_cart`** (basket_id → the W3 cart state + W4 item list). Unit-tested
 (exact body, exact routes, validation); live evidence
 `docs/live-evidence/gap-fix-probe-2026-09-09.json` + `gap-fix-probe3-2026-09-09.json`.
 
@@ -96,7 +96,7 @@ authenticated + guest): `POST /services/restservice.svc/v5/sendOrder3` →
 HTTP 500 `InternalServerError` (2026-09-09: fresh basket → sendOrder2 err:0 →
 sendOrder3 500, same shape). Nothing the MCP can fix server-side; the
 practical closure is G1 (typed web pipeline). Kept `unresolved`; the typed
-mobile `alza_place_order` stays live-reached/blocked with the documented
+mobile `place_order` stays live-reached/blocked with the documented
 500. **Re-test cadence:** each live-verification run (cheap: one POST).
 
 ### G6. Mobile after-order `err:1` for WCF-created orders (PA2/PA3)
@@ -105,19 +105,19 @@ Re-confirmed 2026-09-08 **and** 2026-09-09 against still-open order 1056808137
 (`getafterorderpayments` → “Faktura se zadaným ID neexistuje”;
 `afterOrderPayment` → “Aktualizujte prosím aplikace"). Expected until a
 restservice-pipeline order exists (i.e. until G5's 500 is fixed
-server-side). The web `CreateAfterPayment` (G1's `alza_web_pay_after_order`)
+server-side). The web `CreateAfterPayment` (G1's `web_pay_after_order`)
 is the working execution path in the meantime.
 
 ## P2 — candidates (status: two implemented 2026-09-09, the rest confirmed documented-only)
 
 | Candidate | Evidence | Note |
 |---|---|---|
-| Chatbot family (`chatbotapi.alza.cz` `/v1/navigation`, `/v1/chat`, pageType-coded) | W18 (live 2026-09-08; **implemented 2026-09-09**) | Typed tools `alza_chat_navigation` + `alza_chat_send` (session-scoped, visitor-keyed, token-free like `alza_web_add_to_cart`). Live corrections: navigation requires the `country` query field, the chat POST requires `ListCategoryId` (empty array works), pageType codes 1=product detail / 5=Order1 / 6=Order2 / 24=Order4. Record: `docs/live-evidence/p2-implementation-2026-09-09.md` |
+| Chatbot family (`chatbotapi.alza.cz` `/v1/navigation`, `/v1/chat`, pageType-coded) | W18 (live 2026-09-08; **implemented 2026-09-09**) | Typed tools `chat_navigation` + `chat_send` (session-scoped, visitor-keyed, token-free like `web_add_to_cart`). Live corrections: navigation requires the `country` query field, the chat POST requires `ListCategoryId` (empty array works), pageType codes 1=product detail / 5=Order1 / 6=Order2 / 24=Order4. Record: `docs/live-evidence/p2-implementation-2026-09-09.md` |
 | Web telemetry (`logapi.alza.cz /api/log/v2/logs`, `metrics/gs/ccm/collect`, `cdn-cgi/rum`) | W19 (live 2026-09-08) | Out of scope by rule; only relevant as a transport note |
 | `next-api/auth/get-session` (Next.js bootstrap) | W1 | Framework plumbing; no user value as a tool |
 | 2026.17 server-driven action fields (`afterSelectAction`/`afterDeselectAction` on D1 items, `alzaPlusActionBannerAction`) | re-audit 2026-09-07; **scan 2026-09-09** | **No new API surface needed**: live scan with a real basket — 59 deliveries + 14 payments, 0 non-null actions (`alzaPlusActionBannerAction` null) — nothing to follow up on; documented-only in the coverage doc |
 | Bank-app payment channel (PA11: `PayViaBankAppResolver`, preferred-bank-app preference) | re-audit 2026-09-07; **confirmed 2026-09-09** | Client-side UX over the same `paymentId` flow; no new API surface — stays documented-only (PA11) |
-| `GetZipCodes` on `EShopService.svc` (WCF twin of D5) | probe 2026-09-08; **implemented 2026-09-09** | `web_zip_codes` whitelist op (`alza_mobile_read`): only the PascalCase `Search` body field binds (6 candidate fields probed); the response `Value` is an HTML snippet of `zip-item` divs; `ErrorLevel:14` when nothing matches. Record: `docs/live-evidence/p2-implementation-2026-09-09.md` |
+| `GetZipCodes` on `EShopService.svc` (WCF twin of D5) | probe 2026-09-08; **implemented 2026-09-09** | `web_zip_codes` whitelist op (`mobile_read`): only the PascalCase `Search` body field binds (6 candidate fields probed); the response `Value` is an HTML snippet of `zip-item` divs; `ErrorLevel:14` when nothing matches. Record: `docs/live-evidence/p2-implementation-2026-09-09.md` |
 | Device tokens, admin routes, news, prescriptions | earlier audit | Documented out-of-scope (see coverage doc) |
 
 ## Explicitly NOT gaps (closed this goal)
@@ -135,10 +135,10 @@ is the working execution path in the meantime.
 
 **G2 — implemented.** `MobileApi.deliveryPaymentGroups` now calls **v13** with an
 HTTP-404-only fallback to v12 (`src/infra/mobile-api.ts`). Serves
-`alza_delivery_options`, `alza_payment_methods`, and `alza_checkout_preview`
+`delivery_options`, `payment_methods`, and `checkout_preview`
 automatically. Unit-tested (v13 direct, v13→v12 fallback, no fallback on 500).
 
-**G3 — implemented.** New typed read tool **`alza_web_pickup_places`** (no token):
+**G3 — implemented.** New typed read tool **`web_pickup_places`** (no token):
 inputs `order_id?/group_id?/latitude?/longitude?/types[]?/limit?/offset?/place_id?`;
 returns `{form, places, detail?}` from the `personalPickup/v1` family
 (`webPickupPlaceForm` / `webPickupPlaces` / `webPickupPlaceDetail` in
@@ -146,7 +146,7 @@ returns `{form, places, detail?}` from the `personalPickup/v1` family
 (input validation + exact routes).
 
 **G1 — implemented.**
-- **`alza_web_place_order`** (high-impact, one-time token `web_place_order`):
+- **`web_place_order`** (high-impact, one-time token `web_place_order`):
 typed inputs (delivery/group/parcel-shop, payment, user-info block with
 email/zip/phone/consent validation); runs `SaveOrder2` (with
 `alzaPlusSubscriptionId:0`/`cetelemLeasingId:0` gate-skip) → `SaveOrder3` →
@@ -155,13 +155,13 @@ AlzaPlus promo gate) → `CheckOrder4` → `SendOrder4`; throws on any non-zero
 `ErrorLevel`; returns `order_id` + `order_detail_link` (GetOrderDetailAction
 webLink) + per-step `error_levels`. WCF `d`-envelope unwrapped in
 `MobileApi.webWcfStep`.
-- **`alza_web_pay_after_order`** (high-impact, one-time token
+- **`web_pay_after_order`** (high-impact, one-time token
   `web_after_order_payment`): typed inputs (order_id, payment_id, order_hash?,
   invoice_id?, price?); runs the recorded `CreateAfterPayment` body (the
   2026-09-06 real-payment shape); returns the gateway hand-off result.
-- Read companion: `alza_mobile_read` operation **`web_after_payment_dialog`**
+- Read companion: `mobile_read` operation **`web_after_payment_dialog`**
   (WCF `GetAfterPaymentDialog`, PA8) — token-free method list for an unpaid order.
-- `alza_prepare_mutation` now accepts `web_place_order` + `web_after_order_payment`
+- `prepare_mutation` now accepts `web_place_order` + `web_after_order_payment`
   (high-impact set 9→11).
 - Unit-tested: full chain happy path incl. the 113-retry, exact WCF bodies
   (SaveOrder2/3 + SendOrder4), non-zero-step failure, single-use token, after-
@@ -172,10 +172,10 @@ All three: `npm test` 60/60, `npm run typecheck`, `npm run build`,
 
 **Live verification (task 7, 2026-09-08 — done):** real minimal-cost order
 **1057075103** (book FKP0383232, 35 CZK + AlzaBox 2680/1128203, 104 CZK
-ex-VAT) created through the exact `alza_web_place_order` WCF chain on the
+ex-VAT) created through the exact `web_place_order` WCF chain on the
 registered E2E account (user_id 100000001); the `web_after_payment_dialog`
 read returned the live after-order method list (213/216/219/143/144/203),
-and `alza_web_pay_after_order` (`CreateAfterPayment` 144 MojePlatba) returned
+and `web_pay_after_order` (`CreateAfterPayment` 144 MojePlatba) returned
 `ErrorLevel:0` with the gateway hand-off
 `https://www.alza.cz/Secure/MojePlatba-aop.htm?aop=1325060564`. Final order
 state recorded (“Objednávku jsme přijali”, phase 3). Two live findings
@@ -190,7 +190,7 @@ the WCF state valid (the retry covers the documented 113 case). Record:
 After the 2026-09-08 goal closed, a fresh triage of `docs/mobile-endpoint-coverage.md`
 + this report found four actionable items; all are now closed:
 
-- **G4 (above)** — `alza_web_add_to_cart` + `alza_web_cart` typed tools; the
+- **G4 (above)** — `web_add_to_cart` + `web_cart` typed tools; the
   basket add is visitor-keyed (cookie-less Balancer-Guid add live-verified), so
   the tools work with the standard MCP transport. `webCart` needs only the
   basket_id (the `visitors/{visitorId}` path segment is not validated
@@ -200,16 +200,16 @@ After the 2026-09-08 goal closed, a fresh triage of `docs/mobile-endpoint-covera
   `GET /api/catalog/v1/homePage/categories/{id}?pgri=…&ui=…` (bare route → HTTP
   400; with the server-provided params → 200 `{self, breadcrumbs, name, value,
   disclaimers, shareWebLink}`). Exposed as the `home_categories` read op on
-  `alza_mobile_read` (39 read ops now).
+  `mobile_read` (39 read ops at the time; 41 as of 2026-10-07).
 - **G5/G6 re-tested 2026-09-09** (above) — both unchanged; they stay
   server-side `unresolved` with a per-run re-test cadence.
 - **Found & fixed during the round:** the `web_after_payment_dialog` read op
-  (added 2026-09-08) was missing from the `alza_mobile_read` zod enum — the op
+  (added 2026-09-08) was missing from the `mobile_read` zod enum — the op
   existed in the domain layer but was unreachable through the tool. Now in the
-  enum (39 ops).
+  enum (39 ops at the time; 41 as of 2026-10-07).
 
 Not actionable (unchanged): AT3 (vision API — no static route), the P2 table
-(boundary/server-side), and the mobile `alza_place_order` path blocked at G5.
+(boundary/server-side), and the mobile `place_order` path blocked at G5.
 Gate: `npm test` 63/63, `npm run typecheck`, `npm run build`, `git diff --check`
 green (2026-09-09). Live records: `docs/live-evidence/gap-fix-probe-2026-09-09.json`,
 `docs/live-evidence/gap-fix-probe3-2026-09-09.json`.
@@ -225,7 +225,7 @@ below gets exactly one class — the resolution path this goal commits to:
   server-side). Terminal state: *fixed* (typed implementation + unit tests + live
   evidence) or *server-side-conclusive* (fresh dated re-test evidence + the per-run
   re-test cadence kept, row stays `unresolved`).
-- **typed-wrapper-candidate** — a typed tool / `alza_mobile_read` op within the MCP
+- **typed-wrapper-candidate** — a typed tool / `mobile_read` op within the MCP
   security boundary (static route, explicit input validation, one-time token on
   high-impact mutations, origin validation). Terminal state: implemented +
   live-verified, or an explicit dated rationale for staying blocked recorded on the row.
@@ -237,7 +237,7 @@ below gets exactly one class — the resolution path this goal commits to:
 
 | Row(s) | Operation / action | Class | Task | Notes |
 |---|---|---|---|---|
-| O3 (G5) | mobile `sendOrder3` HTTP 500 — blocks typed `alza_place_order` step 2 (and O5) | fix-attempt (server-side-suspect) | task-2 | **terminal: server-side-conclusive (2026-09-16, `docs/live-evidence/g5-g6-or11-retest-2026-09-16.md`)** — byte-level app request from APK 2026.17.0 replayed live: the 500 reproduced across UA versions 2026.15/456 + 2026.17/459 + future 2026.18/460 + the MCP control UA; body shapes full/guest/empty/email/`dEmail`; fresh-basket pipeline state (getUserData → basket/add → sendOrder1 → v13 groups → sendOrder2 all 200 err:0, resolved delivery group); registered + guest; and **both hosts `www.alza.cz` and `m.alza.cz`** (the APK host-resolution chain `h31.d()` → `uek.g()` → `u5j` join proves the app's production-mobile API host is **m.alza.cz** — new documented fact, row O3 updated). UA-independent, body-shape-independent, host-independent, auth-independent, pipeline-state-independent → row stays `unresolved`, per-run re-test cadence kept |
+| O3 (G5) | mobile `sendOrder3` HTTP 500 — blocks typed `place_order` step 2 (and O5) | fix-attempt (server-side-suspect) | task-2 | **terminal: server-side-conclusive (2026-09-16, `docs/live-evidence/g5-g6-or11-retest-2026-09-16.md`)** — byte-level app request from APK 2026.17.0 replayed live: the 500 reproduced across UA versions 2026.15/456 + 2026.17/459 + future 2026.18/460 + the MCP control UA; body shapes full/guest/empty/email/`dEmail`; fresh-basket pipeline state (getUserData → basket/add → sendOrder1 → v13 groups → sendOrder2 all 200 err:0, resolved delivery group); registered + guest; and **both hosts `www.alza.cz` and `m.alza.cz`** (the APK host-resolution chain `h31.d()` → `uek.g()` → `u5j` join proves the app's production-mobile API host is **m.alza.cz** — new documented fact, row O3 updated). UA-independent, body-shape-independent, host-independent, auth-independent, pipeline-state-independent → row stays `unresolved`, per-run re-test cadence kept |
 | PA2/PA3 (G6) | mobile after-order options + execution `err:1` on WCF-created orders | fix-attempt (server-side-suspect) | task-3 | **terminal: server-side-conclusive (2026-09-16, `docs/live-evidence/g5-g6-or11-retest-2026-09-16.md`)** — re-tested against cancelled order 1058423434 with the exact app UA 2026.17/459: `err:1` persists across UA variants (app UA vs control), auth variants (Bearer/no-Bearer), paymentIds 103/144 and order states (cancelled → messages “Objednávka se zadaným ID neexistuje” (PA2) / “Objednávka nebyla nalezena” (PA3); the still-open 2026-09-08 run had “Faktura se zadaným ID neexistuje” / “Aktualizujte prosím aplikace”). **Not an app-version gate**; `v3`/`v5` (PA2) and `v5` (PA3) bumps → HTTP 404 (the APK string pool carries exactly `v2`/`v4`). PA3 fired only under the PA2-err:1 safety gate — no charge possible. Rows stay `live-verified` with the documented limitation |
 | OR11 (2026-09-15 anomaly) | order cancellation — 2026-09-15 re-test got `null` responses + “Zpracováváme změny” (2026-09-06 runs were 202 Accepted) | fix-attempt | task-4 | **terminal: resolved (2026-09-16, `docs/live-evidence/or11-cancel-retest-2026-09-16.json` + `or11-cancel-followup-2026-09-16.json`)** — the “null” was **202 Accepted with an empty body** (async cancellation accepted); the cancellation had taken effect (the order re-read showed “Objednávka byla zrušena”, phase 4, unlocked); re-issuing the PUT is idempotent-safe (re-submits, re-enters “Zpracováváme změny”, resolves back to cancelled). No implementation change needed — row OR11's 202-accepted semantics stand; the authenticated `GET /api/v1/orders/{id}` detail route 404s on the WCF port-1002 service (the anonymous read is the working detail route) |
 | A17 | GDPR data export link (read) | typed-wrapper-candidate | task-5 | **terminal: fixed (2026-09-22, `docs/live-evidence/task5-a17-or6-or10-k2-2026-09-22.md`)** — typed `gdpr_info` read (personalDetails 200 with `gdprInfoAction`+`deleteAccountAction`; gdprDialog 200, `emailInfo` = E2E login email) + `gdpr_export` low-risk mutation (POST `gdprInformation` → **202 Accepted**); unit tests in `test/task5-actions.test.ts`; row now `live-verified` |
@@ -256,7 +256,7 @@ below gets exactly one class — the resolution path this goal commits to:
 | OR9 | cancel drop order (AlzaBox) (high-impact) | typed-wrapper-candidate | task-6 | **terminal: blocked (dated rationale, 2026-09-24)** — AlzaBox order 1056808137 is one-off/completed, no `cancelDropOrder` action; no active AlzaBox subscription (subscriptions 404) and none creatable without a payment-capable state; re-test target recorded |
 | S5 | limit-exceeded repayment (charges card) | typed-wrapper-candidate | task-6 | **terminal: blocked (dated rationale, 2026-09-24)** — needs a **failed-installment** state; the standing account holds no subscription at all (subscriptions 404, 2026-09-22) → no installment, no failed installment; state unreachable; re-test target recorded |
 | PA7 + registry `addToCartAction`/`commodityCodesCarouselAction` | quick-order payment (creates + pays) | typed-wrapper-candidate | task-6 | **terminal: blocked (dated rationale, 2026-09-24)** — `SubmitQuickOrder` needs a **stored payment method** (immediate charge); the standing E2E account and the 2026-09-24 disposable account hold none (PA1 = option groups only; no stored-card read route); the action is not offered without one; re-test target recorded |
-| P7/P8/D6 | delivery variants/time-frames + personal-delivery scheduling forms | typed-wrapper-candidate | task-6 | **terminal: blocked (dated rationale, 2026-09-24)** — per-basket forms only on `canPickDeliveryTime=true` deliveries; live basket scan (64 delivery variants, disposable 100000002): **0** qualify (`showCourierTimeIntervalPicker` is a UI rule, not a form surface); static read already typed (`alza_delivery_options`); re-test target recorded |
+| P7/P8/D6 | delivery variants/time-frames + personal-delivery scheduling forms | typed-wrapper-candidate | task-6 | **terminal: blocked (dated rationale, 2026-09-24)** — per-basket forms only on `canPickDeliveryTime=true` deliveries; live basket scan (64 delivery variants, disposable 100000002): **0** qualify (`showCourierTimeIntervalPicker` is a UI rule, not a form surface); static read already typed (`delivery_options`); re-test target recorded |
 | PA5 | Klarna hand-off | policy-blocked | — | leaves Alza origin (security boundary); rationale already on the row |
 | PA6 | Google Pay | policy-blocked | — | external provider charge; rationale already on the row |
 | PA11 | bank-app payment channel | policy-blocked | — | client-side UX over the same PA2/PA3/PA9 `paymentId` flow; no API surface |
@@ -372,7 +372,7 @@ about *how* the working tools relate to each other:
   `web_place_order`) is unchanged, but the exact failing step is state-dependent
   rather than always `sendOrder3` — worth noting for anyone re-verifying G5.
 
-### `list_categories` drill-down bug — found, not yet fixed (2026-09-27)
+### `list_categories` drill-down bug — found 2026-09-27, fixed since (see CHANGELOG: `list_categories(parent_id)` now returns the real subcategories)
 
 - **The gap:** `list_categories({parent_id: 18890188})` ("Počítače a
   notebooky") returned the same 21 top-level categories as

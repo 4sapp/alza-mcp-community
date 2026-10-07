@@ -1,6 +1,7 @@
 # Smithery configuration. See https://smithery.ai/docs
 # Keep configSchema in sync with the "Configuration" table in README.md.
-# Secrets (OAuth tokens, client secret) are intentionally NOT exposed here:
+# Secrets (OAuth tokens, client secret) are intentionally NOT exposed here
+# (alzaProxyUrl may embed proxy credentials and is marked as a password):
 # account/checkout tools are off by default (enable via set_toolset) and need
 # a locally obtained token, see README "Mobile API environment variables".
 startCommand:
@@ -20,6 +21,10 @@ startCommand:
       alzaIdleTtlMs:
         type: number
         description: "Optional. Milliseconds of inactivity before the headless Chromium is shut down. Default 180000 (3 min)."
+      alzaProxyUrl:
+        type: string
+        description: "Optional. Route Alza traffic through an HTTP(S) or SOCKS5 proxy (e.g. http://user:pass@host:port), for example a residential proxy when this machine's IP gets Cloudflare challenges. May embed credentials."
+        format: password
       alzaDebug:
         type: boolean
         description: "Optional. Default false. Verbose stderr logging."
@@ -31,6 +36,7 @@ startCommand:
         ...(config.alzaBaseUrl ? { ALZA_BASE_URL: config.alzaBaseUrl } : {}),
         ...(config.alzaCdpUrl ? { ALZA_CDP_URL: config.alzaCdpUrl } : {}),
         ...(typeof config.alzaHeadless === 'boolean' ? { ALZA_HEADLESS: String(config.alzaHeadless) } : {}),
+        ...(config.alzaProxyUrl ? { ALZA_PROXY_URL: config.alzaProxyUrl } : {}),
         ...(config.alzaIdleTtlMs ? { ALZA_IDLE_TTL_MS: String(config.alzaIdleTtlMs) } : {}),
         ...(config.alzaDebug ? { ALZA_DEBUG: 'true' } : {})
       }

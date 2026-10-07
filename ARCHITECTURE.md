@@ -6,7 +6,7 @@ This is a deeper companion to the [README](README.md) — written for contributo
 
 Alza.cz has no public consumer API. There are three official surfaces — Alza Trade (B2B marketplace, OAuth-gated), AlzaBox (parcel-locker logistics, OpenAPI'd), and the affiliate program (links/creatives only) — none of which lets a third party query the catalog.
 
-The mobile app's REST endpoints under `/Services/RestService.svc/` are the de-facto data plane and have been documented by community projects ([topmonks/hlidac-shopu](https://github.com/topmonks/hlidac-shopu/tree/main/actors/alza)). But Alza protects them with **Cloudflare Bot Management in challenge mode** — every call from a casual datacenter or residential client returns `403` with a JS challenge. Solving the challenge requires running JavaScript in a real browser.
+The mobile app's REST endpoints under `/Services/RestService.svc/` are the de-facto data plane and have been documented by community projects ([topmonks/hlidac-shopu](https://github.com/topmonks/hlidac-shopu/tree/trunk/actors/alza)). But Alza protects them with **Cloudflare Bot Management in challenge mode** — every call from a casual datacenter or residential client returns `403` with a JS challenge. Solving the challenge requires running JavaScript in a real browser.
 
 Three approaches we considered and rejected:
 

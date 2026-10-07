@@ -129,6 +129,11 @@ def exchange(pasted: str) -> None:
     if not PENDING_FILE.exists():
         sys.exit(f"no pending login at {PENDING_FILE} — run the gen step first")
     pending = json.loads(PENDING_FILE.read_text())
+    # Also accept the camelCase file written by alza-auth-login-noninteractive.mjs.
+    for snake, camel in (("client_id", "clientId"), ("redirect_uri", "redirectUri"),
+                         ("token_endpoint", "tokenEndpoint"), ("visitor_id", "visitorId")):
+        if snake not in pending and camel in pending:
+            pending[snake] = pending[camel]
     code, state = parse_redirect(pasted)
     if state and state != pending["state"]:
         sys.exit("state mismatch — the redirect does not belong to this login attempt; start again")

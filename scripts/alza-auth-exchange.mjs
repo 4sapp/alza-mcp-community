@@ -46,6 +46,15 @@ const main = async () => {
   } catch {
     throw new Error(`no pending login at ${PENDING_FILE} — run scripts/alza-auth-login-noninteractive.mjs first`);
   }
+  // Accept both the camelCase file written by alza-auth-login-noninteractive.mjs and
+  // the snake_case file written by alza_auth_login.py (npm run auth:login:py).
+  pending = {
+    ...pending,
+    clientId: pending.clientId ?? pending.client_id,
+    redirectUri: pending.redirectUri ?? pending.redirect_uri,
+    tokenEndpoint: pending.tokenEndpoint ?? pending.token_endpoint,
+    visitorId: pending.visitorId ?? pending.visitor_id,
+  };
   const pasted = process.argv[2] ?? (await readStdin());
   const parsed = parseRedirect(pasted);
   if (parsed.state && parsed.state !== pending.state) {

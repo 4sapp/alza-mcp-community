@@ -9,11 +9,10 @@ Rough priority order. Every item is a GitHub issue — comment there before star
 - **Account & checkout** — OAuth PKCE sign-in, cart, delivery/AlzaBox selection, checkout preview, order placement (legacy web WCF path) and cancellation, after-order payments, order history/documents, claims, subscriptions, profile/addresses and credential changes — all high-impact mutations behind one-time confirmation tokens.
 - **Progressive disclosure** — tools grouped into toolsets; only `catalog` and `auth` are enabled by default.
 - **Streamable HTTP transport** — `alza-mcp --http` for local multi-session use (catalog-only unless account access is opted in).
-- **Distribution** — published on npm as `alza-mcp`, CI on Node 20/22, trusted publishing on tag push; `server.json` and `smithery.yaml` in the repo.
+- **Distribution** — published on npm as `alza-mcp`, CI on Node 20/22, trusted publishing on tag push; `server.json` and `smithery.yaml` in the repo, published to the official MCP Registry from the release workflow ([#19](https://github.com/lukabudik/alza-mcp/issues/19), 0.4.0).
 
 ## Near-term
 
-- [#19](https://github.com/lukabudik/alza-mcp/issues/19) Publish to the official MCP Registry from the release workflow
 - [#20](https://github.com/lukabudik/alza-mcp/issues/20) List in MCP directories (Smithery, Glama, PulseMCP, mcp.so)
 - [#22](https://github.com/lukabudik/alza-mcp/issues/22) One-click install links (Cursor, VS Code, Claude Desktop)
 
