@@ -370,12 +370,23 @@ function has(params: ProductParam[], ...names: string[]): boolean {
 }
 
 /**
- * Best-guess component role from a product's spec-row signature, falling
- * back to name keywords. Returns undefined when nothing matches — callers
- * then ask for an explicit `role`.
+ * Why a product is clearly not a single PC component (a laptop, prebuilt PC
+ * or monitor carries display / operating-system rows that no component page
+ * has), or undefined when it may be one. Such a product matches the RAM or
+ * CPU spec signature by accident (it lists memory type, frequency and size).
  */
-export function detectRole(name: string, params: ProductParam[] | undefined): PcRole | undefined {
+export function nonComponentReason(params: ProductParam[] | undefined): string | undefined {
   const ps = params ?? [];
+  if (has(ps, "Úhlopříčka displeje", "Typ displeje", "Operační systém")) {
+    return "its specs describe a complete device (display / operating system rows) — a laptop, prebuilt PC or monitor, not a single PC component";
+  }
+  return undefined;
+}
+
+/** Role from the spec-row signature only (strong evidence); undefined when no signature matches. */
+export function detectRoleFromSpecs(params: ProductParam[] | undefined): PcRole | undefined {
+  const ps = params ?? [];
+  if (nonComponentReason(ps)) return undefined;
   if (has(ps, "Socket") && has(ps, "Čipset", "Formát základní desky")) return "motherboard";
   if (has(ps, "Socket", "Řada procesoru") && has(ps, "Počet jader procesoru", "Řada procesoru")) return "cpu";
   if (has(ps, "Max. délka grafické karty", "Max. výška chladiče procesoru")) return "case";
@@ -384,12 +395,45 @@ export function detectRole(name: string, params: ProductParam[] | undefined): Pc
   if (has(ps, "Výkon") && has(ps, "Certifikace", "Modulárnost", "Verze ATX")) return "psu";
   if (has(ps, "Typ paměti") && has(ps, "Frekvence paměti") && has(ps, "Moduly v balení", "Počet modulů v balení", "Velikost operační paměti RAM")) return "ram";
   if (has(ps, "Typ úložiště", "Kapacita úložiště (celková)", "Rozhraní interní")) return "storage";
+  return undefined;
+}
+
+/**
+ * Best-guess component role from a product's spec-row signature, falling
+ * back to name keywords. Returns undefined when nothing matches (or when the
+ * product is a whole device) — callers then ask for an explicit `role`.
+ */
+export function detectRole(name: string, params: ProductParam[] | undefined): PcRole | undefined {
+  if (nonComponentReason(params)) return undefined;
+  const fromSpecs = detectRoleFromSpecs(params);
+  if (fromSpecs) return fromSpecs;
   const n = name.toLowerCase();
   if (/\b(ryzen|core i[3579]|core ultra|threadripper|xeon|athlon|pentium|celeron)\b/.test(n) && !/notebook|počítač/.test(n)) return "cpu";
   if (/\b(geforce|radeon rx|rtx \d|gtx \d|arc [ab]\d)/.test(n)) return "gpu";
   if (/\bddr[345]\b/.test(n)) return "ram";
   if (/\b(ssd|nvme|hdd)\b/.test(n)) return "storage";
   return undefined;
+}
+
+/**
+ * Sanity-check an explicitly requested role against the product's specs.
+ * `error` = the specs clearly describe something else (a whole device, or
+ * another component's signature) — the caller refuses the part instead of
+ * running rules on the wrong role. `warning` = only the name hints at
+ * another role. Parts without a recognisable signature are accepted.
+ */
+export function checkForcedRole(role: PcRole, name: string, params: ProductParam[] | undefined): { error?: string; warning?: string } {
+  const device = nonComponentReason(params);
+  if (device) return { error: `${name} cannot be used as ${role}: ${device}.` };
+  const fromSpecs = detectRoleFromSpecs(params);
+  if (fromSpecs && fromSpecs !== role) {
+    return { error: `${name} was given role ${role}, but its spec table looks like a ${fromSpecs}. Fix the role (or drop it to auto-detect).` };
+  }
+  if (!fromSpecs) {
+    const fromName = detectRole(name, params);
+    if (fromName && fromName !== role) return { warning: `${name} was given role ${role}, but its name suggests ${fromName}; its specs confirmed neither.` };
+  }
+  return {};
 }
 
 // ---------------------------------------------------------------------------
@@ -714,12 +758,21 @@ export function checkBuild(parts: BuildParts, opts: { psuHeadroom?: number } = {
   ];
 }
 
-export type OverallVerdict = "compatible" | "incompatible" | "needs_review";
+export type OverallVerdict = "compatible" | "incompatible" | "needs_review" | "no_conflicts_found";
 
-/** `incompatible` if any rule fails; `needs_review` if any warns or is unknown; else `compatible`. */
-export function overallVerdict(verdicts: RuleVerdict[]): OverallVerdict {
+/** Roles a build needs before "compatible" can be claimed (graphics are covered by the display_output rule). */
+export const REQUIRED_BUILD_ROLES: readonly PcRole[] = ["cpu", "motherboard", "ram", "psu", "case"];
+
+/**
+ * `incompatible` if any rule fails; `needs_review` if any warns or is unknown;
+ * `no_conflicts_found` when nothing failed but the build is incomplete
+ * (`complete: false` — rules needing the missing parts were not applicable);
+ * else `compatible`.
+ */
+export function overallVerdict(verdicts: RuleVerdict[], opts: { complete?: boolean } = {}): OverallVerdict {
   if (verdicts.some((v) => v.verdict === "fail")) return "incompatible";
   if (verdicts.some((v) => v.verdict === "warn" || v.verdict === "unknown")) return "needs_review";
+  if (opts.complete === false) return "no_conflicts_found";
   return "compatible";
 }
 
@@ -761,7 +814,33 @@ export function socketHintFromBoardName(name: string): string | undefined {
 /** Wattage from a PSU card name, when it carries one ("… 1000W", "750 W"). */
 export function wattageHintFromName(name: string): number | undefined {
   const m = name.match(/\b(\d{3,4})\s?W\b/i);
-  return m ? Number(m[1]) : undefined;
+  if (m) return Number(m[1]);
+  // Model numbers carry the wattage too: "RM750x", "CX650M", "HX1000i".
+  // Only round figures in the plausible PSU range count (not "ATX 3.1", "B650").
+  for (const t of name.matchAll(/\b[A-Za-z]{1,5}[- ]?(\d{3,4})[A-Za-z]{0,3}\b/g)) {
+    const w = Number(t[1]);
+    if (w % 50 === 0 && w >= 300 && w <= 2000) return w;
+  }
+  return undefined;
+}
+
+/** Does a RAM card name advertise a multi-module kit (dual channel)? */
+export function looksLikeRamKit(name: string): boolean {
+  return /\bkit\b|dual[- ]?channel|\b[248]\s?[x×]\s?\d{1,3}\s?(?:GB|G)?\b/i.test(name);
+}
+
+/**
+ * Order listing cards for one role: cards within `target` first (RAM kits
+ * before single sticks, then most expensive = best part the money buys),
+ * then over-target cards by ascending price. Cards above `hardCap` (the
+ * money still left in the budget) are dropped: the budget is a hard limit.
+ */
+export function rankCandidates<T extends { name: string; price?: number }>(role: PcRole, cards: T[], target: number, hardCap = Infinity): T[] {
+  const priced = cards.filter((c) => c.price !== undefined && c.price <= hardCap);
+  const kitFirst = (c: T) => (role === "ram" && looksLikeRamKit(c.name) ? 0 : 1);
+  const within = priced.filter((c) => c.price! <= target).sort((a, b) => kitFirst(a) - kitFirst(b) || b.price! - a.price!);
+  const over = priced.filter((c) => c.price! > target).sort((a, b) => kitFirst(a) - kitFirst(b) || a.price! - b.price!);
+  return [...within, ...over];
 }
 
 export type BuildProfile = "gaming" | "workstation" | "office";

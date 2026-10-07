@@ -11,7 +11,10 @@ import {
   checkPsuFormFactor,
   checkPsuWattage,
   checkRamCpu,
+  checkForcedRole,
   checkRamMotherboard,
+  looksLikeRamKit,
+  rankCandidates,
   detectRole,
   estimatePower,
   normalizeFormFactor,
@@ -383,7 +386,9 @@ describe("suggest helpers", () => {
     expect(socketHintFromBoardName("ASUS TUF GAMING B860M-PLUS WIFI")).toBe("LGA1851");
     expect(socketHintFromBoardName("Unknown board")).toBeUndefined();
     expect(wattageHintFromName("Be quiet! PURE POWER 13 M 1000W")).toBe(1000);
-    expect(wattageHintFromName("Corsair RM850x ATX 3.1")).toBeUndefined();
+    expect(wattageHintFromName("Corsair RM850x ATX 3.1")).toBe(850);
+    expect(wattageHintFromName("Corsair CX650M")).toBe(650);
+    expect(wattageHintFromName("Some PSU ATX 3.1 80 PLUS Gold")).toBeUndefined();
   });
 
   it("allocates the budget by profile after fixed spend", () => {
@@ -559,7 +564,7 @@ describe("PcBuilder.suggest", () => {
       expect(calls.details).toContain("PSU500");
       expect(r.parts.find((p) => p.role === "psu")?.code).toBe("PSU1");
       expect(r.verdicts.find((v) => v.rule === "psu_wattage")?.verdict).toBe("pass");
-      expect(r.notes.join(" ")).toMatch(/PSU500 only got psu_wattage=warn/);
+      expect(r.notes.join(" ")).toMatch(/skipped PSU500 \(500 W is below the recommended 550 W\)/);
     } finally {
       LISTINGS[18849164] = saved!;
     }
@@ -608,5 +613,134 @@ describe("pc_build_* tool output", () => {
     expect(text).toMatch(/\*\*Overall: incompatible\*\*/);
     expect(text).toMatch(/\*\*FAIL\*\* CPU socket/);
     expect(text).toMatch(/\| cpu \| \[AMD Ryzen 7 5800X3D\]/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// QA lows (#78): unpriced parts, role sanity, incomplete builds, suggest quality
+// ---------------------------------------------------------------------------
+
+const LAPTOP = P([
+  ["Úhlopříčka displeje", '15,6 "'],
+  ["Typ procesoru", "Intel Core 5"],
+  ["Velikost operační paměti RAM", "16 GB"],
+  ["Typ paměti", "DDR4"],
+  ["Frekvence paměti", "3 200 MHz (3,2 GHz)"],
+  ["Operační systém", "Bez operačního systému"],
+  ["Typ úložiště", "SSD"],
+]);
+
+describe("pc_build_check: unpriced parts", () => {
+  it("reports a 0 / empty-currency offer as unpriced, keeps the currency and flags the total", async () => {
+    const { catalog } = fakeCatalog();
+    PRODUCTS.MB_GONE = { ...product("MB_GONE", "Discontinued board", 0, MB_AM5_DDR5_ATX), currency: "" };
+    try {
+      const r = await new PcBuilder(catalog).check({ parts: [{ code: "MB_GONE" }, { code: "CPU1" }] });
+      const mb = r.parts.find((p) => p.code === "MB_GONE")!;
+      expect(mb.price).toBeUndefined();
+      expect(mb.currency).toBe("CZK");
+      expect(r.unpriced).toEqual(["MB_GONE"]);
+      expect(r.totalIncomplete).toBe(true);
+      expect(r.total).toBe(6000);
+      expect(r.notes.join(" ")).toMatch(/Total excludes 1 unpriced part\(s\).*MB_GONE/);
+      const text = formatBuildReport(r, "x");
+      expect(text).toMatch(/\| \? CZK \|/);
+      expect(text).toMatch(/total 6000 CZK \(excludes 1 unpriced part\(s\): MB_GONE\)/);
+    } finally {
+      delete PRODUCTS.MB_GONE;
+    }
+  });
+
+  it("a fully priced build is not flagged", async () => {
+    const { catalog } = fakeCatalog();
+    const r = await new PcBuilder(catalog).check({ parts: [{ code: "CPU1" }, { code: "MB1" }] });
+    expect(r.totalIncomplete).toBe(false);
+    expect(r.unpriced).toEqual([]);
+  });
+});
+
+describe("pc_build_check: role sanity", () => {
+  it("does not detect a laptop as RAM", () => {
+    expect(detectRole("MSI Modern 15", LAPTOP)).toBeUndefined();
+  });
+
+  it("refuses a laptop even with a forced role, and a CPU forced as GPU", async () => {
+    const { catalog } = fakeCatalog();
+    PRODUCTS.LAPTOP = product("LAPTOP", "MSI Modern 15", 13322, LAPTOP);
+    try {
+      await expect(new PcBuilder(catalog).check({ parts: [{ code: "LAPTOP" }] })).rejects.toThrow(/laptop, prebuilt PC or monitor/);
+      await expect(new PcBuilder(catalog).check({ parts: [{ code: "LAPTOP", role: "ram" }] })).rejects.toThrow(/cannot be used as ram/);
+      await expect(new PcBuilder(catalog).check({ parts: [{ code: "CPU1", role: "gpu" }] })).rejects.toThrow(/role gpu, but its spec table looks like a cpu/);
+    } finally {
+      delete PRODUCTS.LAPTOP;
+    }
+  });
+
+  it("checkForcedRole accepts a matching or unrecognised role and warns on a name-only contradiction", () => {
+    expect(checkForcedRole("cpu", "AMD Ryzen 7 5800X3D", CPU_AM4)).toEqual({});
+    expect(checkForcedRole("psu", "Mystery", [])).toEqual({});
+    expect(checkForcedRole("gpu", "AMD Ryzen 5 9600X", []).warning).toMatch(/name suggests cpu/);
+  });
+});
+
+describe("pc_build_check: incomplete builds", () => {
+  it("never calls a partial build 'compatible'", async () => {
+    const { catalog } = fakeCatalog();
+    const r = await new PcBuilder(catalog).check({ parts: [{ code: "CPU1" }, { code: "MB1" }] });
+    expect(r.overall).toBe("no_conflicts_found");
+    expect(r.missingRoles).toEqual(["ram", "psu", "case"]);
+    const text = formatBuildReport(r, "x");
+    expect(text).toMatch(/no conflicts found among the listed parts — NOT a "compatible" verdict.*missing ram, psu, case/);
+    expect(PC_BUILD_OUTPUT.safeParse(JSON.parse(JSON.stringify(r))).success).toBe(true);
+  });
+
+  it("overallVerdict: complete:false downgrades only a clean result", () => {
+    expect(overallVerdict([], { complete: false })).toBe("no_conflicts_found");
+    expect(overallVerdict([], { complete: true })).toBe("compatible");
+    expect(overallVerdict([], {})).toBe("compatible");
+  });
+});
+
+describe("pc_build_suggest: part selection", () => {
+  const card = (name: string, price: number) => ({ name, price });
+
+  it("rankCandidates drops cards above the hard cap", () => {
+    const cards = [card("a", 500), card("b", 900), card("c", 1500)];
+    expect(rankCandidates("cpu", cards, 600, 1000).map((c) => c.name)).toEqual(["a", "b"]);
+    expect(rankCandidates("cpu", cards, 600, 100)).toEqual([]);
+  });
+
+  it("rankCandidates puts RAM kits before single sticks, and detects kit names", () => {
+    const cards = [card("Kingston 16GB DDR5", 1500), card("Corsair 2x16GB DDR5", 1400), card("Patriot 32GB KIT DDR5", 1300)];
+    expect(rankCandidates("ram", cards, 2000).map((c) => c.name)).toEqual(["Corsair 2x16GB DDR5", "Patriot 32GB KIT DDR5", "Kingston 16GB DDR5"]);
+    expect(looksLikeRamKit("Crucial Pro 32GB (2 x 16GB) DDR5")).toBe(true);
+    expect(looksLikeRamKit("Kingston 16GB DDR5")).toBe(false);
+  });
+
+  it("never exceeds the budget: a role with only over-budget cards is left empty", async () => {
+    const { catalog } = fakeCatalog();
+    const r = await new PcBuilder(catalog).suggest({ budget: 8000, profile: "office" });
+    expect(r.total).toBeLessThanOrEqual(8000);
+    expect(r.withinBudget).toBe(true);
+    expect(r.notes.join(" ")).toMatch(/cannot fit the budget/);
+  });
+
+  it("prefers a dual-channel kit over a single stick whose name does not say so", async () => {
+    const { catalog } = fakeCatalog();
+    PRODUCTS.RAM_STICK = product(
+      "RAM_STICK",
+      "Kingston Fury 32GB DDR5",
+      3000,
+      RAM_DDR5_KIT.map((r) => (r.name === "Počet modulů v balení" ? { ...r, value: "1 ks" } : r.name === "Moduly v balení" ? { ...r, value: "1 × 32GB" } : r))
+    );
+    const saved = LISTINGS[18893268];
+    LISTINGS[18893268] = ["RAM_STICK", "RAM1"];
+    try {
+      const r = await new PcBuilder(catalog).suggest({ budget: 40000, cpuVendor: "amd" });
+      expect(r.parts.find((p) => p.role === "ram")?.code).toBe("RAM1");
+    } finally {
+      LISTINGS[18893268] = saved!;
+      delete PRODUCTS.RAM_STICK;
+    }
   });
 });

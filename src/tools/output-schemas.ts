@@ -479,6 +479,8 @@ export const PC_BUILD_OUTPUT = z
     total: z.number(),
     currency: z.string(),
     unpriced: z.array(z.string()),
+    totalIncomplete: z.boolean().describe("true when total leaves out unpriced parts"),
+    missingRoles: z.array(z.string()).describe("Required roles (cpu, motherboard, ram, psu, case) the build lacks"),
     verdicts: z.array(
       z
         .object({
@@ -490,7 +492,7 @@ export const PC_BUILD_OUTPUT = z
         })
         .passthrough(),
     ),
-    overall: z.enum(["compatible", "incompatible", "needs_review"]),
+    overall: z.enum(["compatible", "incompatible", "needs_review", "no_conflicts_found"]),
     powerEstimate: z.record(z.string(), z.unknown()).optional(),
     notes: z.array(z.string()),
     detailFetches: z.number().int(),
