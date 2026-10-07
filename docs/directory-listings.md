@@ -26,7 +26,7 @@ Tags/categories: shopping, e-commerce, search, czech, europe.
 
 ## Smithery (https://smithery.ai)
 
-- Uses the repository's `smithery.yaml` (stdio, `npx -y alza-mcp`). `configSchema` was checked against the README "Configuration" table on 2026-10-06 and now exposes `ALZA_BASE_URL`, `ALZA_CDP_URL`, `ALZA_HEADLESS`, `ALZA_IDLE_TTL_MS` and `ALZA_DEBUG`. Auth/OAuth variables are deliberately not exposed (secrets stay local).
+- Uses the repository's `smithery.yaml` (stdio, `npx -y alza-mcp`). `configSchema` was checked against the README "Configuration" table on 2026-10-06 and now exposes `ALZA_BASE_URL`, `ALZA_CDP_URL`, `ALZA_HEADLESS`, `ALZA_IDLE_TTL_MS`, `ALZA_PROXY_URL` and `ALZA_DEBUG`. Auth/OAuth variables are deliberately not exposed (secrets stay local).
 - Steps for the owner: sign in with GitHub, "Add server", pick `lukabudik/alza-mcp`, confirm it picks up `smithery.yaml`, paste the long description above.
 - Display name: `Alza.cz (unofficial)`.
 
