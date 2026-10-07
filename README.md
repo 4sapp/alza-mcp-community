@@ -86,7 +86,7 @@ That's the agent calling four MCP tools across two parallel searches and synthes
 
 ## What it does
 
-With 63 domain tools (65 including `list_toolsets` and `set_toolset`), listing every tool on every `tools/list` call would front-load an agent's context with dozens of tools it may never touch in a given conversation. So they're grouped into **toolsets**, and only two are enabled by default, exposing 12 domain tools plus the two toolset controls:
+With 63 domain tools (66 including `list_toolsets`, `set_toolset` and `report_issue`), listing every tool on every `tools/list` call would front-load an agent's context with dozens of tools it may never touch in a given conversation. So they're grouped into **toolsets**, and only two are enabled by default, exposing 15 domain tools plus the two toolset controls and `report_issue`:
 
 | Toolset | Enabled by default? | Covers |
 |---|---|---|
@@ -102,6 +102,8 @@ With 63 domain tools (65 including `list_toolsets` and `set_toolset`), listing e
 | `advanced_raw` | — | `mobile_read`, the untyped escape hatch |
 
 Call **`list_toolsets`** to see every group and **`set_toolset({id, enabled: true})`** to turn one on before using its tools — e.g. enable `basket_and_checkout` before adding something to a cart. This is standard MCP progressive disclosure (`RegisteredTool.enable()`/`.disable()`, which fires the normal `tools/list_changed` notification) — no functionality is removed, it's just not all visible at once.
+
+**Reporting problems.** `report_issue` is always available, whichever toolsets are on. When a tool fails unexpectedly, returns clearly wrong data, or breaks because Alza changed something, the server instructions and the error message itself point the agent to it. It returns a redacted draft (with version, Node, platform, storefront, transport and this session's recent tool errors), a `gh issue list` command to check for duplicates, a ready-to-run `gh issue create --repo lukabudik/alza-mcp …` command, and a prefilled new-issue link for agents without a shell. The server files nothing itself: the agent shows the draft to you and files it from your GitHub account only if you agree. Credentials, e-mails, phone numbers, account ids and home-directory paths are redacted automatically. Invalid arguments and unknown products don't trigger the hint.
 
 Catalog tools:
 
