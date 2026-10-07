@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { z, ZodError } from "zod";
 import { assertNotRejected } from "../infra/errors.js";
 import type { MobileApi, OAuthStart } from "../infra/mobile-api.js";
 import { APP_ACTION_ROUTE_POLICIES, type AppActionFilePart, type AppActionRoutePolicy, type AppActionValue, type ServerAppAction } from "../infra/app-action.js";
@@ -171,6 +172,53 @@ function validateListPayload(action: string, payload: Record<string, unknown>): 
   if (action === "send_feedback" && (typeof payload.text !== "string" || typeof payload.info !== "string")) throw new Error("feedback text and info must be strings");
 }
 
+/** Required `mobile_read` arguments per operation (issue #79). Missing or
+ * non-numeric values are refused before any request, instead of reaching Alza
+ * as `/api/users//…` or `NaN`. Other (optional) args pass through unchanged. */
+const numberAsString = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? String(v) : v);
+const numericStringAsNumber = (v: unknown) => (typeof v === "string" && v.trim() !== "" ? Number(v) : v);
+const readUserId = z.preprocess(numberAsString, z.string({ required_error: "user_id is required (the numeric Alza user id from profile/user_data)", invalid_type_error: "user_id must be the numeric Alza user id from profile/user_data" })
+  .regex(/^\d{1,16}$/, "user_id must be the numeric Alza user id from profile/user_data"));
+const readPositiveInt = (name: string) => z.preprocess(numericStringAsNumber, z.number({ required_error: `${name} is required`, invalid_type_error: `${name} must be a positive integer` })
+  .int(`${name} must be a positive integer`).positive(`${name} must be a positive integer`));
+const readText = (name: string, max = 200) => z.preprocess(numberAsString, z.string({ required_error: `${name} is required`, invalid_type_error: `${name} must be a string` })
+  .min(1, `${name} must be a non-empty string`).max(max, `${name} must be at most ${max} characters`));
+const readFinite = (name: string) => z.number({ required_error: `${name} is required`, invalid_type_error: `${name} must be a number` }).finite(`${name} must be a finite number`);
+const READ_REQUIRED_ARGS: Partial<Record<string, z.ZodRawShape>> = {
+  url_info: { url: readText("url", 2000) },
+  legacy_product: { product_id: readPositiveInt("product_id") },
+  router_product: { product_id: readPositiveInt("product_id") },
+  quick_order_summary: { user_id: readUserId, commodity_id: readPositiveInt("commodity_id"), pgrik: readText("pgrik", 64), ucik: readText("ucik", 64) },
+  user_review: { commodity_id: readPositiveInt("commodity_id") },
+  discussion_posts: { commodity_id: readPositiveInt("commodity_id") },
+  premium_trial: { user_id: readUserId },
+  validate_login_name: { email: readText("email", 100) },
+  validate_isic: { card_number: readText("card_number", 64), name: readText("name", 100) },
+  user_navigation: { user_id: readUserId },
+  anonymous_orders: { invoice_number: readText("invoice_number", 64) },
+  anonymous_order: { order_id: readText("order_id", 64) },
+  user_order: { order_id: readText("order_id", 64) },
+  order_part: { order_id: readText("order_id", 64), part_id: readText("part_id", 64) },
+  after_order_payments: { order_id: readText("order_id", 64), part_id: readText("part_id", 64) },
+  commodity_list: { list_id: readPositiveInt("list_id") },
+  alternatives: { commodity_id: readPositiveInt("commodity_id") },
+  branches: { latitude: readFinite("latitude"), longitude: readFinite("longitude") },
+  search: { search_term: readText("search_term", 200) },
+  category: { category_id: readPositiveInt("category_id") },
+  facets: { category_id: readPositiveInt("category_id") },
+  web_after_payment_dialog: { order_id: readText("order_id", 64) },
+};
+
+/** Throws a ZodError (reported as "Invalid arguments — args.<field>: …", no bug-report hint). */
+function validateReadArgs(operation: string, args: Record<string, unknown>): void {
+  const shape = READ_REQUIRED_ARGS[operation];
+  if (!shape) return;
+  const parsed = z.object(shape).passthrough().safeParse(args);
+  if (!parsed.success) {
+    throw new ZodError(parsed.error.issues.map((i) => ({ ...i, path: ["args", ...i.path], message: `${operation}: ${i.message}` })));
+  }
+}
+
 export class MobileAccount {
   private pending?: MobileCheckoutPreview;
   private pendingMutation?: { token: string; action: string };
@@ -181,6 +229,7 @@ export class MobileAccount {
   async authExchange(code: string, state?: string): Promise<unknown> { return this.api.exchangeOAuthCode(code, state); }
 
   async read(operation: string, args: Record<string, unknown> = {}): Promise<unknown> {
+    validateReadArgs(operation, args);
     switch (operation) {
       case "url_info": return this.api.urlInfo(String(args.url ?? ""));
       case "legacy_product": return this.api.legacyProduct(Number(args.product_id), { pgrik: args.pgrik ? String(args.pgrik) : undefined, ucik: args.ucik ? String(args.ucik) : undefined, country: args.country ? String(args.country) : undefined, electronicContentOnly: args.electronic_content_only === undefined ? undefined : Boolean(args.electronic_content_only) });
