@@ -70,10 +70,15 @@ const suggestInput = {
 
 export function formatBuildReport(r: BuildReport, heading: string): string {
   const lines: string[] = [`## ${heading}`, ""];
+  const overall =
+    r.overall === "no_conflicts_found"
+      ? `no conflicts found among the listed parts — NOT a "compatible" verdict: the build is incomplete (missing ${r.missingRoles.join(", ")})`
+      : r.overall;
+  const total = `total ${r.total} ${r.currency}${r.totalIncomplete ? ` (excludes ${r.unpriced.length} unpriced part(s): ${r.unpriced.join(", ")})` : ""}`;
   const head =
     r.budget !== undefined
-      ? `**Overall: ${r.overall}** — total ${r.total} ${r.currency} of ${r.budget} budget${r.withinBudget ? "" : " (OVER BUDGET)"}`
-      : `**Overall: ${r.overall}** — total ${r.total} ${r.currency}`;
+      ? `**Overall: ${overall}** — ${total} of ${r.budget} budget${r.withinBudget ? "" : " (OVER BUDGET)"}`
+      : `**Overall: ${overall}** — ${total}`;
   lines.push(head, "");
   lines.push("| role | part | price | stock |", "|---|---|---|---|");
   for (const p of r.parts) {
@@ -113,7 +118,7 @@ export function createPcBuildCheckTool(deps: ToolDeps): RegisterableTool {
           title: "Check PC build compatibility",
           description:
             "Check whether a list of Alza PC parts works together. Fetches each part's spec table (one product-page load per part, roughly 5–20 s each when not cached; cached 15 min), detects its role (cpu, motherboard, ram, gpu, storage, case, cooler, psu) unless given, and runs every compatibility rule: CPU socket ↔ motherboard, RAM generation / DIMM type / slot count ↔ motherboard, RAM ↔ CPU memory controller, PSU wattage vs estimated peak draw + headroom, GPU length ↔ case, cooler height (air) or radiator size (liquid) ↔ case, cooler ↔ CPU socket, motherboard form factor ↔ case, PSU form factor ↔ case, and display output (GPU or iGPU). " +
-            "Returns the parts list with live prices, total and stock, plus one verdict per rule (pass / warn / fail / unknown / not_applicable) with the exact spec values compared and the Czech spec row each came from, so you can explain the result. A spec Alza doesn't list gives 'unknown', never a silent pass. " +
+            "Returns the parts list with live prices, total and stock, plus one verdict per rule (pass / warn / fail / unknown / not_applicable) with the exact spec values compared and the Czech spec row each came from, so you can explain the result. A spec Alza doesn't list gives 'unknown', never a silent pass. Incomplete builds (no cpu, motherboard, ram, psu or case) get overall `no_conflicts_found`, never `compatible`; laptops and prebuilt PCs are refused. " +
             "Use after picking parts with `search_products`, or to re-check a `pc_build_suggest` result after swapping a part (pass each part's `role` from that result). Read-only.",
           inputSchema: checkInput,
           outputSchema: OUTPUT_SCHEMAS["pc_build_check"],
