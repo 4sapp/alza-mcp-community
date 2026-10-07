@@ -85,10 +85,12 @@ describe("#79 mobile_read validates required args per operation", () => {
     await account.read("quick_order_summary", { user_id: UID, commodity_id: "7229946", pgrik: "p__1", ucik: "u__2" });
     await account.read("router_product", { product_id: 13078770 });
     await account.read("user_navigation", { user_id: Number(UID) });
+    await account.read("branches", { latitude: "50.08", longitude: "14.42" });
     expect(calls).toEqual([
       `GET https://test.alza.invalid/api/users/${UID}/v1/quickOrder/summary/commodities/7229946?pgrik=p__1&ucik=u__2`,
       "GET https://test.alza.invalid/api/router/legacy/catalog/product/13078770",
       `GET https://webapi.alza.cz/api/users/${UID}/mainNavigation?country=CZ`,
+      "GET https://test.alza.invalid/api/branches/v1/cityBranches?latitude=50.08&longitude=14.42",
     ]);
   });
 });

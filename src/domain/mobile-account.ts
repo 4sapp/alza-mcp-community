@@ -234,7 +234,7 @@ const readPositiveInt = (name: string) => z.preprocess(numericStringAsNumber, z.
   .int(`${name} must be a positive integer`).positive(`${name} must be a positive integer`));
 const readText = (name: string, max = 200) => z.preprocess(numberAsString, z.string({ required_error: `${name} is required`, invalid_type_error: `${name} must be a string` })
   .min(1, `${name} must be a non-empty string`).max(max, `${name} must be at most ${max} characters`));
-const readFinite = (name: string) => z.number({ required_error: `${name} is required`, invalid_type_error: `${name} must be a number` }).finite(`${name} must be a finite number`);
+const readFinite = (name: string) => z.preprocess(numericStringAsNumber, z.number({ required_error: `${name} is required`, invalid_type_error: `${name} must be a number` }).finite(`${name} must be a finite number`));
 const READ_REQUIRED_ARGS: Partial<Record<string, z.ZodRawShape>> = {
   url_info: { url: readText("url", 2000) },
   legacy_product: { product_id: readPositiveInt("product_id") },
