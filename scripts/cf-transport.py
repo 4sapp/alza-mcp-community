@@ -15,6 +15,7 @@ requests are multiplexed by `id`. Exit codes: 0 normal, 1 startup failure.
 """
 import base64
 import json
+import os
 import sys
 import threading
 
@@ -32,7 +33,10 @@ def get_session(profile: str):
     with _lock:
         s = _sessions.get(profile)
         if s is None:
-            s = cffi_requests.Session(impersonate=profile)
+            # ALZA_PROXY_URL (http/https/socks5, optional user:pass@): same proxy as the
+            # managed Chromium, e.g. a residential exit when this host's IP is challenged.
+            proxy = (os.environ.get("ALZA_PROXY_URL") or "").strip() or None
+            s = cffi_requests.Session(impersonate=profile, proxy=proxy)
             _sessions[profile] = s
         return s
 

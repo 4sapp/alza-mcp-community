@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { proxyFromEnv } from "./proxy.js";
 import { createRequire } from "node:module";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import { resolveLocale, type Locale } from "./locale.js";
@@ -179,6 +180,8 @@ export class AlzaBrowser {
   }
 
   private async launchChromiumWithFallback(): Promise<Browser> {
+    const proxy = proxyFromEnv();
+    if (proxy) log.info("alza-browser: routing Chromium through ALZA_PROXY_URL", { server: proxy.server });
     const launchArgs = {
       headless: this.headless,
       args: [
@@ -189,6 +192,7 @@ export class AlzaBrowser {
         "--no-default-browser-check",
         "--no-first-run",
       ],
+      ...(proxy ? { proxy } : {}),
     };
     try {
       return await chromium.launch(launchArgs);

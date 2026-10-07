@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- `ALZA_PROXY_URL` now works. It was mentioned in the Cloudflare error message and the bug template but nothing read it. An HTTP(S) or SOCKS5 proxy URL, with optional `user:pass@`, routes the managed Chromium (Playwright `proxy`) and the `curl_cffi` sidecar (`Session(proxy=…)`) through it. Verified 2026-10-07 against a local authenticating proxy: a live `search_products` and a sidecar request both went through it with credentials. The live canary passes an optional `ALZA_PROXY_URL` repository secret, because GitHub-hosted runner IPs are challenged whatever the client (see `docs/gap-analysis.md`).
+
 ## [0.4.0] — 2026-10-07
 
 New catalog tools (compare, alternatives, deals, autocomplete, review bodies, AlzaBox lockers, range filters), a PC builder, price watchdogs, Streamable HTTP transport, one-click installs and a Claude Desktop bundle, and the OAuth fix for npm installs.
