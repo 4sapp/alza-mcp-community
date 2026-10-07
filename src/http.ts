@@ -225,6 +225,7 @@ export async function startHttpServer(opts: HttpServerOptions = {}): Promise<Run
       lockedToolsets: locked,
       loadTokenFile: allowTokenFile,
       instructionsNote,
+      transport: "http",
     });
     const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),

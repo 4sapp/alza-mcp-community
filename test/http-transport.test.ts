@@ -99,7 +99,7 @@ describe("Streamable HTTP transport (default: catalog only)", () => {
   it("lists the catalog tools over HTTP via the SDK client", async () => {
     const server = await start();
     const client = await connect(server);
-    expect(await toolNames(client)).toEqual([...CATALOG, "list_toolsets", "set_toolset"].sort());
+    expect(await toolNames(client)).toEqual([...CATALOG, "list_toolsets", "set_toolset", "report_issue"].sort());
     expect(server.sessionCount()).toBe(1);
   });
 
@@ -119,7 +119,7 @@ describe("Streamable HTTP transport (default: catalog only)", () => {
     const all = await client.callTool({ name: "set_toolset", arguments: { id: "all", enabled: true } });
     expect(all.isError).toBeFalsy();
     expect(text(all)).toMatch(/Skipped locked toolset/);
-    expect(await toolNames(client)).toEqual([...CATALOG, ...PC_BUILDER, "list_toolsets", "set_toolset"].sort());
+    expect(await toolNames(client)).toEqual([...CATALOG, ...PC_BUILDER, "list_toolsets", "set_toolset", "report_issue"].sort());
     // A locked tool cannot be called directly either, even by a client that knows its name.
     const direct = await client.callTool({ name: "cart", arguments: {} });
     expect(direct.isError).toBe(true);

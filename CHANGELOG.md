@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- `report_issue`, an always-available tool that drafts a GitHub issue for this repository when a tool fails unexpectedly, returns clearly wrong data, or breaks because Alza changed something. It returns a redacted Markdown draft (version, Node, platform, storefront, transport, this session's last 5 tool errors), a `gh issue list` duplicate search, a ready-to-run `gh issue create` command, and a prefilled new-issue link. It files nothing itself; the agent asks the user first. The server instructions mention it, and unexpected tool errors (not invalid arguments or unknown products) end with a hint pointing to it. Credentials, OAuth redirect parameters, JWTs, e-mails, phone numbers, account ids in API paths, long opaque tokens and home-directory paths are redacted.
+
 ## [0.4.0] — 2026-10-07
 
 New catalog tools (compare, alternatives, deals, autocomplete, review bodies, AlzaBox lockers, range filters), a PC builder, price watchdogs, Streamable HTTP transport, one-click installs and a Claude Desktop bundle, and the OAuth fix for npm installs.

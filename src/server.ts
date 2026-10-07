@@ -26,6 +26,8 @@ import { createAdvancedTools } from "./tools/advanced.js";
 import { createPcBuildCheckTool, createPcBuildSuggestTool } from "./tools/pc-builder.js";
 import { createWatchdogTools } from "./tools/watchdog.js";
 import { registerToolsets, type LockedToolsets } from "./tools/toolsets.js";
+import { registerReportIssueTool } from "./tools/report-issue.js";
+import { RecentErrors } from "./infra/issue-report.js";
 import { MobileApi } from "./infra/mobile-api.js";
 import { ImpersonateTransport, cfFetch } from "./infra/impersonate-transport.js";
 import type { ToolResult } from "./tools/types.js";
@@ -46,6 +48,8 @@ export interface BuildOptions {
   loadTokenFile?: boolean;
   /** Extra sentence appended to the server instructions (e.g. the HTTP-mode note). */
   instructionsNote?: string;
+  /** Reported in `report_issue` drafts (default "stdio"). */
+  transport?: "stdio" | "http";
 }
 
 export interface BuildResult {
@@ -96,17 +100,23 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
         "Order submission currently works via the legacy web WCF path (`web_place_order`); the mobile `place_order` (sendOrder3) returns HTTP 500 (docs/gap-analysis.md G1/G5). Cancel with `cancel_order`. " +
         "Credentials are never collected by the MCP. High-impact mutations (payment, registration, address, review, subscription, attachment, order) require a one-time token from `prepare_mutation` (in the always-on `auth` toolset) — confirm with the user before calling them. " +
         "PC building (enable `pc_builder`): `pc_build_suggest` proposes a compatibility-checked parts list within a CZK budget; `pc_build_check` checks any parts list (socket, RAM, PSU wattage, GPU/cooler clearance, form factor). " +
-        "`mobile_read` (toolset `advanced_raw`) is the raw read-only escape hatch for mobile API operations without a dedicated tool." +
+        "`mobile_read` (toolset `advanced_raw`) is the raw read-only escape hatch for mobile API operations without a dedicated tool. " +
+        "If a tool fails unexpectedly or returns clearly wrong data (not a user mistake such as invalid arguments or an unknown product), call `report_issue` (always available) to draft a GitHub issue for the alza-mcp maintainers, show the draft to the user, and file it with the returned `gh` command or link only if they agree." +
         (opts.instructionsNote ? ` ${opts.instructionsNote}` : ""),
     }
   );
 
+  const recentErrors = new RecentErrors();
   const errorWrap = async (name: string, fn: () => Promise<ToolResult>): Promise<ToolResult> => {
     try {
       return await fn();
     } catch (err) {
       const message = friendlyError(err);
       log.warn(`tool ${name} error`, { error: message });
+      if (!isUserError(err) && name !== "report_issue") {
+        recentErrors.record(name, err instanceof Error ? err.message : String(err));
+        return { content: [{ type: "text", text: `${message}\n\n${REPORT_HINT}` }], isError: true };
+      }
       return { content: [{ type: "text", text: message }], isError: true };
     }
   };
@@ -128,6 +138,18 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
     createPcBuildCheckTool(deps),
     createPcBuildSuggestTool(deps),
   ], opts.lockedToolsets);
+
+  registerReportIssueTool(server, errorWrap, {
+    recentErrors,
+    diagnostics: () => ({
+      version: VERSION,
+      node: process.version,
+      platform: `${process.platform} ${process.arch}`,
+      storefront: browser.locale.baseUrl,
+      transport: opts.transport ?? "stdio",
+      fingerprintSidecar: cfTransport.available ? "enabled" : "unavailable",
+    }),
+  });
 
   const productResource = createProductResource(catalog);
   server.registerResource(
@@ -154,6 +176,14 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
       if (!opts.browser) await browser.close();
     },
   };
+}
+
+const REPORT_HINT =
+  "If this looks like a bug in alza-mcp or a change on Alza's side rather than a problem with the request, you can call `report_issue` to draft a GitHub issue — ask the user before filing it.";
+
+/** Errors caused by the request itself: no point asking the maintainers about them. */
+function isUserError(err: unknown): boolean {
+  return err instanceof ZodError || err instanceof NotFoundError;
 }
 
 function friendlyError(err: unknown): string {

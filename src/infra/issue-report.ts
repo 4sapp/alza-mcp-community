@@ -1,0 +1,212 @@
+/**
+ * Drafting GitHub issues about alza-mcp itself (the `report_issue` tool).
+ *
+ * The server never files anything: it builds a redacted draft plus a ready-to-run
+ * `gh issue create` command and a prefilled new-issue URL. The agent shows the draft
+ * to the user and files it only with their consent — `gh` posts from the user's own
+ * GitHub account, so that decision stays with them.
+ */
+
+export const ISSUE_REPO = "lukabudik/alza-mcp";
+
+export type IssueCategory = "bug" | "alza_change" | "feature_request" | "docs";
+
+/** Labels that exist in the repository (`gh issue create --label` fails on unknown ones). */
+const LABELS: Record<IssueCategory, string[]> = {
+  bug: ["bug"],
+  alza_change: ["endpoint-broken"],
+  feature_request: ["enhancement"],
+  docs: ["documentation"],
+};
+
+const TITLE_PREFIX: Record<IssueCategory, string> = {
+  bug: "",
+  alza_change: "Endpoint broken: ",
+  feature_request: "",
+  docs: "Docs: ",
+};
+
+export interface RecordedError {
+  tool: string;
+  message: string;
+  at: string;
+}
+
+/** Bounded per-server log of recent tool errors, attached to drafts as context. */
+export class RecentErrors {
+  private readonly items: RecordedError[] = [];
+  constructor(private readonly max = 10) {}
+
+  record(tool: string, message: string, at: Date = new Date()): void {
+    this.items.push({ tool, message, at: at.toISOString() });
+    if (this.items.length > this.max) this.items.shift();
+  }
+
+  list(): RecordedError[] {
+    return [...this.items];
+  }
+}
+
+type Redaction = [RegExp, string, ((match: string) => boolean)?];
+
+const REDACTIONS: Redaction[] = [
+  // Secrets by key name, in query strings, JSON or headers.
+  [/\b(access_token|refresh_token|id_token|client_secret|code_verifier|password|confirmation_token)(["']?\s*[:=]\s*["']?)[^\s"'&,}]+/gi, "$1$2<redacted>"],
+  // OAuth redirect parameters (alza://identity?code=…&state=…). Only as URL query
+  // parameters: a bare `code` elsewhere is usually a product code worth keeping.
+  [/([?&](?:code|state|session_state)=)[^\s&#"']+/g, "$1<redacted>"],
+  [/\bBearer\s+[A-Za-z0-9._~+/=-]+/g, "Bearer <redacted>"],
+  // JWTs.
+  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, "<jwt>"],
+  // E-mail addresses.
+  [/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "<email>"],
+  // Phone numbers with an international prefix (+420 123 456 789, +421123456789).
+  [/\+\d{1,3}[\s-]?\d{3}[\s-]?\d{3}[\s-]?\d{3,4}\b/g, "<phone>"],
+  // Account-scoped ids in API paths (/users/123456/…, /orders/987654321).
+  [/\/(users|user|customers|orders|order|addresses|claims)\/[^/\s?#]+/gi, "/$1/<id>"],
+  // Long opaque tokens (hex / base64url, 32+ chars) such as visitor ids or session keys.
+  [/\b[A-Fa-f0-9]{32,}\b/g, "<hex>"],
+  // Mixed-case + digits tells a secret apart from a long lowercase product URL slug.
+  [/\b[A-Za-z0-9_-]{40,}\b/g, "<token>", (m) => /[A-Z].*[A-Z].*[A-Z]/.test(m) && /\d.*\d.*\d/.test(m)],
+  // Local home-directory paths leak the OS username.
+  [/(\/home\/|\/Users\/|C:\\Users\\)[^/\\\s]+/g, "$1<user>"],
+];
+
+/** Removes credentials and personal data from free text before it goes into a public issue. */
+export function redact(text: string): { text: string; count: number } {
+  let count = 0;
+  let out = text;
+  for (const [re, replacement, when] of REDACTIONS) {
+    out = out.replace(re, (...m: unknown[]) => {
+      const match = String(m[0]);
+      if (when && !when(match)) return match;
+      count++;
+      return replacement.replace(/\$(\d)/g, (_, i: string) => String(m[Number(i)] ?? ""));
+    });
+  }
+  return { text: out, count };
+}
+
+export interface IssueInput {
+  category: IssueCategory;
+  title: string;
+  what_happened: string;
+  tool?: string;
+  expected?: string;
+  steps?: string[];
+  include_recent_errors?: boolean;
+}
+
+export interface Diagnostics {
+  version: string;
+  node: string;
+  platform: string;
+  storefront: string;
+  transport: string;
+  fingerprintSidecar: string;
+}
+
+export interface IssueDraft {
+  repo: string;
+  title: string;
+  labels: string[];
+  body: string;
+  gh_search_command: string;
+  gh_create_command: string;
+  new_issue_url: string;
+  url_body_truncated: boolean;
+  redactions: number;
+  recent_errors_included: number;
+}
+
+/** Quotes a value for a POSIX shell (single quotes; embedded quotes closed and escaped). */
+export function shellQuote(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+const HEREDOC = "ALZA_MCP_ISSUE_BODY";
+// GitHub rejects very long new-issue URLs; keep a margin under ~8 KB.
+const MAX_URL = 7000;
+
+export function buildIssueDraft(input: IssueInput, diag: Diagnostics, recent: RecordedError[]): IssueDraft {
+  let redactions = 0;
+  const clean = (s: string) => {
+    const r = redact(s);
+    redactions += r.count;
+    return r.text.trim();
+  };
+
+  const title = clean(TITLE_PREFIX[input.category] + input.title).slice(0, 200);
+  const errors = input.include_recent_errors === false ? [] : recent.slice(-5);
+
+  const sections: string[] = [];
+  sections.push("**What happened?**", "", clean(input.what_happened));
+  if (input.tool) sections.push("", `**Tool:** \`${clean(input.tool)}\``);
+  if (input.steps?.length) {
+    sections.push("", "**Steps to reproduce**", "", ...input.steps.map((s, i) => `${i + 1}. ${clean(s)}`));
+  }
+  if (input.expected) sections.push("", "**Expected behavior**", "", clean(input.expected));
+  sections.push(
+    "",
+    "**Environment**",
+    "",
+    `- alza-mcp version: ${diag.version}`,
+    `- Node version: ${diag.node}`,
+    `- Platform: ${diag.platform}`,
+    `- Storefront (\`ALZA_BASE_URL\`): ${diag.storefront}`,
+    `- Transport: ${diag.transport}`,
+    `- Chrome-fingerprint sidecar: ${diag.fingerprintSidecar}`,
+  );
+  if (errors.length) {
+    sections.push(
+      "",
+      "**Recent tool errors in this session**",
+      "",
+      "```",
+      ...errors.map((e) => `${e.at} ${e.tool}: ${clean(e.message).replace(/\s+/g, " ").slice(0, 500)}`),
+      "```",
+    );
+  }
+  sections.push("", "_Drafted by the alza-mcp `report_issue` tool and reviewed by the user before filing. Personal data and credentials were redacted automatically._");
+  let body = sections.join("\n");
+  // The heredoc delimiter must not appear in the body itself.
+  body = body.split(HEREDOC).join("ALZA_MCP_ISSUE_BODY_");
+
+  const labels = LABELS[input.category];
+  const searchTerms = title.replace(/^(Endpoint broken|Docs): /, "").replace(/[^\p{L}\p{N}_ -]+/gu, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+  const gh_search_command = `gh issue list --repo ${ISSUE_REPO} --state all --search ${shellQuote(searchTerms)}`;
+  const gh_create_command =
+    `gh issue create --repo ${ISSUE_REPO} --title ${shellQuote(title)}` +
+    labels.map((l) => ` --label ${shellQuote(l)}`).join("") +
+    ` --body-file - <<'${HEREDOC}'\n${body}\n${HEREDOC}`;
+
+  const base = `https://github.com/${ISSUE_REPO}/issues/new`;
+  const urlFor = (b: string) => `${base}?${new URLSearchParams({ title, labels: labels.join(","), body: b })}`;
+  let new_issue_url = urlFor(body);
+  let url_body_truncated = false;
+  if (new_issue_url.length > MAX_URL) {
+    url_body_truncated = true;
+    const note = "\n\n_(Truncated to fit a URL — run the `gh issue create` command for the full report.)_";
+    let lo = 0;
+    let hi = body.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (urlFor(body.slice(0, mid) + note).length <= MAX_URL) lo = mid;
+      else hi = mid - 1;
+    }
+    new_issue_url = urlFor(body.slice(0, lo) + note);
+  }
+
+  return {
+    repo: ISSUE_REPO,
+    title,
+    labels,
+    body,
+    gh_search_command,
+    gh_create_command,
+    new_issue_url,
+    url_body_truncated,
+    redactions,
+    recent_errors_included: errors.length,
+  };
+}
