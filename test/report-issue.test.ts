@@ -37,6 +37,40 @@ describe("redact", () => {
     expect(count).toBeGreaterThanOrEqual(10);
   });
 
+  it.each([
+    ["lowercase bearer", "bearer lowercasetoken12345", "lowercasetoken12345"],
+    ["Basic auth", "Authorization: Basic dXNlcjpwYXNzd29yZA==", "dXNlcjpwYXNzd29yZA"],
+    ["Cookie header", "Cookie: cf_clearance=XyZ.123-abc; sid=abc123", "XyZ.123-abc"],
+    ["Set-Cookie header", "Set-Cookie: JSESSIONID=SESS-9f8e7d; Path=/; HttpOnly", "SESS-9f8e7d"],
+    ["api_key", "api_key=KEY-1234-abcd", "KEY-1234-abcd"],
+    ["x-api-key header", "x-api-key: KEY-5678-efgh", "KEY-5678-efgh"],
+    ["apikey in JSON", '{"apikey":"KEY 9 with space"}', "with space"],
+    ["UUID visitor id", "visitor 123e4567-e89b-12d3-a456-426614174000", "123e4567"],
+    ["URL userinfo", "https://user:pass@www.alza.cz/x", "user:pass"],
+    ["token query value", "https://www.alza.cz/x?token=TOK123&country=CZ", "TOK123"],
+    ["fragment code", "alza://identity#code=OAUTHCODE987&state=ST1", "OAUTHCODE987"],
+    ["bare long code", "callback code=abcdefghijklmnop1234", "abcdefghijklmnop1234"],
+    ["quoted value with spaces", 'password: "correct horse battery"', "horse battery"],
+    ["%40-encoded e-mail", "mail=jan.novak%40example.cz", "jan.novak"],
+    ["Unicode e-mail", "řeřicha.čech@příklad.cz wrote", "řeřicha"],
+    ["local phone (spaced)", "call 777 123 456 now", "777 123 456"],
+    ["local phone (contiguous)", "call 777123456 now", "777123456"],
+    ["00-prefixed phone", "call 00420777123456 now", "777123456"],
+    ["userId", "userId=U-889900 and user_id: 55", "U-889900"],
+    ["invoiceNumber", "invoiceNumber=2026123456", "2026123456"],
+    ["commodityClientId", "commodityClientId=99887766", "99887766"],
+    ["arbitrary query value", "GET /whisper?country=CZ&searchTerm=iphone+secret", "iphone"],
+  ])("redacts %s", (_name, input, secret) => {
+    const { text, count } = redact(input);
+    expect(text).not.toContain(secret);
+    expect(count).toBeGreaterThan(0);
+  });
+
+  it("keeps harmless query values and the host when redacting userinfo", () => {
+    const { text } = redact("https://user:pass@www.alza.cz/x?country=CZ&token=T1");
+    expect(text).toContain("https://<redacted>@www.alza.cz/x?country=CZ");
+  });
+
   it("keeps product codes, ids and long lowercase URL slugs", () => {
     const input = "get_product code RI045b1 at https://www.alza.cz/apple-iphone-17-pro-max-256gb-cosmic-orange-d12345678.htm (postal 500 02)";
     expect(redact(input)).toEqual({ text: input, count: 0 });
@@ -82,6 +116,18 @@ describe("buildIssueDraft", () => {
     expect(url.searchParams.get("labels")).toBe("endpoint-broken");
     expect(url.searchParams.get("body")).toBe(draft.body);
     expect(draft.url_body_truncated).toBe(false);
+  });
+
+  it("reduces recent errors to route and status, dropping query values and HTML bodies", () => {
+    const errors = new RecentErrors();
+    errors.record(
+      "autocomplete",
+      "GET https://www.alza.cz/api/whisper?country=CZ&visitor=123e4567-e89b-12d3-a456-426614174000&searchTerm=iphone failed with HTTP 403: <!DOCTYPE html><html>Just a moment... cf</html>",
+    );
+    const draft = buildIssueDraft({ category: "bug", title: "t", what_happened: "w" }, DIAG, errors.list());
+    expect(draft.body).toContain("HTTP 403");
+    expect(draft.body).toContain("/api/whisper?<query>");
+    for (const leak of ["123e4567", "iphone", "Just a moment", "DOCTYPE"]) expect(draft.body).not.toContain(leak);
   });
 
   it("omits recent errors on request and truncates an over-long URL body", () => {

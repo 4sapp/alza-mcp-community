@@ -73,6 +73,8 @@ export class ImpersonateTransport {
   private lineBuf = "";
   private dead = false;
   private spawnPromise: Promise<boolean> | null = null;
+  /** Child spawned but not yet confirmed ready — close() must still kill it. */
+  private starting: ChildProcess | null = null;
   private stderrTail = "";
   private closed = false;
 
@@ -106,6 +108,7 @@ export class ImpersonateTransport {
       for (const py of candidatePythons()) {
         if (!(await verifyPython(py))) continue;
         const child = spawn(py, [this.scriptPath], { stdio: ["pipe", "pipe", "pipe"] });
+        this.starting = child;
         this.wire(child);
         // Give it a moment to self-destruct on import failure.
         await new Promise((r) => setTimeout(r, 400));
@@ -223,7 +226,9 @@ export class ImpersonateTransport {
     this.closed = true;
     this.killAll(new TransportUnavailableError("transport closed"));
     this.child?.kill();
+    this.starting?.kill();
     this.child = null;
+    this.starting = null;
   }
 }
 
