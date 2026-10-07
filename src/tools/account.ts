@@ -2,7 +2,7 @@ import { z } from "zod";
 import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import type { MobileAccount } from "../domain/mobile-account.js";
 import type { RegisterableTool, ToolDeps, ToolResult } from "./types.js";
-import { formatAddToCart, formatCart, formatCheckoutPreview, formatDeliveryOptions, jsonResult, withConciseText } from "./account-format.js";
+import { ANONYMOUS_NOTE, formatAddToCart, formatCart, formatCheckoutPreview, formatDeliveryOptions, isAnonymousUserData, jsonResult, withConciseText } from "./account-format.js";
 
 function apiAccount(deps: ToolDeps): MobileAccount {
   if (!deps.mobileAccount) throw new Error("mobile API account tools are not configured");
@@ -138,7 +138,13 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["mobile_read"],
         },
-        async (args) => wrap("mobile_read", async () => result(await apiAccount(deps).read(args.operation, args.args ?? {}))),
+        async (args) => wrap("mobile_read", async () => {
+          const out = result(await apiAccount(deps).read(args.operation, args.args ?? {}));
+          if (args.operation === "user_data" && isAnonymousUserData(out.structuredContent)) {
+            out.content[0]!.text = `${ANONYMOUS_NOTE}\n\n${out.content[0]!.text}`;
+          }
+          return out;
+        }),
       );
     },
   };

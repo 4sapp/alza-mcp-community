@@ -28,7 +28,10 @@ class FakeContext {
     if (!this.browser.connected) throw new Error("browserContext.newPage: Target page, context or browser has been closed");
     return { setDefaultTimeout() {}, setDefaultNavigationTimeout() {}, async close() {} };
   }
-  async close() {}
+  closed = false;
+  async close() {
+    this.closed = true;
+  }
 }
 
 const browsers: FakeBrowser[] = [];
@@ -79,5 +82,24 @@ describe("AlzaBrowser attached over CDP", () => {
     await expect(b.withPage(async () => "ok")).resolves.toBe("ok");
     expect(browsers).toHaveLength(2);
     await b.close();
+  });
+
+  it("concurrent first withPage calls share one context (#80)", async () => {
+    const b = new AlzaBrowser({ cdpUrl: "http://127.0.0.1:9333", idleTtlMs: 60_000 });
+    await Promise.all([1, 2, 3].map(() => b.withPage(async () => "ok")));
+    expect(browsers).toHaveLength(1);
+    // Before the fix each call created its own context and only the last was tracked,
+    // so close() left the others open in the user's Chrome.
+    expect(browsers[0]!.contexts).toHaveLength(1);
+    await b.close();
+  });
+
+  it("discards a context whose creation was overtaken by close() (#80)", async () => {
+    const b = new AlzaBrowser({ cdpUrl: "http://127.0.0.1:9333", idleTtlMs: 60_000 });
+    const pending = b.withPage(async () => "ok");
+    await b.close();
+    await expect(pending).rejects.toThrow();
+    const open = browsers.flatMap((br) => br.contexts).filter((c) => !c.closed);
+    expect(open).toHaveLength(0);
   });
 });

@@ -46,7 +46,7 @@ export interface MobileApiOptions {
 
 /** fetch-shaped transport (the sidecar adapter satisfies this). */
 export interface HttpFetch {
-  (url: string, init: { method?: string; headers?: Record<string, string>; body?: string | null }): Promise<{
+  (url: string, init: { method?: string; headers?: Record<string, string>; body?: string | null; redirect?: "follow" | "manual" }): Promise<{
     status: number;
     text(): Promise<string>;
     /** Binary-safe body (the CF sidecar adapter provides this). */
@@ -1068,8 +1068,13 @@ export class MobileApi {
     let contentType: string | null;
     let buf: Buffer;
     if (this.httpFetch) {
-      const r = await this.httpFetch(u.toString(), { method: "GET", headers });
+      const r = await this.httpFetch(u.toString(), { method: "GET", headers, redirect: "manual" });
       status = r.status;
+      if (status >= 300 && status < 400) {
+        // Never follow with the bearer token attached (same rule as the direct-fetch path).
+        const location = r.header?.("location") ?? null;
+        throw new Error(`document download redirected to a non-allowlisted location: ${location ?? "(unknown)"}`);
+      }
       if (r.arrayBuffer) {
         contentType = r.header?.("content-type") ?? null;
         buf = Buffer.from(await r.arrayBuffer());
