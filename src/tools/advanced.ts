@@ -36,6 +36,9 @@ const confirmationToken = z
   .describe("One-time token from `prepare_mutation` prepared with the matching action.");
 const AUTH_PREREQ =
   "Requires a loaded mobile API access token — check `account_status` first; if none is loaded, run `auth_start`, have the user complete the browser sign-in, then `auth_exchange` with the returned code and state.";
+/** Issue #79: credential/identity mutations confirm `user_id` before sending. */
+const IDENTITY_CHECK =
+  " Before anything is sent, `user_id` is checked against the signed-in account with a fresh `user_data` read; a different id, or a session whose user id cannot be read, is refused.";
 
 export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const profile: RegisterableTool = {
@@ -704,7 +707,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
           title: "Change the account password",
           description:
             "Change the Alza account password (row A14, `POST /v2/account/password`): submit the current password and the new password twice (new + confirm). " +
-            "Credential mutation: requires a one-time token from `prepare_mutation` (action=`change_password`). " +
+            "Credential mutation: requires a one-time token from `prepare_mutation` (action=`change_password`). " + IDENTITY_CHECK +
             "Side effect: on success Alza logs the user out of every device — the current access token stops working, so re-run `auth_start`/`auth_exchange` with the new password.",
           inputSchema: {
             user_id: z.string().regex(/^\d{1,16}$/).describe("Numeric Alza user id (from the `profile`/`user_data` read)."),
@@ -730,7 +733,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
           description:
             "Turn SMS two-factor on or off (row A15, `PATCH /v1/account` → `/2faEnabled`): `enabled=true` to activate, `false` to deactivate. " +
             "2FA sends a code by SMS to the account's contact phone, so set the phone first if it is wrong. " +
-            "Requires a one-time token from `prepare_mutation` (action=`two_factor_set`).",
+            "Requires a one-time token from `prepare_mutation` (action=`two_factor_set`). " + IDENTITY_CHECK,
           inputSchema: {
             user_id: z.string().regex(/^\d{1,16}$/).describe("Numeric Alza user id (from the `profile`/`user_data` read)."),
             enabled: z.boolean().describe("true to enable 2FA, false to disable it."),
@@ -752,7 +755,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
           title: "Change the contact phone number",
           description:
             "Change the account's contact phone number (row A16, `PATCH /v1/account` → `/phone`): the number that receives pickup codes and 2FA SMS. " +
-            "Requires a one-time token from `prepare_mutation` (action=`phone_change`). " +
+            "Requires a one-time token from `prepare_mutation` (action=`phone_change`). " + IDENTITY_CHECK +
             "Side effect: the new number becomes the SMS destination for the account.",
           inputSchema: {
             user_id: z.string().regex(/^\d{1,16}$/).describe("Numeric Alza user id (from the `profile`/`user_data` read)."),
@@ -775,7 +778,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
           title: "Change the contact email",
           description:
             "Change the account's contact email (row A16 bonus, `PATCH /v1/account` → `/email`): the address that receives invoices and order/claim notifications. " +
-            "Requires a one-time token from `prepare_mutation` (action=`email_change`).",
+            "Requires a one-time token from `prepare_mutation` (action=`email_change`). " + IDENTITY_CHECK,
           inputSchema: {
             user_id: z.string().regex(/^\d{1,16}$/).describe("Numeric Alza user id (from the `profile`/`user_data` read)."),
             email: z.string().min(3).max(100).describe("New contact email address."),
@@ -799,7 +802,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
             "Delete the Alza account and its personal data (row A18, `DELETE /v1/account` with `acknowledgeAndDelete`). " +
             "Irreversible: the account, invoices, e-library, and claims are removed. " +
             "Use only on a disposable account with the user's explicit double confirmation — never the standing E2E account. " +
-            "Requires a one-time token from `prepare_mutation` (action=`delete_account`).",
+            "Requires a one-time token from `prepare_mutation` (action=`delete_account`). " + IDENTITY_CHECK,
           inputSchema: {
             user_id: z.string().regex(/^\d{1,16}$/).describe("Numeric Alza user id to delete (from the `profile`/`user_data` read)."),
             confirmation_token: confirmationToken,

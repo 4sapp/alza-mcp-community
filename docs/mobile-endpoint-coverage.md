@@ -53,6 +53,25 @@ exposed, and how it was verified.
   (or the `alza_checkout_preview` token for the order flow). The token is single-use and is
   consumed synchronously by the first call that presents it, before any request is sent, so
   concurrent calls with one token run at most once; a failed attempt also spends it (issue #56).
+  Since issue #79, `prepare_mutation` takes the mutation's `payload` (every argument except
+  `confirmation_token`; for `mutate_list` its `payload`) and binds the token to the action plus a
+  SHA-256 of the canonical payload (sorted keys, the tool schema's defaults filled in); a call
+  with different arguments is refused and spends the token. Tokens (and the checkout token) expire
+  5 minutes after issue, and each action has its own pending slot, so preparing two different
+  actions no longer invalidates the first.
+- `change_password`, `email_change`, `phone_change`, `two_factor_set` and `delete_account` confirm
+  `user_id` against a fresh `getUserData` read before sending (issue #79) and fail closed when the
+  signed-in user id cannot be read (anonymous `-1`, missing, or the read fails). Other user-id
+  routes (`order`, `order_search`, `order_archive`, `complaint_claims`, `subscription_overview`,
+  `gdpr_info`, `gdpr_export`, `watchdog_*`, `mobile_read` `quick_order_summary`/`premium_trial`/
+  `user_navigation`) refuse an id that differs from the one `profile`/`user_data` last reported.
+  `source-confirmed` (unit-tested with mocks; not run against a live account).
+- `mobile_read` checks each operation's required arguments (e.g. `user_id` for
+  `user_navigation`/`premium_trial`/`quick_order_summary`, `pgrik`/`ucik` for
+  `quick_order_summary`, numeric `product_id`/`commodity_id`) before any request (issue #79).
+- `after_order_payments` and `order` return an `err:1` envelope (e.g. "Objednávka se zadaným ID
+  neexistuje") as a tool error carrying Alza's `msg` (issue #79); `mobile_read` keeps returning the
+  raw envelope.
 - OAuth stays PKCE authorization-code flow; credentials never enter the MCP.
 - A 2xx response whose body is not a JSON object (204/202 empty body, `null`, an array, text) is
   returned as `{accepted: true, data, note}` instead of failing output validation after the

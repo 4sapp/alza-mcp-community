@@ -46,6 +46,7 @@ describe("task-6 account credential/identity mutations (A14–A18)", () => {
     // happy path — exact route + DTO (oldPassword, password1, password2 per the live dialog form)
     t = account.prepareMutation("change_password");
     vi.stubGlobal("fetch", withFetch((req) => {
+      if (req.url.endsWith("/v2/getUserData")) return json({ user_id: Number(UID) }); // #79 identity check
       expect(req.url).toBe(`https://www.alza.cz/api/users/${UID}/v2/account/password`);
       expect(req.method).toBe("POST");
       const body = JSON.parse(req.body as string);
@@ -67,6 +68,7 @@ describe("task-6 account credential/identity mutations (A14–A18)", () => {
     await expect(account.twoFactorSet({ user_id: UID, enabled: "yes" }, t.confirmationToken)).rejects.toThrow(/boolean/);
     t = account.prepareMutation("two_factor_set");
     vi.stubGlobal("fetch", withFetch((req) => {
+      if (req.url.endsWith("/v2/getUserData")) return json({ user_id: Number(UID) }); // #79 identity check
       expect(req.url).toBe(`https://www.alza.cz/api/users/${UID}/v1/account?country=CZ`);
       expect(req.method).toBe("PATCH");
       expect(JSON.parse(req.body as string)).toEqual({ op: "replace", path: "/2faEnabled", value: true });
@@ -89,6 +91,7 @@ describe("task-6 account credential/identity mutations (A14–A18)", () => {
     // separators are accepted and normalised to the compact international form
     t = account.prepareMutation("phone_change");
     vi.stubGlobal("fetch", withFetch((req) => {
+      if (req.url.endsWith("/v2/getUserData")) return json({ user_id: Number(UID) }); // #79 identity check
       expect(req.url).toBe(`https://www.alza.cz/api/users/${UID}/v1/account?country=CZ`);
       expect(req.method).toBe("PATCH");
       expect(JSON.parse(req.body as string)).toEqual({ op: "replace", path: "/phone", value: "+420777123456" });
@@ -108,6 +111,7 @@ describe("task-6 account credential/identity mutations (A14–A18)", () => {
     await expect(account.emailChange({ user_id: UID, email: "not-an-email" }, t.confirmationToken)).rejects.toThrow(/valid address/);
     t = account.prepareMutation("email_change");
     vi.stubGlobal("fetch", withFetch((req) => {
+      if (req.url.endsWith("/v2/getUserData")) return json({ user_id: Number(UID) }); // #79 identity check
       expect(req.url).toBe(`https://www.alza.cz/api/users/${UID}/v1/account?country=CZ`);
       expect(req.method).toBe("PATCH");
       expect(JSON.parse(req.body as string)).toEqual({ op: "replace", path: "/email", value: "new@example.test" });
@@ -127,6 +131,7 @@ describe("task-6 account credential/identity mutations (A14–A18)", () => {
     await expect(account.deleteAccount({ user_id: "x" }, t.confirmationToken)).rejects.toThrow(/user_id/);
     t = account.prepareMutation("delete_account");
     vi.stubGlobal("fetch", withFetch((req) => {
+      if (req.url.endsWith("/v2/getUserData")) return json({ user_id: Number(UID) }); // #79 identity check
       expect(req.url).toBe(`https://www.alza.cz/api/users/${UID}/v1/account?country=cz`);
       expect(req.method).toBe("DELETE");
       expect(JSON.parse(req.body as string)).toEqual({ acknowledgeAndDelete: true });
@@ -150,6 +155,7 @@ describe("task-6 account credential/identity mutations (A14–A18)", () => {
 
     const seen: Seen[] = [];
     vi.stubGlobal("fetch", withFetch((req) => {
+      if (req.url.endsWith("/v2/getUserData")) return json({ user_id: Number(UID) }); // #79 identity check
       expect(req.url).toContain(`/api/users/${UID}/v1/orders/archive`);
       expect(req.url).toContain("hideCancelledOrders=false"); // the APK form default (include cancelled)
       expect(req.url).toContain("productFilterType=0");
@@ -165,6 +171,7 @@ describe("task-6 account credential/identity mutations (A14–A18)", () => {
 
     // the hide toggle + limit flow through to the query string
     vi.stubGlobal("fetch", withFetch((req) => {
+      if (req.url.endsWith("/v2/getUserData")) return json({ user_id: Number(UID) }); // #79 identity check
       expect(req.url).toContain("hideCancelledOrders=true");
       expect(req.url).toContain("limit=25");
       return json({ value: [{ orderId: "1" }] });
@@ -186,6 +193,7 @@ describe("task-6 account credential/identity mutations (A14–A18)", () => {
 
     const seen: Seen[] = [];
     vi.stubGlobal("fetch", withFetch((req) => {
+      if (req.url.endsWith("/v2/getUserData")) return json({ user_id: Number(UID) }); // #79 identity check
       expect(req.url).toContain("/services/restservice.svc/v1/getProductByEANlist");
       expect(req.method).toBe("POST");
       expect(JSON.parse(req.body as string)).toEqual({ eanList: ["8594021283371"] });
@@ -211,6 +219,7 @@ describe("task-6 account credential/identity mutations (A14–A18)", () => {
     // and gdpr_export (low-risk) still flows through mutate_list
     const t = account.prepareMutation("gdpr_export");
     vi.stubGlobal("fetch", withFetch((req) => {
+      if (req.url.endsWith("/v2/getUserData")) return json({ user_id: Number(UID) }); // #79 identity check
       expect(req.url).toContain("/v1/userAccount/gdprInformation");
       return new Response(null, { status: 202 });
     }, []));
