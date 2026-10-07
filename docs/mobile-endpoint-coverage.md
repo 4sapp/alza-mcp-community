@@ -51,6 +51,9 @@ exposed, and how it was verified.
   consumed synchronously by the first call that presents it, before any request is sent, so
   concurrent calls with one token run at most once; a failed attempt also spends it (issue #56).
 - OAuth stays PKCE authorization-code flow; credentials never enter the MCP.
+- A 2xx response whose body is not a JSON object (204/202 empty body, `null`, an array, text) is
+  returned as `{accepted: true, data, note}` instead of failing output validation after the
+  request was sent and the token spent (issue #63); object bodies are returned unchanged.
 
 ## In-scope families (12)
 

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { OUTPUT_SCHEMAS } from "./output-schemas.js";
+import { toStructuredContent } from "./structured.js";
 import type { MobileAccount } from "../domain/mobile-account.js";
 import type { RegisterableTool, ToolDeps, ToolResult } from "./types.js";
 import { formatAddToCart, formatCart, formatCheckoutPreview, withConciseText } from "./account-format.js";
@@ -10,9 +11,10 @@ function apiAccount(deps: ToolDeps): MobileAccount {
 }
 
 function result(value: unknown): ToolResult {
+  const structured = toStructuredContent(value);
   return {
-    content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
-    structuredContent: value as Record<string, unknown>,
+    content: [{ type: "text", text: JSON.stringify(structured, null, 2) }],
+    structuredContent: structured,
   };
 }
 

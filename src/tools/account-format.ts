@@ -28,6 +28,7 @@ function scalar(v: unknown): string | undefined {
 const FOOTER = "_Full envelope (identifiers, line details, raw fields) is in structuredContent._";
 
 import type { ToolResult } from "./types.js";
+import { toStructuredContent } from "./structured.js";
 
 /** Tool result with a concise text channel; the full envelope stays in structuredContent. */
 export function withConciseText(value: unknown, format: (v: unknown) => string): ToolResult {
@@ -37,7 +38,7 @@ export function withConciseText(value: unknown, format: (v: unknown) => string):
   } catch {
     text = JSON.stringify(value, null, 2);
   }
-  return { content: [{ type: "text", text }], structuredContent: value as Record<string, unknown> };
+  return { content: [{ type: "text", text }], structuredContent: toStructuredContent(value) };
 }
 
 export function formatCart(env: unknown): string {
