@@ -29,6 +29,7 @@ import {
   nonComponentReason,
   normalizeSpecs,
   overallVerdict,
+  backtrackCaps,
   rankCandidates,
   rulesForRole,
   socketHintFromBoardName,
@@ -243,8 +244,12 @@ export class PcBuilder {
     const plannedGpu = roles.includes("gpu") || fixedRoles.has("gpu");
 
     let carry = 0;
-    for (const role of SUGGEST_ORDER) {
-      if (!roles.includes(role)) continue;
+    const listingCache = new Map<string, Awaited<ReturnType<PcCatalog["searchProducts"]>>>();
+    // Backtracking state: per-role price ceilings for a retry, and the distinct
+    // listing prices seen per role (the "cheaper choices" a retry can take).
+    const priceCaps: Partial<Record<PcRole, number>> = {};
+    const priceLevels: Partial<Record<PcRole, number[]>> = {};
+    const pickRole = async (role: PcRole): Promise<void> => {
       const target = Math.max(0, (allocation[role] ?? 0) + carry);
       const built = toBuildParts(parts);
       const categoryId = role === "ram" ? ramCategory(built) : PC_CATEGORY_IDS[role];
@@ -258,12 +263,18 @@ export class PcBuilder {
         if (brand) producerIds = [brand.valueId];
         else notes.push(`cpu: brand "${input.cpuVendor}" not among category ${categoryId}'s brand facets — filtered by name instead.`);
       }
-      const listing = await this.catalog.searchProducts({ query: "", categoryId, browse: true, inStock: true, limit: CARDS_PER_ROLE, producerIds });
-      categoryPages++;
+      const listingKey = `${categoryId}:${(producerIds ?? []).join(",")}`;
+      let listing = listingCache.get(listingKey);
+      if (!listing) {
+        listing = await this.catalog.searchProducts({ query: "", categoryId, browse: true, inStock: true, limit: CARDS_PER_ROLE, producerIds });
+        categoryPages++;
+        listingCache.set(listingKey, listing);
+      }
       const cards = listing.products.filter((p) => p.price !== undefined && prefilter(role, p, built, input));
+      priceLevels[role] = [...new Set(cards.map((c) => c.price!))].sort((a, b) => b - a);
       if (cards.length === 0) {
         notes.push(`${role}: no in-stock candidate on the first listing page of category ${categoryId} after filtering — left empty.`);
-        continue;
+        return;
       }
       // Most expensive card within the allocation first (best part the money
       // buys); for RAM, multi-module kits first (dual channel). The budget is
@@ -271,11 +282,11 @@ export class PcBuilder {
       // left after earlier picks minus half the later roles' allocations.
       const spent = parts.reduce((sum, p) => sum + (p.price ?? 0), 0);
       const reserve = roles.slice(roles.indexOf(role) + 1).reduce((sum, r) => sum + Math.floor((allocation[r] ?? 0) / 2), 0);
-      const hardCap = Math.max(0, input.budget - spent - reserve);
+      const hardCap = Math.min(Math.max(0, input.budget - spent - reserve), priceCaps[role] ?? Infinity);
       const ordered = rankCandidates(role, cards, Math.min(target, hardCap), hardCap);
       if (ordered.length === 0) {
         notes.push(`${role}: every candidate on the first listing page costs more than the ${hardCap} left in the ${input.budget} budget — left empty (cannot fit the budget).`);
-        continue;
+        return;
       }
 
       let chosen: BuildPartOut | undefined;
@@ -350,6 +361,63 @@ export class PcBuilder {
       if (chosen) {
         parts.push(chosen);
         carry = target - (chosen.price ?? 0);
+      }
+    };
+
+    const carryBefore = new Map<PcRole, number>();
+    for (const role of SUGGEST_ORDER) {
+      if (!roles.includes(role)) continue;
+      carryBefore.set(role, carry);
+      await pickRole(role);
+    }
+
+    // 3. Backtracking: a role is still empty although the budget is a hard cap —
+    // the earlier picks (gpu, cpu) may have taken money a later role needed.
+    // Retry with cheaper choices for them, bounded and deterministic; keep the
+    // retry only when it yields a complete build within budget.
+    const unfilled = () => roles.filter((r) => !parts.some((p) => p.role === r));
+    if (unfilled().length > 0) {
+      const missing = unfilled();
+      const suggestedRoles = (["gpu", "cpu"] as PcRole[]).filter((r) => roles.includes(r) && parts.some((p) => p.role === r && p.origin === "suggested"));
+      const levels: Partial<Record<PcRole, number[]>> = {};
+      for (const r of suggestedRoles) {
+        const price = parts.find((p) => p.role === r)!.price ?? Infinity;
+        levels[r] = (priceLevels[r] ?? []).filter((x) => x < price);
+      }
+      const attempts = backtrackCaps(levels);
+      const snapshot = { parts: [...parts], notes: [...notes], carry };
+      let tried = 0;
+      let solved = false;
+      for (const caps of attempts) {
+        if (detailFetches >= maxFetches) break;
+        tried++;
+        for (const r of Object.keys(priceCaps) as PcRole[]) delete priceCaps[r];
+        Object.assign(priceCaps, caps);
+        const firstIdx = Math.min(...(Object.keys(caps) as PcRole[]).map((r) => roles.indexOf(r)));
+        const redo = roles.slice(firstIdx);
+        const attemptNotes = notes.length;
+        for (const r of redo) {
+          for (let i = parts.length - 1; i >= 0; i--) if (parts[i]!.role === r && parts[i]!.origin === "suggested") parts.splice(i, 1);
+        }
+        carry = carryBefore.get(redo[0]!) ?? 0;
+        for (const r of redo) await pickRole(r);
+        const total = parts.reduce((sum, p) => sum + (p.price ?? 0), 0);
+        if (unfilled().length === 0 && total <= input.budget) {
+          solved = true;
+          notes.splice(0, notes.length, ...notes.filter((n) => !missing.some((m) => n.startsWith(`${m}:`) && /left empty/.test(n))));
+          notes.push(`Backtracking: ${missing.join(", ")} could not be filled with the first picks, so cheaper choices were taken for ${Object.keys(caps).join(", ")} (${tried} combination${tried === 1 ? "" : "s"} tried).`);
+          break;
+        }
+        notes.length = attemptNotes;
+        parts.splice(0, parts.length, ...snapshot.parts);
+        carry = snapshot.carry;
+      }
+      if (!solved) {
+        for (const r of Object.keys(priceCaps) as PcRole[]) delete priceCaps[r];
+        parts.splice(0, parts.length, ...snapshot.parts);
+        notes.splice(0, notes.length, ...snapshot.notes);
+        if (attempts.length === 0) notes.push(`Backtracking: no cheaper gpu/cpu choice available to free budget for ${missing.join(", ")}.`);
+        else notes.push(`Backtracking: tried ${tried} cheaper-choice combination(s) for ${suggestedRoles.join("/")} — none completes the build (${missing.join(", ")}) within the ${input.budget} budget.`);
       }
     }
 
