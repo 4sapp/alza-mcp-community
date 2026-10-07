@@ -45,6 +45,19 @@ export interface FindPickupOptions {
   types?: Array<"alzabox" | "branch">;
 }
 
+/**
+ * Canonical CZ/SK postal code: five digits, no space ("110 00" -> "11000").
+ * Throws on blank or malformed input so a junk code never reaches the geocoder
+ * (an empty `postalcode` made Nominatim answer with an arbitrary place).
+ */
+export function normalizePostalCode(input: string): string {
+  const trimmed = input.trim();
+  if (!/^\d{3}\s?\d{2}$/.test(trimmed)) {
+    throw new Error(`postal_code must be a 5-digit Czech/Slovak postal code such as "110 00" or "11000" (got ${trimmed ? `"${trimmed}"` : "a blank value"})`);
+  }
+  return trimmed.replace(/\s+/g, "");
+}
+
 export interface FindPickupResult {
   points: PickupPoint[];
   /** Non-fatal problems, e.g. lockers unavailable while branches were returned. */
@@ -100,11 +113,12 @@ export class Pickup {
   async findPickupPoints(opts: FindPickupOptions): Promise<FindPickupResult> {
     const radius = opts.radiusKm ?? 15;
     const limit = Math.min(50, Math.max(1, opts.limit ?? 10));
-    const types = new Set(opts.types ?? ["alzabox", "branch"]);
+    // An empty list means "no preference", like an omitted one (the schema
+    // documents "Default: both"); it must not silently return nothing.
+    const types = new Set(opts.types && opts.types.length > 0 ? opts.types : ["alzabox", "branch"]);
 
-    const center = this.deps.geocode
-      ? await this.deps.geocode(opts.postalCode)
-      : await this.geocodePostalCode(opts.postalCode);
+    const postalCode = normalizePostalCode(opts.postalCode);
+    const center = this.deps.geocode ? await this.deps.geocode(postalCode) : await this.geocodePostalCode(postalCode);
     const results: PickupPoint[] = [];
     const warnings: string[] = [];
 
@@ -186,18 +200,21 @@ export class Pickup {
 
   /**
    * Lightweight CZ/SK postal-code → (lat, lng) lookup using the public
-   * Nominatim service (OpenStreetMap). No API key required, but rate-limited
-   * to ~1 req/s — we cache aggressively.
+   * Nominatim service (OpenStreetMap, nominatim.openstreetmap.org). The
+   * normalised postal code and the storefront's country code are sent to that
+   * third-party service (no Alza data, no API key); it is rate-limited to
+   * ~1 req/s, so results are cached for a week under the normalised code.
    */
   private readonly geocodeCache = new TtlCache<string, { lat: number; lng: number }>(
     7 * 24 * 60 * 60 * 1000
   );
 
   private async geocodePostalCode(postalCode: string): Promise<{ lat: number; lng: number }> {
+    postalCode = normalizePostalCode(postalCode);
     const key = `${this.locale.countryCode}:${postalCode}`;
     return this.geocodeCache.memoize(key, async () => {
       const url = new URL("https://nominatim.openstreetmap.org/search");
-      url.searchParams.set("postalcode", postalCode.replace(/\s+/g, ""));
+      url.searchParams.set("postalcode", postalCode);
       url.searchParams.set("country", this.locale.countryCode);
       url.searchParams.set("format", "json");
       url.searchParams.set("limit", "1");

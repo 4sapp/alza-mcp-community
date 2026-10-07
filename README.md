@@ -109,13 +109,13 @@ Catalog tools:
 
 | Tool | Purpose |
 |---|---|
-| **`search_products`** | Keyword search, price/stock/screen-size filters, and bounded client-side sorting; brand/attribute filters use category pages and ignore `query` |
+| **`search_products`** | Keyword search, price/stock/screen-size filters, and bounded client-side sorting (price filters and sorts apply to the top ~72 ranked candidates, `pageSize` is the real cards-per-page, `hasMore`/`nextPage` page on; an inverted price range or a blank query is rejected); brand/attribute filters use category pages and ignore `query` |
 | **`get_product`** | Full detail for one product — price, availability, brand, image, URL |
 | **`compare_products`** | 2–6 products side by side — one aligned table of price, availability, rating and every spec row; optional `summarize: true` verdict via MCP sampling when the client supports it |
-| **`get_product_reviews`** | Aggregate rating + review count + individual reviews (author, date, rating, body, pros/cons) via the reviews API |
+| **`get_product_reviews`** | Aggregate rating + review count + individual reviews (author, date, rating, body, pros/cons) via the reviews API, newest first; the list may be longer than the aggregate count (it appears to include other storefronts' reviews) |
 | **`recommend_alternatives`** | Cheaper / better-rated / same-brand alternatives to a product (Alza's own alternatives list, same-category search fallback) |
-| **`find_pickup_points`** | Nearest AlzaBox lockers and AlzaShop showrooms by postal code, merged by distance, with opening hours, no cart needed. It can't tell whether a specific product fits an AlzaBox; use `delivery_options` for that |
-| **`list_category_filters`** | Category brands (`brands[].valueId`) and attribute facets with live ids/counts — use `producer_ids` or `filters` with `category_id` (`{param_id, value_id}` for checkbox facets, `{param_id, min?, max?}` for slider ranges such as screen size or refresh rate); unsupported URL filters return an error |
+| **`find_pickup_points`** | Nearest AlzaBox lockers and AlzaShop showrooms by 5-digit postal code, merged by distance, with opening hours, no cart needed. The postal code is geocoded with the public OpenStreetMap Nominatim service (`nominatim.openstreetmap.org`), so the normalised code and country are sent to that third party (not to Alza); results are cached for a week. It can't tell whether a specific product fits an AlzaBox; use `delivery_options` for that |
+| **`list_category_filters`** | Category brands (`brands[].valueId`) and attribute facets with live ids/counts — use `producer_ids` or `filters` with `category_id` (`{param_id, value_id}` for checkbox facets, `{param_id, min?, max?}` for slider ranges such as screen size or refresh rate); unsupported URL filters return an error (checkbox values work only where Alza publishes a landing page for the value — HDMI does, monitor panel type and resolution do not) |
 | **`get_deals`** | Discounted products (alza.cz only) with current/original price and discount % computed from observed prices — scans category listing pages for a `category_id`, or popular categories when omitted |
 | **`list_categories`** | Top-level categories, or real subcategories when `parent_id` is supplied — feed the returned ids into `search_products` |
 | **`autocomplete`** | Search-box suggestions over plain HTTP (no page render): phrases, categories, brands and products with ids/codes — refine a messy Czech query before `search_products` |
