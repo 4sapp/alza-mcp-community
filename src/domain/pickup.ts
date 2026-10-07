@@ -1,7 +1,7 @@
 import { fetch as undiciFetch } from "undici";
 import { BRANCHES, type BranchSeed } from "../data/branches.js";
 import { TtlCache } from "../infra/cache.js";
-import { UpstreamError } from "../infra/errors.js";
+import { AlzaError, UpstreamError, UserError, truncateInput } from "../infra/errors.js";
 import type { Locale } from "../infra/locale.js";
 import type { PickupPoint } from "./types.js";
 
@@ -208,12 +208,12 @@ export class Pickup {
         },
       });
       if (!res.ok) {
-        throw new UpstreamError(res.status, `geocode failed for ${postalCode}`);
+        throw new AlzaError(`Postal-code lookup (OpenStreetMap Nominatim, not Alza) failed with HTTP ${res.status}; try again later.`);
       }
       const arr = (await res.json()) as Array<{ lat: string; lon: string }>;
       const first = arr[0];
       if (!first) {
-        throw new UpstreamError(404, `unknown postal code ${postalCode}`);
+        throw new UserError(`Unknown postal code ${truncateInput(postalCode)}: the geocoder (OpenStreetMap Nominatim) found no location for it in ${this.locale.countryCode}.`);
       }
       return { lat: Number(first.lat), lng: Number(first.lon) };
     });

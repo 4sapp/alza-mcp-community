@@ -524,7 +524,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
                   part_name: z.string().min(1).max(64).describe("Form part name from the form response."),
                   file_name: z.string().min(1).max(200).describe("Original file name, e.g. \"damage-1.jpg\"."),
                   mime_type: z.string().max(64).optional().describe("MIME type, e.g. \"image/jpeg\" (whitelisted image types only)."),
-                  data_url: z.string().startsWith("data:").describe("Full base64 data URL, e.g. \"data:image/jpeg;base64,...\"."),
+                  data_url: z.string().regex(/^data:/, "must start with \"data:\"").describe("Full base64 data URL, e.g. \"data:image/jpeg;base64,...\"."),
                 }),
               )
               .min(1)

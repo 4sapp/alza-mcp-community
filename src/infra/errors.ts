@@ -24,7 +24,7 @@ export class UpstreamError extends AlzaError {
 export class NotFoundError extends AlzaError {
   override readonly name = "NotFoundError";
   constructor(what: string) {
-    super(`${what} not found`);
+    super(`${truncateInput(what, 120)} not found`);
   }
 }
 
@@ -59,4 +59,17 @@ export class OutcomeUnknownError extends AlzaError {
       cause,
     );
   }
+}
+
+/** The request itself is wrong (bad input, invalid confirmation token, not signed in,
+ * wrong user_id, unknown postal code). The caller can fix it; not a bug in alza-mcp
+ * or a change on Alza's side, so no `report_issue` hint. */
+export class UserError extends AlzaError {
+  override readonly name = "UserError";
+}
+
+/** Shorten user-supplied text before echoing it into an error message. */
+export function truncateInput(value: unknown, max = 60): string {
+  const s = typeof value === "string" ? value : JSON.stringify(value) ?? String(value);
+  return s.length > max ? `${s.slice(0, max)}… (${s.length} chars)` : s;
 }
