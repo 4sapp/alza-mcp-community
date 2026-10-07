@@ -7,6 +7,7 @@ const inputSchema = {
   postal_code: z
     .string()
     .min(3)
+    .max(16)
     .describe(
       "Czech (or other supported country) postal code. Examples: '110 00', '11000', '602 00'. Spaces are tolerated."
     ),
