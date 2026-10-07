@@ -2,7 +2,7 @@ import { z } from "zod";
 import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import type { MobileAccount } from "../domain/mobile-account.js";
 import type { RegisterableTool, ToolDeps, ToolResult } from "./types.js";
-import { formatAddToCart, formatCart, formatCheckoutPreview, withConciseText } from "./account-format.js";
+import { formatAddToCart, formatCart, formatCheckoutPreview, formatDeliveryOptions, jsonResult, withConciseText } from "./account-format.js";
 
 function apiAccount(deps: ToolDeps): MobileAccount {
   if (!deps.mobileAccount) throw new Error("mobile API account tools are not configured");
@@ -10,10 +10,8 @@ function apiAccount(deps: ToolDeps): MobileAccount {
 }
 
 function result(value: unknown): ToolResult {
-  return {
-    content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
-    structuredContent: value as Record<string, unknown>,
-  };
+  // Issue #73: the text channel is capped; structuredContent keeps the full value.
+  return jsonResult(value);
 }
 
 const jsonObject = z.record(z.string(), z.unknown());
@@ -276,7 +274,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["delivery_options"],
         },
-        async (args) => wrap("delivery_options", async () => result(await apiAccount(deps).deliveryOptions(args.selected_delivery_option_id))),
+        async (args) => wrap("delivery_options", async () => withConciseText(await apiAccount(deps).deliveryOptions(args.selected_delivery_option_id), formatDeliveryOptions)),
       );
     },
   };

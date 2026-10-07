@@ -2,7 +2,7 @@ import { z } from "zod";
 import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import type { MobileAccount } from "../domain/mobile-account.js";
 import type { RegisterableTool, ToolDeps, ToolResult } from "./types.js";
-import { formatOrder, formatProfile, withConciseText } from "./account-format.js";
+import { formatOrder, formatOrderDocument, formatPaymentMethods, formatProfile, jsonResult, withConciseText } from "./account-format.js";
 
 function apiAccount(deps: ToolDeps): MobileAccount {
   if (!deps.mobileAccount) throw new Error("mobile API account tools are not configured");
@@ -10,10 +10,8 @@ function apiAccount(deps: ToolDeps): MobileAccount {
 }
 
 function result(value: unknown): ToolResult {
-  return {
-    content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
-    structuredContent: value as Record<string, unknown>,
-  };
+  // Issue #73: the text channel is capped; structuredContent keeps the full value.
+  return jsonResult(value);
 }
 
 const jsonObject = z.record(z.string(), z.unknown());
@@ -209,7 +207,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["payment_methods"],
         },
-        async (args) => wrap("payment_methods", async () => result(await apiAccount(deps).paymentMethods(args.selected_delivery_option_id))),
+        async (args) => wrap("payment_methods", async () => withConciseText(await apiAccount(deps).paymentMethods(args.selected_delivery_option_id), formatPaymentMethods)),
       );
     },
   };
@@ -668,7 +666,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
           description:
             "Download an order invoice or document (row OR10) by following the server-provided `self.href` of a `Document`/`Attachment` object copied verbatim from a prior MCP response (e.g. the `documents[]` entries of `order_search` results or an order detail). " +
             "The href is origin-validated to Alza's host family (invoices serve from `pdf.alza.cz`) — no arbitrary URLs. " +
-            "Returns the content as UTF-8 `text` (JSON/XML/text) or `base64` (PDF/binary), with `contentType` and `byteLength` (max 8 MiB). " +
+            "Returns the content in structuredContent as UTF-8 `text` (JSON/XML/text) or `base64` (PDF/binary), with `contentType` and `byteLength` (max 8 MiB); the text reply carries only the metadata (plus a capped preview of text documents), never the base64 body. " +
             "Read-only; no token required. " +
             "Example: `order_document({document: {name: 'Faktura', self: {href: 'https://pdf.alza.cz/Apps/pdfdoc.asp?d=…'}}})`.",
           inputSchema: {
@@ -683,7 +681,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["order_document"],
         },
-        async (args) => wrap("order_document", async () => result(await apiAccount(deps).orderDocument(args.document))),
+        async (args) => wrap("order_document", async () => withConciseText(await apiAccount(deps).orderDocument(args.document), formatOrderDocument)),
       );
     },
   };
