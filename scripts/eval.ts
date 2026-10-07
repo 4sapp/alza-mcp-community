@@ -164,7 +164,7 @@ async function run(): Promise<void> {
     check(c, "structuredContent present", Boolean(sc), "no structuredContent");
     if (!sc) return;
     check(c, "query echoed", sc.query === "notebook", String(sc.query));
-    check(c, "pageSize respected (≤5)", sc.pageSize <= 5, String(sc.pageSize));
+    check(c, "limit respected (≤5 products)", sc.products.length <= 5, String(sc.products.length));
     const text = ((call1.content as { type: string; text: string }[])[0] ?? {}).text ?? "";
     const first = sc.products[0];
     if (!first) {
