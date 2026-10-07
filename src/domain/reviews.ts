@@ -79,8 +79,30 @@ interface ExtractedReviews {
 
 /** Page size Alza's reviews endpoint accepts (live-verified 2026-10-06: limit=50 -> 200). */
 const API_PAGE_SIZE = 50;
+/**
+ * Reviews fetched before ordering and cutting to the caller's `limit`. The API
+ * returns Czech reviews first and storefront-by-storefront (newest first within
+ * each), so cutting to `limit` first would drop the newest review of a later
+ * block; one full page is ordered globally instead.
+ */
+const REVIEW_WINDOW = API_PAGE_SIZE;
 /** Hard bound on pages fetched per call (cap is 50 reviews, so 1 page; guards a misbehaving `next`). */
 const MAX_PAGES = 3;
+
+/** Newest first by ISO date; reviews without a date keep their relative order after the dated ones. */
+export function sortReviewsNewestFirst(reviews: ProductReview[]): ProductReview[] {
+  return reviews
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => {
+      const da = a.r.date;
+      const db = b.r.date;
+      if (da && db) return da < db ? 1 : da > db ? -1 : a.i - b.i;
+      if (da) return -1;
+      if (db) return 1;
+      return a.i - b.i;
+    })
+    .map((x) => x.r);
+}
 
 /** Commodity id from a product URL: `...-d12999617.htm` or the variant form `/name?dq=7927612`. */
 export function commodityIdFromUrl(url: string): number | undefined {
@@ -177,7 +199,7 @@ export class Reviews {
       const id = commodityIdFromUrl(url) ?? commodityIdFromUrl(pageUrl);
       if (this.api && id !== undefined) {
         try {
-          apiReviews = await this.fetchApiReviews(id, cap);
+          apiReviews = sortReviewsNewestFirst(await this.fetchApiReviews(id, Math.max(cap, REVIEW_WINDOW))).slice(0, cap);
         } catch (e) {
           apiFailed = true;
           log.debug("reviews.api failed; falling back to aggregate-only", { code: trimmed, error: String(e) });

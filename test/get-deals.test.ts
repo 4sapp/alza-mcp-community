@@ -44,7 +44,7 @@ function fakeBrowser(countryBase: string): AlzaBrowser {
         waitForLoadState: async () => {},
         waitForSelector: async () => null,
         waitForTimeout: async () => {},
-        evaluate: async () => (call++ === 0 ? FIXTURE : {}),
+        evaluate: async (script: string) => (script.includes("nena") ? false : call++ === 0 ? FIXTURE : {}),
       };
       return fn(page);
     },

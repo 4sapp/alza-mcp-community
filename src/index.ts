@@ -1,20 +1,28 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { parseCliConfig, startHttpServer } from "./http.js";
+import { informationalOutput, replyForTransportError } from "./cli.js";
 import { ConfigurationError } from "./infra/errors.js";
+import { resolveLocale } from "./infra/locale.js";
 import { log } from "./infra/logger.js";
 import { proxyFromEnv } from "./infra/proxy.js";
 import { buildServer } from "./server.js";
 
 async function main(): Promise<void> {
+  const info = informationalOutput(process.argv.slice(2));
+  if (info !== undefined) {
+    process.stdout.write(info);
+    return;
+  }
   const config = parseCliConfig(process.argv.slice(2));
   // Fail fast on a bad ALZA_PROXY_URL instead of starting and silently
   // sending traffic some other way (the browser only parses it on first use).
   proxyFromEnv();
+  resolveLocale(process.env.ALZA_BASE_URL); // reject an unsupported ALZA_BASE_URL before serving
   if (config.transport === "http") return mainHttp(config.http);
 
   const { server, close } = buildServer({
-    baseUrl: process.env.ALZA_BASE_URL,
+    baseUrl: process.env.ALZA_BASE_URL?.trim() || undefined,
     cdpUrl: process.env.ALZA_CDP_URL,
   });
 
@@ -34,13 +42,20 @@ async function main(): Promise<void> {
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
   const transport = new StdioServerTransport();
+  // The SDK drops unparseable lines silently; a client waiting on a reply would hang.
+  // Answer with the JSON-RPC parse / invalid-request error (id null: the id is unknowable).
+  server.server.onerror = (err) => {
+    const reply = replyForTransportError(err);
+    if (reply) process.stdout.write(reply);
+    else log.warn("transport error", { error: err instanceof Error ? err.message : String(err) });
+  };
   await server.connect(transport);
   // The host closed (or crashed and dropped) our stdin: there is nobody left to talk to. Without
   // this, the sidecar's piped stdio and Chromium keep the event loop alive forever.
   process.stdin.on("end", () => void shutdown("stdin end"));
   process.stdin.on("close", () => void shutdown("stdin close"));
   log.info("alza-mcp ready", {
-    baseUrl: process.env.ALZA_BASE_URL ?? "https://www.alza.cz",
+    baseUrl: process.env.ALZA_BASE_URL?.trim() || "https://www.alza.cz",
     cdp: !!process.env.ALZA_CDP_URL,
   });
 }
@@ -59,7 +74,7 @@ async function mainHttp(opts: Parameters<typeof startHttpServer>[0]): Promise<vo
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
   log.info("alza-mcp ready (Streamable HTTP)", {
     url: running.url,
-    baseUrl: process.env.ALZA_BASE_URL ?? "https://www.alza.cz",
+    baseUrl: process.env.ALZA_BASE_URL?.trim() || "https://www.alza.cz",
     account: opts?.allowAccount ?? false,
     tokenFile: Boolean(opts?.allowAccount && opts?.allowTokenFile),
   });
@@ -70,6 +85,8 @@ main().catch((err) => {
     process.stderr.write(`alza-mcp: ${err.message}\n`);
     process.exit(1);
   }
-  log.error("fatal", { error: (err as Error).message, stack: (err as Error).stack });
+  const message = err instanceof Error ? err.message : String(err);
+  if (process.env.ALZA_DEBUG) log.error("fatal", { error: message, stack: (err as Error)?.stack });
+  else process.stderr.write(`alza-mcp: ${message.split("\n")[0]}\n`);
   process.exit(1);
 });

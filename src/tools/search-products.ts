@@ -5,7 +5,7 @@ import type { RegisterableTool, ToolDeps } from "./types.js";
 import { tagLinks } from "./tracking.js";
 
 const inputSchema = {
-  query: z.string().min(1).max(200).describe("Search keywords. Required. Example: 'iPhone 15 Pro', 'PlayStation 5', 'gaming mouse Logitech'."),
+  query: z.string().trim().min(1).max(200).describe("Search keywords. Required. Example: 'iPhone 15 Pro', 'PlayStation 5', 'gaming mouse Logitech'."),
   limit: z
     .number()
     .int()
@@ -28,8 +28,16 @@ const inputSchema = {
     .describe(
       "Sort order, default 'relevance'. Alza's search page ignores server-side sort parameters, so price (asc/desc) and rating sorts gather candidates from up to 3 result pages (~72 items — the top of Alza's relevance ranking) and sort them client-side; the response's `candidatesScanned` says how many candidates were scanned. 'newest' is best-effort (Alza's newest-sort is client-side JS, so it returns relevance order). For an absolute price floor, also pass `max_price` and/or narrow `category_id`."
     ),
-  min_price: z.number().min(0).optional().describe("Minimum price in the locale's currency. Products whose price could not be read are excluded."),
-  max_price: z.number().min(0).optional().describe("Maximum price in the locale's currency. Products whose price could not be read are excluded."),
+  min_price: z
+    .number()
+    .min(0)
+    .optional()
+    .describe("Minimum price in the locale's currency. Products whose price could not be read are excluded. Must not exceed `max_price`. Applied client-side to the scanned candidates (up to ~72 top-ranked results over 3 pages, see `candidatesScanned`), not to the whole catalog."),
+  max_price: z
+    .number()
+    .min(0)
+    .optional()
+    .describe("Maximum price in the locale's currency. Products whose price could not be read are excluded. Must not be below `min_price`. Applied client-side to the scanned candidates (up to ~72 top-ranked results over 3 pages, see `candidatesScanned`), not to the whole catalog."),
   in_stock: z
     .boolean()
     .optional()
@@ -122,7 +130,7 @@ export function createSearchProductsTool(deps: ToolDeps): RegisterableTool {
         {
           title: "Search Alza products",
           description:
-            "Search the Alza.cz catalog by keyword. Use this for product discovery — finding what's available, comparing options, or starting research. Returns a list with product code, name, price, stock (from the card's purchase CTA), and rating. To get full details for one product, follow up with `get_product`. Sorting: Alza's search page ignores server-side sort, so price-asc / price-desc / rating scan up to ~72 top-ranked candidates (3 pages) and sort them client-side — `candidatesScanned` reports how many were scanned; for an absolute price floor also pass `max_price`. `in_stock: true` keeps only products with a live purchase CTA. " +
+            "Search the Alza.cz catalog by keyword. Use this for product discovery — finding what's available, comparing options, or starting research. Returns a list with product code, name, price, stock (from the card's purchase CTA), and rating. To get full details for one product, follow up with `get_product`. Price filters (`min_price`/`max_price`, rejected when inverted) and sorts are applied client-side to the top ~72 ranked candidates, so a narrow window can return fewer items than exist; `pageSize` is the real number of cards per Alza page (~24, not your `limit`) and `hasMore` says whether further pages exist. Sorting: Alza's search page ignores server-side sort, so price-asc / price-desc / rating scan up to ~72 top-ranked candidates (3 pages) and sort them client-side — `candidatesScanned` reports how many were scanned; for an absolute price floor also pass `max_price`. `in_stock: true` keeps only products with a live purchase CTA. " +
             "Brand/attribute filtering: call `list_category_filters({category_id})` for real ids, then pass `producer_ids` and/or `filters` with `category_id`. This switches to Alza's own filtered category page, so `query` is ignored and results match what the website shows; a filter Alza doesn't honour returns an error rather than unfiltered results. Slider facets (screen size, refresh rate, brightness, weight, …) filter by `{param_id, min?, max?}` range; the applied ranges come back in `appliedRanges`. " +
             "`min_screen_inches`/`max_screen_inches` use the category's real diagonal slider when `category_id` is given, and a product-name size heuristic otherwise. For attributes Alza has no facet for, compare shortlisted candidates with `get_product`'s `params`. " +
             "Read-only.",
@@ -158,6 +166,8 @@ export function createSearchProductsTool(deps: ToolDeps): RegisterableTool {
                 total: result.total,
                 page: result.page,
                 pageSize: result.pageSize,
+                ...(result.hasMore !== undefined ? { hasMore: result.hasMore } : {}),
+                ...(result.nextPage !== undefined ? { nextPage: result.nextPage } : {}),
                 candidatesScanned: result.candidatesScanned,
                 products: result.products,
                 ...(result.appliedRanges ? { appliedRanges: result.appliedRanges } : {}),

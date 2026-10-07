@@ -6,6 +6,8 @@ import { extractJsonLd, findProduct as findJsonLdProduct } from "../infra/jsonld
 import { log } from "../infra/logger.js";
 import type { AppliedRange, Category, CategoryFilters, FacetGroup, FacetValue, Product, ProductParam, SearchResult } from "./types.js";
 import { compareDeals, computeDeal, DEFAULT_DEAL_CATEGORIES, type Deal } from "./deals.js";
+import { availabilityFields } from "./availability.js";
+import { commodityIdFromUrl } from "./reviews.js";
 
 export type SortOrder = "relevance" | "price-asc" | "price-desc" | "rating" | "newest";
 
@@ -82,7 +84,7 @@ interface RawCard {
  * by the category page's own `EShopService.svc/Filter` call (parsed with
  * DOMParser — see `Catalog.fetchRangePage`).
  */
-const CARD_EXTRACTOR_FN = `function(root) {
+export const CARD_EXTRACTOR_FN = `function(root) {
   return Array.from(root.querySelectorAll('.browsingitem')).map(function(card) {
     function txt(sel) {
       var el = card.querySelector(sel);
@@ -93,8 +95,14 @@ const CARD_EXTRACTOR_FN = `function(root) {
       return el ? el.getAttribute(a) : null;
     }
     var sample = (card.textContent || '').trim().replace(/\\s+/g, ' ');
-    var ratingMatch = sample.match(/(\\d[,.]\\d)\\s*\\d+×/);
-    var reviewMatch = sample.match(/(\\d+)×/);
+    // Rating: the star block's aria-label ("Hodnocení: 4,8 z 5 na základě 4923
+    // recenzí" / alza.sk "Hodnotenie: …") is the most reliable source; the
+    // card-text fallback must tolerate thousands separators ("4,8 4 923×" —
+    // live-verified 2026-10-07: a plain \\d+× missed every product with 1000+
+    // reviews).
+    var ariaEl = card.querySelector('.star-rating-wrapper[aria-label]');
+    var ariaMatch = ariaEl ? (ariaEl.getAttribute('aria-label') || '').match(/(\\d[,.]\\d)\\s*(?:z|\\/)\\s*5/) : null;
+    var ratingMatch = sample.match(/(\\d[,.]\\d)\\s*(\\d[\\d\\s\\u00a0]*)×/);
     // Stock signal = the purchase CTA (verified 2026-09-12): "Do košíku" /
     // "Vybrat variantu" = purchasable now, a standalone "Hlídat" button = not
     // purchasable. The "Hlídat dostupnost nebo cenu" watch link appears on
@@ -115,8 +123,8 @@ const CARD_EXTRACTOR_FN = `function(root) {
       priceText: txt('.ads-pb__price-value') || txt('.price'),
       originalPriceText: txt('.ads-pb__original-price'),
       originalIsStrike: !!card.querySelector('.ads-pb__original-price--strike'),
-      ratingText: ratingMatch ? ratingMatch[1] : null,
-      reviewCountText: reviewMatch ? reviewMatch[1] : null,
+      ratingText: ariaMatch ? ariaMatch[1] : (ratingMatch ? ratingMatch[1] : null),
+      reviewCountText: ratingMatch ? ratingMatch[2].replace(/\\s|\\u00a0/g, '') : null,
       inStock: inStock
     };
   });
@@ -148,6 +156,18 @@ const PAGE_URLS_EXTRACTOR = `(function() {
   // derive page 1 from the -pN pattern: ".../18842920-p2.htm" -> ".../18842920.htm"
   out["1"] = Object.values(out)[0].replace(/-p\\d+\\.htm$/, '.htm');
   return out;
+})()`;
+
+/**
+ * True only on Alza's server-rendered "nothing found" search page: no result
+ * cards AND the "we didn't find it" sentence (CZ "nenašel", SK "nenašiel").
+ * A page whose grid simply has not rendered yet has no such sentence, so the
+ * render-race retries below still apply to it.
+ */
+export const NO_RESULTS_PROBE = `(function() {
+  if (document.querySelector('.browsingitem')) return false;
+  var text = (document.body && document.body.innerText) || '';
+  return /nena(š|s)(el|iel)\\b/i.test(text);
 })()`;
 
 /** Public `get_product` cap on spec rows (unchanged contract). */
@@ -213,6 +233,12 @@ export class Catalog {
     }
     const limit = clamp(opts.limit ?? 20, 1, 50);
     const page = Math.max(1, opts.page ?? 1);
+    if (opts.minPrice !== undefined && opts.maxPrice !== undefined && opts.minPrice > opts.maxPrice) {
+      throw new Error(`min_price (${opts.minPrice}) is greater than max_price (${opts.maxPrice}) — no product can match an inverted price range`);
+    }
+    if (!opts.browse && !opts.query.trim()) {
+      throw new Error("query must not be blank — pass search keywords (or use browse with a category)");
+    }
     if (page > MAX_SEARCH_PAGE) {
       throw new Error(`page must be at most ${MAX_SEARCH_PAGE} (got ${page}) — Alza renders no more result pages than that`);
     }
@@ -240,15 +266,15 @@ export class Catalog {
     // client-side (compareForSort); `in_stock` is enforced from each card's
     // purchase CTA (see RawCard.inStock). An explicit page > 1 keeps the
     // single-page behaviour.
-    const sweeping =
-      page === 1 &&
-      (opts.sort === "price-asc" || opts.sort === "price-desc" || opts.sort === "rating");
+    const sweeping = shouldSweep(opts, page);
     const maxPages = sweeping ? sortSweepPages(limit) : 1;
 
     return this.searchCache.memoize(cacheKey, async () => {
       const candidates: Product[] = [];
       const seen = new Set<string>();
       let pagesFetched = 0;
+      let pageCapacity = 0;
+      let lastPage = page;
       // Pagination links resolved from the rendered page-number anchors (see
       // PAGE_URLS_EXTRACTOR); search.htm?pg=N is ignored by Alza.
       let pageLinks: Record<string, string> = {};
@@ -272,6 +298,8 @@ export class Catalog {
           .filter((c) => !c.sponsored)
           .map((c) => this.normalizeCard(c))
           .filter((p): p is Product => p !== null);
+        pageCapacity = Math.max(pageCapacity, organic.length);
+        lastPage = n;
         for (const p of organic) {
           if (seen.has(p.code)) continue;
           seen.add(p.code);
@@ -300,8 +328,10 @@ export class Catalog {
         query: opts.query,
         total: products.length,
         page,
-        pageSize: limit,
+        pageSize: pageCapacity,
         candidatesScanned: candidates.length,
+        hasMore: pageLinks[String(lastPage + 1)] !== undefined,
+        ...(pageLinks[String(lastPage + 1)] !== undefined ? { nextPage: lastPage + 1 } : {}),
         products,
       };
     });
@@ -398,19 +428,21 @@ export class Catalog {
         query: opts.query,
         total: 0,
         page,
-        pageSize: limit,
+        pageSize: 0,
         candidatesScanned: 0,
         products: [],
         appliedRanges: [...requested, ...plan.empty],
       };
     }
 
-    const sweeping =
-      page === 1 && (opts.sort === "price-asc" || opts.sort === "price-desc" || opts.sort === "rating");
+    const sweeping = shouldSweep(opts, page);
     const maxPages = sweeping ? sortSweepPages(limit) : 1;
     const candidates: Product[] = [];
     const seen = new Set<string>();
     let applied: AppliedRange[] | undefined;
+    let pageCapacity = 0;
+    let hasMore = false;
+    let lastPage = page;
     for (let n = page; n < page + maxPages; n++) {
       const res = await this.fetchRangePage(opts, plan.resolved, n);
       applied ??= mergeApplied(requested, res.applied);
@@ -418,6 +450,9 @@ export class Catalog {
         .filter((c) => !c.sponsored)
         .map((c) => this.normalizeCard(c))
         .filter((p): p is Product => p !== null);
+      pageCapacity = Math.max(pageCapacity, organic.length);
+      lastPage = n;
+      hasMore = res.cards.length > 0 && n < Math.ceil(res.count / res.cards.length);
       for (const p of organic) {
         if (seen.has(p.code)) continue;
         seen.add(p.code);
@@ -446,8 +481,10 @@ export class Catalog {
       query: opts.query,
       total: products.length,
       page,
-      pageSize: limit,
+      pageSize: pageCapacity,
       candidatesScanned: candidates.length,
+      hasMore,
+      ...(hasMore ? { nextPage: lastPage + 1 } : {}),
       products,
       appliedRanges: applied ?? requested,
     };
@@ -643,6 +680,14 @@ export class Catalog {
       // empty is much worse).
       let cards = [] as RawCard[];
       for (let attempt = 0; ; attempt++) {
+        // Alza's own "no results" page ("…jsem nenašel. Jak dál?", alza.sk
+        // "…som nenašiel. Ako ďalej?", live-verified 2026-10-07) is
+        // server-rendered, so it is a reliable signal: without this check a
+        // typo query burned all retries (~35 s) before reporting nothing.
+        if ((await p.evaluate(NO_RESULTS_PROBE)) === true) {
+          log.debug("catalog.fetchSearchPage.noResults", { url });
+          return { cards: [] as RawCard[], pageUrls: {} };
+        }
         await p.waitForSelector(".browsingitem", { timeout: 10_000 }).catch(() => null);
         cards = (await p.evaluate(CARD_EXTRACTOR)) as RawCard[];
         log.debug("catalog.fetchSearchPage.cards", {
@@ -713,13 +758,16 @@ export class Catalog {
 
       return {
         code: ((ld.sku as string) ?? trimmed).trim(),
-        id: 0,
+        // Numeric commodity id from the `-d<id>.htm` / `?dq=<id>` URL (same
+        // value the search cards carry as data-id); 0 only when the page URL
+        // carries none.
+        id: commodityIdFromUrl(data.url) ?? commodityIdFromUrl(url) ?? 0,
         name: stripHtmlEntities(name),
         url: data.url,
         image: images[0],
         price: offers.price,
         currency: offers.priceCurrency ?? this.browser.locale.currency,
-        availability: offers.availability,
+        ...availabilityFields(offers.availability),
         rating: rating.average,
         brand: pickBrand(ld.brand),
         category: breadcrumbs[breadcrumbs.length - 2],
@@ -807,6 +855,10 @@ export class Catalog {
             id: c.id,
             name: stripHtmlEntities(c.name),
             url: this.absUrl(c.url),
+            // Sub-level tiles are children of the requested category. The page
+            // carries no per-tile child counts and the homepage nav no tree
+            // (live-checked 2026-10-07), so `childCount` stays unknown.
+            ...(parentId ? { parentId } : {}),
           }))
           .slice(0, 60);
       });
@@ -922,6 +974,24 @@ function clamp(n: number, min: number, max: number): number {
  */
 export function sortSweepPages(limit: number): number {
   return Math.min(3, Math.max(2, Math.ceil(limit / 24)));
+}
+
+/**
+ * Whether page 1 gathers several result pages before filtering/sorting. A
+ * client-side price/rating sort needs the larger pool, and so does a price
+ * window: one rendered page (~24 cards) rarely holds more than a handful of
+ * products in a narrow window (QA 2026-10-07: `min_price` on "myš" returned 3
+ * of hundreds). An explicit `page` > 1 keeps the single-page behaviour.
+ */
+export function shouldSweep(opts: Pick<SearchOptions, "sort" | "minPrice" | "maxPrice">, page: number): boolean {
+  if (page !== 1) return false;
+  return (
+    opts.sort === "price-asc" ||
+    opts.sort === "price-desc" ||
+    opts.sort === "rating" ||
+    opts.minPrice !== undefined ||
+    opts.maxPrice !== undefined
+  );
 }
 
 /**

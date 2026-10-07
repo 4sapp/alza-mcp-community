@@ -74,7 +74,7 @@ describe("parsing helpers", () => {
     };
     const out = parseAlternatives(raw, "CZK");
     expect(out).toHaveLength(2);
-    expect(out[0]).toMatchObject({ code: "RI054b5", id: 13078769, price: 25990, rating: 4.8, availability: "Skladem > 5 ks", currency: "CZK" });
+    expect(out[0]).toMatchObject({ code: "RI054b5", id: 13078769, price: 25990, rating: 4.8, availability: "in stock", availabilityText: "Skladem > 5 ks", currency: "CZK" });
     expect(out[1]).toMatchObject({ id: 9, rating: undefined });
     expect(parseAlternatives({}, "CZK")).toEqual([]);
   });

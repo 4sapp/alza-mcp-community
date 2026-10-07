@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { z, ZodError } from "zod";
-import { assertNotRejected } from "../infra/errors.js";
+import { UserError, assertNotRejected } from "../infra/errors.js";
 import type { MobileApi, OAuthStart } from "../infra/mobile-api.js";
 import { APP_ACTION_ROUTE_POLICIES, type AppActionFilePart, type AppActionRoutePolicy, type AppActionValue, type ServerAppAction } from "../infra/app-action.js";
 import { WATCHDOG_ID_RE, parseWatchdogDialog, parseWatchdogList, type WatchdogEntry } from "./watchdog.js";
@@ -95,7 +95,7 @@ const ZIP_RE = /^[\dA-Za-z -]{3,12}$/;
 
 function requireString(payload: Record<string, unknown>, field: string, max = 200): string {
   const value = payload[field];
-  if (typeof value !== "string" || value.length === 0 || value.length > max) throw new Error(`${field} must be a non-empty string (max ${max})`);
+  if (typeof value !== "string" || value.length === 0 || value.length > max) throw new UserError(`${field} must be a non-empty string (max ${max})`);
   return value;
 }
 /** Numeric Alza user id (1-16 digits) — the path segment of the userAccount/
@@ -103,7 +103,7 @@ function requireString(payload: Record<string, unknown>, field: string, max = 20
  * `user_id` field of the `user_data` read) — never free-form. */
 function requireUserId(value: unknown): string {
   const s = String(value ?? "").trim();
-  if (!/^\d{1,16}$/.test(s)) throw new Error("user_id must be the numeric Alza user id (take it from the user_data read, e.g. 100000001)");
+  if (!/^\d{1,16}$/.test(s)) throw new UserError("user_id must be the numeric Alza user id (take it from the user_data read, e.g. 100000001)");
   return s;
 }
 function optionalString(payload: Record<string, unknown>, field: string, max = 200): string | undefined {
@@ -112,7 +112,7 @@ function optionalString(payload: Record<string, unknown>, field: string, max = 2
 }
 function requireInt(payload: Record<string, unknown>, field: string): number {
   const value = payload[field];
-  if (typeof value !== "number" || !Number.isInteger(value)) throw new Error(`${field} must be an integer`);
+  if (typeof value !== "number" || !Number.isInteger(value)) throw new UserError(`${field} must be an integer`);
   return value;
 }
 function optionalInt(payload: Record<string, unknown>, field: string): number | undefined {
@@ -120,11 +120,11 @@ function optionalInt(payload: Record<string, unknown>, field: string): number | 
   return requireInt(payload, field);
 }
 function validateTypedValues(values: Array<{ name?: unknown; value?: unknown; kind?: unknown }>, limit = 20): AppActionValue[] {
-  if (values.length > limit) throw new Error(`values must contain at most ${limit} entries`);
+  if (values.length > limit) throw new UserError(`values must contain at most ${limit} entries`);
   return values.map((v) => {
-    if (!v || typeof v.name !== "string" || !v.name || v.name.length > 64) throw new Error("value names must be non-empty strings (max 64)");
+    if (!v || typeof v.name !== "string" || !v.name || v.name.length > 64) throw new UserError("value names must be non-empty strings (max 64)");
     const kind = v.kind === undefined ? undefined : String(v.kind);
-    if (kind !== undefined && !["text", "integer", "boolean", "decimal", "text-array", "integer-array"].includes(kind)) throw new Error(`unsupported value kind: ${kind}`);
+    if (kind !== undefined && !["text", "integer", "boolean", "decimal", "text-array", "integer-array"].includes(kind)) throw new UserError(`unsupported value kind: ${kind}`);
     return { name: v.name, value: v.value, kind: kind as AppActionValue["kind"] };
   });
 }
@@ -133,66 +133,66 @@ function validateAddressPayload(payload: Record<string, unknown>): void {
   requireString(payload, "street", 100);
   requireString(payload, "city", 100);
   const zip = requireString(payload, "zip_code", 10);
-  if (!ZIP_RE.test(zip)) throw new Error("zip_code must be 3-12 alphanumeric characters, spaces, or dashes");
+  if (!ZIP_RE.test(zip)) throw new UserError("zip_code must be 3-12 alphanumeric characters, spaces, or dashes");
   const addressType = optionalString(payload, "address_type", 8);
-  if (addressType && !ADDRESS_TYPES.has(addressType)) throw new Error(`address_type must be one of HOME, WORK, OTHER (got ${addressType})`);
+  if (addressType && !ADDRESS_TYPES.has(addressType)) throw new UserError(`address_type must be one of HOME, WORK, OTHER (got ${addressType})`);
   const email = optionalString(payload, "email", 100);
-  if (email && !EMAIL_RE.test(email)) throw new Error("email is not a valid email address");
+  if (email && !EMAIL_RE.test(email)) throw new UserError("email is not a valid email address");
   const phone = optionalString(payload, "phone", 20);
-  if (phone && !/^[\d+()\s-]{6,20}$/.test(phone)) throw new Error("phone must be 6-20 characters (digits, +, parens, spaces, dashes)");
+  if (phone && !/^[\d+()\s-]{6,20}$/.test(phone)) throw new UserError("phone must be 6-20 characters (digits, +, parens, spaces, dashes)");
 }
 function validateRegisterPayload(payload: Record<string, unknown>): void {
   const email = requireString(payload, "email", 100);
-  if (!EMAIL_RE.test(email)) throw new Error("email is not a valid email address");
+  if (!EMAIL_RE.test(email)) throw new UserError("email is not a valid email address");
   const phone = requireString(payload, "phone", 20);
-  if (!/^[\d+()\s-]{6,20}$/.test(phone)) throw new Error("phone must be 6-20 characters (digits, +, parens, spaces, dashes)");
+  if (!/^[\d+()\s-]{6,20}$/.test(phone)) throw new UserError("phone must be 6-20 characters (digits, +, parens, spaces, dashes)");
   const pwd = requireString(payload, "pwd", 64);
-  if (pwd.length < 8) throw new Error("pwd must be at least 8 characters");
+  if (pwd.length < 8) throw new UserError("pwd must be at least 8 characters");
   optionalString(payload, "code", 32);
 }
 function validateAfterOrderPaymentPayload(payload: Record<string, unknown>): void {
   requireString(payload, "order_id", 64);
   requireString(payload, "invoice_number", 64);
   const paymentId = requireInt(payload, "payment_id");
-  if (paymentId < 1) throw new Error("payment_id must be a positive integer");
+  if (paymentId < 1) throw new UserError("payment_id must be a positive integer");
   const cardId = optionalInt(payload, "card_id");
-  if (cardId !== undefined && cardId < 1) throw new Error("card_id must be a positive integer");
+  if (cardId !== undefined && cardId < 1) throw new UserError("card_id must be a positive integer");
   optionalString(payload, "device_fingerprint", 128);
 }
 function optionalFloat(payload: Record<string, unknown>, field: string, min: number, max: number): number | undefined {
   if (!(field in payload) || payload[field] === null || payload[field] === undefined) return undefined;
   const value = payload[field];
-  if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${field} must be a finite number`);
-  if (value < min || value > max) throw new Error(`${field} must be between ${min} and ${max}`);
+  if (typeof value !== "number" || !Number.isFinite(value)) throw new UserError(`${field} must be a finite number`);
+  if (value < min || value > max) throw new UserError(`${field} must be between ${min} and ${max}`);
   return value;
 }
 function optionalPositiveNumber(payload: Record<string, unknown>, field: string): number | undefined {
   if (!(field in payload) || payload[field] === null || payload[field] === undefined) return undefined;
   const value = payload[field];
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) throw new Error(`${field} must be a non-negative number`);
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) throw new UserError(`${field} must be a non-negative number`);
   return value;
 }
 function validateConsents(payload: Record<string, unknown>, field: string): Array<{ consentId: string; value: boolean }> {
   if (!(field in payload) || payload[field] === undefined || payload[field] === null) return [];
   const list = payload[field];
-  if (!Array.isArray(list) || list.length > 10) throw new Error(`${field} must be an array of at most 10 {consent_id, value} entries`);
+  if (!Array.isArray(list) || list.length > 10) throw new UserError(`${field} must be an array of at most 10 {consent_id, value} entries`);
   return list.map((c, i) => {
-    if (!c || typeof c !== "object") throw new Error(`${field}[${i}] must be an object`);
+    if (!c || typeof c !== "object") throw new UserError(`${field}[${i}] must be an object`);
     const consentId = (c as Record<string, unknown>).consent_id;
     const value = (c as Record<string, unknown>).value;
-    if (typeof consentId !== "string" || consentId.length === 0 || consentId.length > 64) throw new Error(`${field}[${i}].consent_id must be a string (max 64)`);
-    if (typeof value !== "boolean") throw new Error(`${field}[${i}].value must be a boolean`);
+    if (typeof consentId !== "string" || consentId.length === 0 || consentId.length > 64) throw new UserError(`${field}[${i}].consent_id must be a string (max 64)`);
+    if (typeof value !== "boolean") throw new UserError(`${field}[${i}].value must be a boolean`);
     return { consentId, value };
   });
 }
 function validateFileParts(files: Array<Record<string, unknown>>): AppActionFilePart[] {
-  if (files.length === 0 || files.length > 5) throw new Error("files must be an array of 1-5 file parts");
+  if (files.length === 0 || files.length > 5) throw new UserError("files must be an array of 1-5 file parts");
   return files.map((f) => {
     const partName = requireString(f, "part_name", 64);
     const fileName = requireString(f, "file_name", 200);
     const mimeType = optionalString(f, "mime_type", 64) ?? "";
     const dataUrl = requireString(f, "data_url", 14 * 1024 * 1024);
-    if (!/^data:/.test(dataUrl)) throw new Error("data_url must be a base64 data URL");
+    if (!/^data:/.test(dataUrl)) throw new UserError("data_url must be a base64 data URL");
     return { partName, fileName, mimeType, dataUrl };
   });
 }
@@ -214,13 +214,13 @@ function validateListPayload(action: string, payload: Record<string, unknown>): 
     coupon_add: ["coupon"], coupon_remove: ["couponId"], basket_update: ["basket_id"], basket_unlock: [], gdpr_export: ["user_id"], // couponId: live correction 2026-09-10 (delcoupon binds Int32)
   };
   for (const field of required[action] ?? []) {
-    if (!(field in payload) || payload[field] === null || payload[field] === "") throw new Error(`Missing required ${action} payload field: ${field}`);
+    if (!(field in payload) || payload[field] === null || payload[field] === "") throw new UserError(`Missing required ${action} payload field: ${field}`);
   }
   for (const field of ["id", "productId", "commodityListType", "targetId", "orderItemId", "couponId"]) {
-    if (field in payload && (typeof payload[field] !== "number" || !Number.isInteger(payload[field]))) throw new Error(`${field} must be an integer`);
+    if (field in payload && (typeof payload[field] !== "number" || !Number.isInteger(payload[field]))) throw new UserError(`${field} must be an integer`);
   }
-  if (("name" in payload) && typeof payload.name !== "string") throw new Error("name must be a string");
-  if (action === "send_feedback" && (typeof payload.text !== "string" || typeof payload.info !== "string")) throw new Error("feedback text and info must be strings");
+  if (("name" in payload) && typeof payload.name !== "string") throw new UserError("name must be a string");
+  if (action === "send_feedback" && (typeof payload.text !== "string" || typeof payload.info !== "string")) throw new UserError("feedback text and info must be strings");
 }
 
 /** Required `mobile_read` arguments per operation (issue #79). Missing or
@@ -300,7 +300,7 @@ export class MobileAccount {
   private userIdFor(value: unknown): string {
     const uid = requireUserId(value);
     if (this.knownUserId !== undefined && uid !== this.knownUserId) {
-      throw new Error(`user_id ${uid} is not the signed-in account (profile/user_data reports user_id ${this.knownUserId}); refusing to send it.`);
+      throw new UserError(`user_id ${uid} is not the signed-in account (profile/user_data reports user_id ${this.knownUserId}); refusing to send it.`);
     }
     return uid;
   }
@@ -318,10 +318,10 @@ export class MobileAccount {
     }
     const sessionId = sessionUserIdFrom(env);
     if (!sessionId) {
-      throw new Error(`${action} refused: user_data did not report a signed-in user id (anonymous or expired session). Nothing was sent; sign in with auth_start → auth_exchange first.`);
+      throw new UserError(`${action} refused: user_data did not report a signed-in user id (anonymous or expired session). Nothing was sent; sign in with auth_start → auth_exchange first.`);
     }
     this.knownUserId = sessionId;
-    if (uid !== sessionId) throw new Error(`${action} refused: user_id ${uid} is not the signed-in account (user_data reports user_id ${sessionId}). Nothing was sent.`);
+    if (uid !== sessionId) throw new UserError(`${action} refused: user_id ${uid} is not the signed-in account (user_data reports user_id ${sessionId}). Nothing was sent.`);
     return uid;
   }
 
@@ -362,7 +362,7 @@ export class MobileAccount {
       case "facets": return this.api.facets(Number(args.category_id), args.type ? String(args.type) : "CATEGORY", Number(args.type_id ?? 0), args.search ? String(args.search) : "");
       case "ean_lookup": {
         const list = Array.isArray(args.ean_list) ? args.ean_list.map(String) : [];
-        if (list.length === 0 || list.length > 20) throw new Error("ean_list must be an array of 1-20 EAN strings");
+        if (list.length === 0 || list.length > 20) throw new UserError("ean_list must be an array of 1-20 EAN strings");
         return this.api.eanLookup(list);
       }
       case "hierarchical_filter": return this.api.hierarchicalFilter(args as Record<string, unknown>);
@@ -372,7 +372,7 @@ export class MobileAccount {
       case "web_after_payment_dialog": return this.webAfterPaymentDialog(String(args.order_id ?? ""), args.order_hash === undefined ? undefined : String(args.order_hash));
       case "web_zip_codes": {
         const input = String(args.input ?? "");
-        if (input.length === 0 || input.length > 64) throw new Error("input must be a place name or zip (1-64 chars)");
+        if (input.length === 0 || input.length > 64) throw new UserError("input must be a place name or zip (1-64 chars)");
         return this.api.webZipCodes(input);
       }
       case "chat_navigation": {
@@ -381,15 +381,15 @@ export class MobileAccount {
       }
       case "home_categories": {
         const categoryId = Number(args.category_id ?? 1);
-        if (!Number.isInteger(categoryId) || categoryId < 1) throw new Error("category_id must be a positive integer");
+        if (!Number.isInteger(categoryId) || categoryId < 1) throw new UserError("category_id must be a positive integer");
         const pgri = args.pgri === undefined ? undefined : String(args.pgri);
         const ui = args.ui === undefined ? undefined : String(args.ui);
         for (const [name, value] of [["pgri", pgri], ["ui", ui]] as const) {
-          if (value !== undefined && (value.length === 0 || value.length > 64)) throw new Error(`${name} must be a string (max 64; copy it from the catalog_user_navigation response)`);
+          if (value !== undefined && (value.length === 0 || value.length > 64)) throw new UserError(`${name} must be a string (max 64; copy it from the catalog_user_navigation response)`);
         }
         return this.api.homeCategories(categoryId, pgri, ui);
       }
-      default: throw new Error(`Unsupported mobile read operation: ${operation}`);
+      default: throw new UserError(`Unsupported mobile read operation: ${operation}`);
     }
   }
 
@@ -421,20 +421,20 @@ export class MobileAccount {
    * expired or payload-mismatched token is spent, so nothing is sent. */
   private assertMutationToken(action: string, token: string, bound: Record<string, unknown>, message = `Invalid or expired ${action} confirmation token; call prepare_mutation again.`): void {
     const pending = this.pendingMutations.get(action);
-    if (!pending || typeof token !== "string" || !tokensEqual(pending.token, token)) throw new Error(message);
+    if (!pending || typeof token !== "string" || !tokensEqual(pending.token, token)) throw new UserError(message);
     this.pendingMutations.delete(action);
     if (Date.now() >= pending.expiresAt) {
-      throw new Error(`The ${action} confirmation token expired (tokens are valid for ${MUTATION_TOKEN_TTL_MS / 60_000} minutes); nothing was sent — call prepare_mutation again.`);
+      throw new UserError(`The ${action} confirmation token expired (tokens are valid for ${MUTATION_TOKEN_TTL_MS / 60_000} minutes); nothing was sent — call prepare_mutation again.`);
     }
     if (pending.payloadHash !== undefined && mutationPayloadHash(action, bound) !== pending.payloadHash) {
-      throw new Error(`The ${action} arguments differ from the payload confirmed with prepare_mutation; nothing was sent and the token is spent. Call prepare_mutation again with exactly the arguments you will pass (all except confirmation_token).`);
+      throw new UserError(`The ${action} arguments differ from the payload confirmed with prepare_mutation; nothing was sent and the token is spent. Call prepare_mutation again with exactly the arguments you will pass (all except confirmation_token).`);
     }
   }
 
   private actionFrom(action: Record<string, unknown>): ServerAppAction {
     const a = action as unknown as ServerAppAction;
     if (!a || typeof a !== "object" || !a.form || typeof a.form !== "object" || !a.form.meta || typeof a.form.meta.href !== "string" || !a.form.meta.href) {
-      throw new Error("action must be an AppAction object with form.meta.href (copy it from the response of a prior alza tool)");
+      throw new UserError("action must be an AppAction object with form.meta.href (copy it from the response of a prior alza tool)");
     }
     return a;
   }
@@ -482,7 +482,7 @@ export class MobileAccount {
 
   /** Address search/autocomplete (read, no token). */
   async addressSearch(action: Record<string, unknown>, query: string): Promise<unknown> {
-    if (typeof query !== "string" || query.length === 0 || query.length > 50) throw new Error("query must be a non-empty string (max 50)");
+    if (typeof query !== "string" || query.length === 0 || query.length > 50) throw new UserError("query must be a non-empty string (max 50)");
     return this.api.executeAppAction(this.actionFrom(action), { extraValues: [{ name: "search", value: query, kind: "text" }], routePolicy: APP_ACTION_ROUTE_POLICIES.addressSearch });
   }
 
@@ -490,7 +490,7 @@ export class MobileAccount {
    * it, so without one the zip/city search uses the live-verified D5 lookup
    * (`GET /services/restservice.svc/v1/getZipCodes?deliveryId=0&search=`). */
   async zipCitySearch(query: string): Promise<unknown> {
-    if (typeof query !== "string" || query.trim().length === 0 || query.length > 50) throw new Error("query must be a non-empty string (max 50)");
+    if (typeof query !== "string" || query.trim().length === 0 || query.length > 50) throw new UserError("query must be a non-empty string (max 50)");
     return this.api.zipCodes(query.trim());
   }
 
@@ -498,7 +498,7 @@ export class MobileAccount {
    * search form (`POST .../v1/orders/search/results`, form-urlencoded). */
   async orderSearch(searchTerm: string, userId?: string): Promise<unknown> {
     const term = String(searchTerm ?? "").trim();
-    if (term.length === 0 || term.length > 64) throw new Error("search_term must be 1-64 characters (e.g. an order number like '1058 423 434')");
+    if (term.length === 0 || term.length > 64) throw new UserError("search_term must be 1-64 characters (e.g. an order number like '1058 423 434')");
     const uid = this.userIdFor(userId ?? this.api.userId);
     return this.api.orderSearch(uid, term);
   }
@@ -510,11 +510,11 @@ export class MobileAccount {
   async orderArchive(opts: { user_id?: string; hide_cancelled_orders?: boolean; limit?: number } = {}): Promise<unknown> {
     const uid = this.userIdFor(opts.user_id ?? this.api.userId);
     const hide = opts.hide_cancelled_orders ?? false;
-    if (typeof hide !== "boolean") throw new Error("hide_cancelled_orders must be a boolean");
+    if (typeof hide !== "boolean") throw new UserError("hide_cancelled_orders must be a boolean");
     let limit: number | undefined;
     if (opts.limit !== undefined) {
       limit = opts.limit;
-      if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("limit must be an integer between 1 and 100");
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new UserError("limit must be an integer between 1 and 100");
     }
     return this.api.orderArchive(uid, hide, limit);
   }
@@ -523,11 +523,11 @@ export class MobileAccount {
    * static route `POST .../v1/getProductByEANlist` (`{eanList}`). Read-only. */
   async productByEan(eans: unknown): Promise<unknown> {
     if (!Array.isArray(eans) || eans.length === 0 || eans.length > 20) {
-      throw new Error("eans must be a non-empty array of at most 20 barcode values");
+      throw new UserError("eans must be a non-empty array of at most 20 barcode values");
     }
     const list = eans.map((v, i) => {
       const s = String(v ?? "").trim();
-      if (!/^\d{6,14}$/.test(s)) throw new Error(`eans[${i}] must be a 6-14 digit barcode (EAN-8/13/14)`);
+      if (!/^\d{6,14}$/.test(s)) throw new UserError(`eans[${i}] must be a 6-14 digit barcode (EAN-8/13/14)`);
       return s;
     });
     return this.api.productByEan(list);
@@ -574,9 +574,9 @@ export class MobileAccount {
     const oldPassword = requireString(payload, "old_password", 64);
     const newPassword = requireString(payload, "new_password", 64);
     const confirm = requireString(payload, "new_password_confirm", 64);
-    if (newPassword.length < 8) throw new Error("new_password must be at least 8 characters");
-    if (newPassword !== confirm) throw new Error("new_password and new_password_confirm must match");
-    if (newPassword === oldPassword) throw new Error("new_password must differ from old_password");
+    if (newPassword.length < 8) throw new UserError("new_password must be at least 8 characters");
+    if (newPassword !== confirm) throw new UserError("new_password and new_password_confirm must match");
+    if (newPassword === oldPassword) throw new UserError("new_password must differ from old_password");
     const uid = await this.confirmSessionUserId(payload.user_id, "change_password");
     const result = await this.api.changePassword(uid, oldPassword, newPassword);
     return result ?? { changed: true };
@@ -587,7 +587,7 @@ export class MobileAccount {
     this.assertMutationToken("two_factor_set", token, payload);
     requireUserId(payload.user_id);
     const enabled = payload.enabled;
-    if (typeof enabled !== "boolean") throw new Error("enabled must be a boolean (true to turn 2FA on, false to turn it off)");
+    if (typeof enabled !== "boolean") throw new UserError("enabled must be a boolean (true to turn 2FA on, false to turn it off)");
     const uid = await this.confirmSessionUserId(payload.user_id, "two_factor_set");
     const result = await this.api.setTwoFactor(uid, enabled);
     return result ?? { enabled };
@@ -600,7 +600,7 @@ export class MobileAccount {
     this.assertMutationToken("phone_change", token, payload);
     requireUserId(payload.user_id);
     const phone = requireString(payload, "phone", 24).replace(/[\s-]/g, "");
-    if (!/^\+\d{1,3}\d{5,15}$/.test(phone)) throw new Error("phone must be an international number, e.g. '+420777123456' (separators allowed)");
+    if (!/^\+\d{1,3}\d{5,15}$/.test(phone)) throw new UserError("phone must be an international number, e.g. '+420777123456' (separators allowed)");
     const uid = await this.confirmSessionUserId(payload.user_id, "phone_change");
     const result = await this.api.changePhone(uid, phone);
     return result ?? { phone };
@@ -611,7 +611,7 @@ export class MobileAccount {
     this.assertMutationToken("email_change", token, payload);
     requireUserId(payload.user_id);
     const email = requireString(payload, "email", 100);
-    if (!EMAIL_RE.test(email)) throw new Error("email must be a valid address");
+    if (!EMAIL_RE.test(email)) throw new UserError("email must be a valid address");
     const uid = await this.confirmSessionUserId(payload.user_id, "email_change");
     const result = await this.api.changeEmail(uid, email);
     return result ?? { email };
@@ -644,7 +644,7 @@ export class MobileAccount {
     const self = (document?.self ?? {}) as Record<string, unknown>;
     const href = self.href;
     if (typeof href !== "string" || href.length === 0) {
-      throw new Error("document.self.href is required (copy the Document object verbatim from a prior order/search response)");
+      throw new UserError("document.self.href is required (copy the Document object verbatim from a prior order/search response)");
     }
     const out = await this.api.downloadDocument(href);
     const name = typeof document.name === "string" ? document.name : null;
@@ -653,13 +653,13 @@ export class MobileAccount {
 
   /** Payments family. */
   async paymentMethods(selectedDeliveryOptionId?: number): Promise<unknown> {
-    if (selectedDeliveryOptionId !== undefined && (!Number.isInteger(selectedDeliveryOptionId) || selectedDeliveryOptionId < 1)) throw new Error("selected_delivery_option_id must be a positive integer");
+    if (selectedDeliveryOptionId !== undefined && (!Number.isInteger(selectedDeliveryOptionId) || selectedDeliveryOptionId < 1)) throw new UserError("selected_delivery_option_id must be a positive integer");
     return this.api.paymentMethods(selectedDeliveryOptionId);
   }
 
   async afterOrderPayments(orderId: string, partId: string): Promise<unknown> {
-    if (typeof orderId !== "string" || orderId.length === 0 || orderId.length > 64) throw new Error("order_id must be a non-empty string (max 64)");
-    if (typeof partId !== "string" || partId.length === 0 || partId.length > 64) throw new Error("part_id must be a non-empty string (max 64)");
+    if (typeof orderId !== "string" || orderId.length === 0 || orderId.length > 64) throw new UserError("order_id must be a non-empty string (max 64)");
+    if (typeof partId !== "string" || partId.length === 0 || partId.length > 64) throw new UserError("part_id must be a non-empty string (max 64)");
     // Issue #79: a 200 `err:1` envelope ("order does not exist") is a failure, not a list.
     const res = await this.api.afterOrderPayments(orderId, partId);
     assertNotRejected(res);
@@ -685,16 +685,16 @@ export class MobileAccount {
    * HATEOAS links (`order/{basketId}/item/{itemId}`), which `webCart` needs. */
   async webAddToCart(payload: Record<string, unknown>): Promise<unknown> {
     const commodityId = requireInt(payload, "commodity_id");
-    if (commodityId < 1) throw new Error("commodity_id must be a positive integer");
+    if (commodityId < 1) throw new UserError("commodity_id must be a positive integer");
     const count = payload.count === undefined || payload.count === null ? 1 : requireInt(payload, "count");
-    if (count < 1 || count > 99) throw new Error("count must be between 1 and 99");
+    if (count < 1 || count > 99) throw new UserError("count must be between 1 and 99");
     const res = await this.api.webAddToCart(commodityId, count);
     const m = JSON.stringify(res).match(/order\/(\d+)\/item\/(\d+)/);
     return { basket_id: m ? Number(m[1]) : undefined, item_id: m ? Number(m[2]) : undefined, response: res };
   }
 
   async webCart(basketId: number): Promise<unknown> {
-    if (!Number.isInteger(basketId) || basketId < 1) throw new Error("basket_id must be a positive integer (from web_add_to_cart)");
+    if (!Number.isInteger(basketId) || basketId < 1) throw new UserError("basket_id must be a positive integer (from web_add_to_cart)");
     return this.api.webCart(basketId);
   }
 
@@ -703,19 +703,19 @@ export class MobileAccount {
    * token-free like web_add_to_cart. */
   async chatNavigation(country?: string): Promise<unknown> {
     const c = country === undefined ? "CZ" : String(country);
-    if (!/^[A-Za-z]{2}$/.test(c)) throw new Error("country must be a 2-letter code (e.g. CZ)");
+    if (!/^[A-Za-z]{2}$/.test(c)) throw new UserError("country must be a 2-letter code (e.g. CZ)");
     return this.api.chatNavigation(c.toUpperCase());
   }
 
   async chatSend(payload: Record<string, unknown>): Promise<unknown> {
     const pageType = requireInt(payload, "page_type");
-    if (pageType < 1 || pageType > 30) throw new Error("page_type must be 1-30 (1=product detail, 5=Order1, 6=Order2, 24=Order4 per the W18 capture)");
+    if (pageType < 1 || pageType > 30) throw new UserError("page_type must be 1-30 (1=product detail, 5=Order1, 6=Order2, 24=Order4 per the W18 capture)");
     const country = payload.country === undefined ? "CZ" : String(payload.country);
-    if (!/^[A-Za-z]{2}$/.test(country)) throw new Error("country must be a 2-letter code (e.g. CZ)");
+    if (!/^[A-Za-z]{2}$/.test(country)) throw new UserError("country must be a 2-letter code (e.g. CZ)");
     const opt = (name: string, max: number): string | null => {
       if (payload[name] === undefined || payload[name] === null) return null;
       const v = String(payload[name]);
-      if (v.length > max) throw new Error(`${name} must be at most ${max} characters`);
+      if (v.length > max) throw new UserError(`${name} must be at most ${max} characters`);
       return v;
     };
     const listCategoryId = payload.list_category_id === undefined || payload.list_category_id === null
@@ -732,7 +732,7 @@ export class MobileAccount {
 
   async webZipCodes(input: string): Promise<unknown> {
     const s = String(input ?? "");
-    if (s.length === 0 || s.length > 64) throw new Error("input must be a place name or zip (1-64 chars; the WCF twin takes {Search: input})");
+    if (s.length === 0 || s.length > 64) throw new UserError("input must be a place name or zip (1-64 chars; the WCF twin takes {Search: input})");
     return this.api.webZipCodes(s);
   }
 
@@ -746,19 +746,19 @@ export class MobileAccount {
     const orderId = optionalInt(args, "order_id");
     const groupId = optionalInt(args, "group_id");
     const placeId = optionalInt(args, "place_id");
-    if (placeId !== undefined && placeId < 1) throw new Error("place_id must be a positive integer");
+    if (placeId !== undefined && placeId < 1) throw new UserError("place_id must be a positive integer");
     let types: number[] | undefined;
     if ("types" in args && args.types !== null && args.types !== undefined) {
-      if (!Array.isArray(args.types) || args.types.length === 0 || args.types.length > 5) throw new Error("types must be an array of 1-5 pickup type ids");
+      if (!Array.isArray(args.types) || args.types.length === 0 || args.types.length > 5) throw new UserError("types must be an array of 1-5 pickup type ids");
       types = args.types.map((t) => {
-        if (typeof t !== "number" || !Number.isInteger(t) || t < 1) throw new Error("types entries must be positive integers");
+        if (typeof t !== "number" || !Number.isInteger(t) || t < 1) throw new UserError("types entries must be positive integers");
         return t;
       });
     }
     const limit = optionalInt(args, "limit");
-    if (limit !== undefined && (limit < 1 || limit > 100)) throw new Error("limit must be between 1 and 100");
+    if (limit !== undefined && (limit < 1 || limit > 100)) throw new UserError("limit must be between 1 and 100");
     const offset = optionalInt(args, "offset");
-    if (offset !== undefined && offset < 0) throw new Error("offset must be zero or positive");
+    if (offset !== undefined && offset < 0) throw new UserError("offset must be zero or positive");
     const form = await this.api.webPickupPlaceForm({ orderId, groupId, latitude, longitude });
     const places = await this.api.webPickupPlaces({ types, latitude, longitude, orderId, groupId, limit, offset });
     const detail = placeId === undefined ? undefined : await this.api.webPickupPlaceDetail(placeId, orderId, groupId);
@@ -772,21 +772,21 @@ export class MobileAccount {
   async webPlaceOrder(payload: Record<string, unknown>, token: string): Promise<unknown> {
     this.assertMutationToken("web_place_order", token, payload);
     const deliveryId = requireInt(payload, "delivery_id");
-    if (deliveryId < 1) throw new Error("delivery_id must be a positive integer");
+    if (deliveryId < 1) throw new UserError("delivery_id must be a positive integer");
     const groupId = optionalInt(payload, "delivery_group_id");
-    if (groupId !== undefined && groupId < 0) throw new Error("delivery_group_id must be zero or positive");
+    if (groupId !== undefined && groupId < 0) throw new UserError("delivery_group_id must be zero or positive");
     const parcelShopId = optionalString(payload, "parcel_shop_id", 32);
     const paymentId = requireInt(payload, "payment_id");
-    if (paymentId < 1) throw new Error("payment_id must be a positive integer");
+    if (paymentId < 1) throw new UserError("payment_id must be a positive integer");
     const name = requireString(payload, "name", 100);
     const street = requireString(payload, "street", 100);
     const city = requireString(payload, "city", 100);
     const zip = requireString(payload, "zip_code", 12);
-    if (!ZIP_RE.test(zip)) throw new Error("zip_code must be 3-12 alphanumeric characters, spaces, or dashes");
+    if (!ZIP_RE.test(zip)) throw new UserError("zip_code must be 3-12 alphanumeric characters, spaces, or dashes");
     const phone = requireString(payload, "phone", 20);
-    if (!/^[\d+()\s-]{6,20}$/.test(phone)) throw new Error("phone must be 6-20 characters (digits, +, parens, spaces, dashes)");
+    if (!/^[\d+()\s-]{6,20}$/.test(phone)) throw new UserError("phone must be 6-20 characters (digits, +, parens, spaces, dashes)");
     const email = requireString(payload, "email", 100);
-    if (!EMAIL_RE.test(email)) throw new Error("email is not a valid email address");
+    if (!EMAIL_RE.test(email)) throw new UserError("email is not a valid email address");
     const registerUser = payload.register_user === undefined ? false : Boolean(payload.register_user);
     const login = optionalString(payload, "login", 100) ?? email;
     const countryId = optionalInt(payload, "country_id") ?? 0;
@@ -851,8 +851,8 @@ export class MobileAccount {
   /** Web after-payment dialog (PA8, read-only): the after-order payment
    * method list for an unpaid order. */
   async webAfterPaymentDialog(orderId: string, orderHash?: string): Promise<unknown> {
-    if (typeof orderId !== "string" || orderId.length === 0 || orderId.length > 64) throw new Error("order_id must be a non-empty string (max 64)");
-    if (orderHash !== undefined && (typeof orderHash !== "string" || orderHash.length > 64)) throw new Error("order_hash must be a string (max 64)");
+    if (typeof orderId !== "string" || orderId.length === 0 || orderId.length > 64) throw new UserError("order_id must be a non-empty string (max 64)");
+    if (orderHash !== undefined && (typeof orderHash !== "string" || orderHash.length > 64)) throw new UserError("order_hash must be a string (max 64)");
     return this.api.webWcfStep("GetAfterPaymentDialog", { orderId, invoiceId: null, price: null, isPartialPay: false, isSwitchToCashAvailable: false, orderHash: orderHash ?? "" });
   }
 
@@ -863,7 +863,7 @@ export class MobileAccount {
     this.assertMutationToken("web_after_order_payment", token, payload);
     const orderId = requireString(payload, "order_id", 64);
     const paymentId = requireInt(payload, "payment_id");
-    if (paymentId < 1) throw new Error("payment_id must be a positive integer");
+    if (paymentId < 1) throw new UserError("payment_id must be a positive integer");
     const hash = optionalString(payload, "order_hash", 64) ?? "";
     const invoiceId = optionalString(payload, "invoice_id", 32) ?? "0";
     const price = optionalPositiveNumber(payload, "price");
@@ -878,11 +878,11 @@ export class MobileAccount {
 
   /** Orders family: order read (+ optional part detail). */
   async order(orderId: string, partId?: string, userId?: string, initialCreated = false): Promise<unknown> {
-    if (typeof orderId !== "string" || orderId.length === 0 || orderId.length > 64) throw new Error("order_id must be a non-empty string (max 64)");
-    if (partId !== undefined && (typeof partId !== "string" || partId.length === 0 || partId.length > 64)) throw new Error("part_id must be a non-empty string (max 64)");
+    if (typeof orderId !== "string" || orderId.length === 0 || orderId.length > 64) throw new UserError("order_id must be a non-empty string (max 64)");
+    if (partId !== undefined && (typeof partId !== "string" || partId.length === 0 || partId.length > 64)) throw new UserError("part_id must be a non-empty string (max 64)");
     // Issue #60: the route segment is the numeric user id, never the 0/1 flag.
     const uid = this.userIdFor(userId ?? this.api.userId);
-    if (uid === "0" || uid === "1") throw new Error("user_id must be the numeric Alza user id from profile/user_data, not the old 0/1 user_flag");
+    if (uid === "0" || uid === "1") throw new UserError("user_id must be the numeric Alza user id from profile/user_data, not the old 0/1 user_flag");
     const order = await this.api.userOrder(uid, orderId, initialCreated);
     if (partId === undefined) return { order };
     const part = await this.api.orderPart(orderId, partId);
@@ -896,10 +896,10 @@ export class MobileAccount {
    * before settling to cancelled. */
   async cancelOrder(orderId: string, hash: string, partId: string, reason: number, token: string): Promise<unknown> {
     this.assertMutationToken("cancel_order", token, { order_id: orderId, hash, part_id: partId, reason });
-    if (typeof orderId !== "string" || orderId.length === 0 || orderId.length > 64) throw new Error("order_id must be a non-empty string (max 64)");
-    if (typeof hash !== "string" || hash.length === 0 || hash.length > 128) throw new Error("hash must be a non-empty string (max 128)");
-    if (typeof partId !== "string" || partId.length === 0 || partId.length > 64) throw new Error("part_id must be a non-empty string (max 64)");
-    if (!Number.isInteger(reason) || reason < 0 || reason > 5) throw new Error("reason must be an integer between 0 and 5");
+    if (typeof orderId !== "string" || orderId.length === 0 || orderId.length > 64) throw new UserError("order_id must be a non-empty string (max 64)");
+    if (typeof hash !== "string" || hash.length === 0 || hash.length > 128) throw new UserError("hash must be a non-empty string (max 128)");
+    if (typeof partId !== "string" || partId.length === 0 || partId.length > 64) throw new UserError("part_id must be a non-empty string (max 64)");
+    if (!Number.isInteger(reason) || reason < 0 || reason > 5) throw new UserError("reason must be an integer between 0 and 5");
     await this.api.orderCancelForm(orderId, hash, partId);
     await this.api.orderCancel(orderId, hash, partId, reason);
     return { accepted: true, order_id: orderId, part_id: partId, reason };
@@ -909,13 +909,13 @@ export class MobileAccount {
   async reviewSubmit(action: Record<string, unknown>, payload: Record<string, unknown>, token: string): Promise<unknown> {
     this.assertMutationToken("review_submit", token, { action, ...payload });
     const rating = requireInt(payload, "rating");
-    if (rating < 1 || rating > 5) throw new Error("rating must be an integer between 1 and 5");
+    if (rating < 1 || rating > 5) throw new UserError("rating must be an integer between 1 and 5");
     const text = optionalString(payload, "text", 10000);
     const extra: AppActionValue[] = [{ name: "rating", value: rating, kind: "integer" }];
     if (text !== undefined) extra.push({ name: "text", value: text, kind: "text" });
     const values = payload.values;
     if (values !== undefined) {
-      if (!Array.isArray(values)) throw new Error("values must be an array of {name, value, kind?}");
+      if (!Array.isArray(values)) throw new UserError("values must be an array of {name, value, kind?}");
       extra.push(...validateTypedValues(values));
     }
     const result = await this.executeAction(this.actionFrom(action), APP_ACTION_ROUTE_POLICIES.reviewWrite, { token, extraValues: extra });
@@ -931,7 +931,7 @@ export class MobileAccount {
    * needs, so the list is read directly by user id + scope. */
   async warrantyClaims(userId: string | undefined, scope: unknown = "active"): Promise<unknown> {
     const uid = this.userIdFor(userId ?? this.api.userId);
-    if (scope !== "active" && scope !== "archive") throw new Error("scope must be 'active' or 'archive'");
+    if (scope !== "active" && scope !== "archive") throw new UserError("scope must be 'active' or 'archive'");
     return this.api.warrantyClaims(uid, scope);
   }
 
@@ -951,13 +951,13 @@ export class MobileAccount {
    * and to the user-route family the calling tool owns. */
   private async readUserLink(link: Record<string, unknown>, family: RegExp, what: string): Promise<unknown> {
     const href = link?.href;
-    if (typeof href !== "string" || href.length === 0 || href.length > 800) throw new Error(`${what} must be a link object with an href (copy it verbatim from a prior response)`);
+    if (typeof href !== "string" || href.length === 0 || href.length > 800) throw new UserError(`${what} must be a link object with an href (copy it verbatim from a prior response)`);
     let u: URL;
-    try { u = new URL(href, this.api.baseUrl); } catch { throw new Error(`${what}.href is not a valid URL`); }
+    try { u = new URL(href, this.api.baseUrl); } catch { throw new UserError(`${what}.href is not a valid URL`); }
     const base = new URL(this.api.baseUrl);
     const onAlzaHost = u.host === base.host || (USER_LINK_HOSTS.has(u.hostname) && u.port === "");
-    if (u.protocol !== "https:" || !onAlzaHost || u.username !== "" || u.password !== "") throw new Error(`${what}.href must be an https Alza API URL (${[...USER_LINK_HOSTS].join(", ")})`);
-    if (!family.test(u.pathname)) throw new Error(`${what}.href is outside the route family this tool reads`);
+    if (u.protocol !== "https:" || !onAlzaHost || u.username !== "" || u.password !== "") throw new UserError(`${what}.href must be an https Alza API URL (${[...USER_LINK_HOSTS].join(", ")})`);
+    if (!family.test(u.pathname)) throw new UserError(`${what}.href is outside the route family this tool reads`);
     return this.api.request(u.toString());
   }
 
@@ -968,7 +968,7 @@ export class MobileAccount {
   async subscriptionActivate(action: Record<string, unknown>, payload: Record<string, unknown>, token: string): Promise<unknown> {
     this.assertMutationToken("subscription_activate", token, { action, ...payload });
     const values = payload.values;
-    if (values !== undefined && !Array.isArray(values)) throw new Error("values must be an array of {name, value, kind?}");
+    if (values !== undefined && !Array.isArray(values)) throw new UserError("values must be an array of {name, value, kind?}");
     const extra = values === undefined ? undefined : validateTypedValues(values);
     const result = await this.executeAction(this.actionFrom(action), APP_ACTION_ROUTE_POLICIES.subscriptionWrite, { token, extraValues: extra });
     return result;
@@ -977,7 +977,7 @@ export class MobileAccount {
   async subscriptionUpdateInstallment(action: Record<string, unknown>, payload: Record<string, unknown>, token: string): Promise<unknown> {
     this.assertMutationToken("subscription_update_installment", token, { action, ...payload });
     const values = payload.values;
-    if (values !== undefined && !Array.isArray(values)) throw new Error("values must be an array of {name, value, kind?}");
+    if (values !== undefined && !Array.isArray(values)) throw new UserError("values must be an array of {name, value, kind?}");
     const extra = values === undefined ? undefined : validateTypedValues(values);
     const result = await this.executeAction(this.actionFrom(action), APP_ACTION_ROUTE_POLICIES.subscriptionWrite, { token, extraValues: extra });
     return result;
@@ -986,10 +986,10 @@ export class MobileAccount {
   /** Attachment upload (multipart AppAction, one-time token). */
   async uploadAttachment(action: Record<string, unknown>, payload: Record<string, unknown>, token: string): Promise<unknown> {
     this.assertMutationToken("attachment_upload", token, { action, ...payload });
-    if (!Array.isArray(payload.files)) throw new Error("files must be an array of file parts");
+    if (!Array.isArray(payload.files)) throw new UserError("files must be an array of file parts");
     const fileParts = validateFileParts(payload.files as Array<Record<string, unknown>>);
     const values = payload.values;
-    if (values !== undefined && !Array.isArray(values)) throw new Error("values must be an array of {name, value, kind?}");
+    if (values !== undefined && !Array.isArray(values)) throw new UserError("values must be an array of {name, value, kind?}");
     const extra = values === undefined ? undefined : validateTypedValues(values);
     const result = await this.executeAction(this.actionFrom(action), APP_ACTION_ROUTE_POLICIES.attachmentUpload, { token, extraValues: extra, files: fileParts });
     return result;
@@ -998,7 +998,7 @@ export class MobileAccount {
   /** B9a (2026-10-06): the user's watchdogs, normalised (no email in output). */
   async watchdogList(userId: unknown, limit?: number): Promise<{ count: number; has_more: boolean; empty_message: string | null; items: WatchdogEntry[] }> {
     const uid = this.userIdFor(userId);
-    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 100)) throw new Error("limit must be an integer between 1 and 100");
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 100)) throw new UserError("limit must be an integer between 1 and 100");
     const parsed = parseWatchdogList(await this.api.watchdogList(uid, limit));
     return { count: parsed.items.length, has_more: parsed.hasMore, empty_message: parsed.emptyMessage, items: parsed.items };
   }
@@ -1010,16 +1010,16 @@ export class MobileAccount {
     this.assertMutationToken("watchdog_set", token, payload);
     const uid = this.userIdFor(payload.user_id);
     const commodityId = requireInt(payload, "commodity_id");
-    if (commodityId < 1) throw new Error("commodity_id must be a positive integer");
+    if (commodityId < 1) throw new UserError("commodity_id must be a positive integer");
     const trackStock = payload.track_stock === undefined ? true : payload.track_stock;
-    if (typeof trackStock !== "boolean") throw new Error("track_stock must be a boolean");
+    if (typeof trackStock !== "boolean") throw new UserError("track_stock must be a boolean");
     const maxPrice = payload.max_price === undefined || payload.max_price === null ? undefined : payload.max_price;
-    if (maxPrice !== undefined && (typeof maxPrice !== "number" || !Number.isFinite(maxPrice) || maxPrice <= 0)) throw new Error("max_price must be a positive number (CZK incl. VAT)");
-    if (!trackStock && maxPrice === undefined) throw new Error("nothing to watch: set track_stock true and/or max_price");
+    if (maxPrice !== undefined && (typeof maxPrice !== "number" || !Number.isFinite(maxPrice) || maxPrice <= 0)) throw new UserError("max_price must be a positive number (CZK incl. VAT)");
+    if (!trackStock && maxPrice === undefined) throw new UserError("nothing to watch: set track_stock true and/or max_price");
     const dialog = parseWatchdogDialog(await this.api.watchdogDialog(uid, commodityId));
-    if (dialog.existingWatchdogId) throw new Error(`a watchdog already exists for commodity ${commodityId} (watchdog_id ${dialog.existingWatchdogId}); delete it with watchdog_delete first, then set it again`);
-    if (!dialog.email) throw new Error("Alza's watchdog form did not pre-fill the account email; is the session authenticated? (check account_status)");
-    if (maxPrice !== undefined && dialog.priceMax !== null && maxPrice >= dialog.priceMax) throw new Error(`max_price must be below the current price (${dialog.priceMax} Kč)`);
+    if (dialog.existingWatchdogId) throw new UserError(`a watchdog already exists for commodity ${commodityId} (watchdog_id ${dialog.existingWatchdogId}); delete it with watchdog_delete first, then set it again`);
+    if (!dialog.email) throw new UserError("Alza's watchdog form did not pre-fill the account email; is the session authenticated? (check account_status)");
+    if (maxPrice !== undefined && dialog.priceMax !== null && maxPrice >= dialog.priceMax) throw new UserError(`max_price must be below the current price (${dialog.priceMax} Kč)`);
     const created = (await this.api.watchdogCreate(uid, { commodityId, email: dialog.email, isTrackingStock: trackStock, price: maxPrice ?? null })) as Record<string, unknown> | null;
     return {
       created: true,
@@ -1040,14 +1040,14 @@ export class MobileAccount {
     let watchdogId: string | undefined;
     let commodityId: number | undefined;
     if (payload.watchdog_id !== undefined && payload.watchdog_id !== null) {
-      if (typeof payload.watchdog_id !== "string" || !WATCHDOG_ID_RE.test(payload.watchdog_id)) throw new Error("watchdog_id must be the UUID from watchdog_list");
+      if (typeof payload.watchdog_id !== "string" || !WATCHDOG_ID_RE.test(payload.watchdog_id)) throw new UserError("watchdog_id must be the UUID from watchdog_list");
       watchdogId = payload.watchdog_id.toLowerCase();
     } else {
       commodityId = requireInt(payload, "commodity_id");
-      if (commodityId < 1) throw new Error("commodity_id must be a positive integer");
+      if (commodityId < 1) throw new UserError("commodity_id must be a positive integer");
       const dialog = parseWatchdogDialog(await this.api.watchdogDialog(uid, commodityId));
-      if (!dialog.existingWatchdogId) throw new Error(`no watchdog is set for commodity ${commodityId}`);
-      if (!WATCHDOG_ID_RE.test(dialog.existingWatchdogId)) throw new Error("Alza's deleteAction did not carry a recognisable watchdog id; delete it by watchdog_id from watchdog_list instead");
+      if (!dialog.existingWatchdogId) throw new UserError(`no watchdog is set for commodity ${commodityId}`);
+      if (!WATCHDOG_ID_RE.test(dialog.existingWatchdogId)) throw new UserError("Alza's deleteAction did not carry a recognisable watchdog id; delete it by watchdog_id from watchdog_list instead");
       watchdogId = dialog.existingWatchdogId;
     }
     await this.api.watchdogDelete(uid, watchdogId);
@@ -1060,8 +1060,8 @@ export class MobileAccount {
    * the same action again replaces that action's earlier token; tokens for
    * other actions stay valid. */
   prepareMutation(action: string, payload?: Record<string, unknown>): { action: string; confirmationToken: string; expiresAt: string; payloadBound: boolean } {
-    if (!(MUTATION_ACTIONS as readonly string[]).includes(action)) throw new Error(`Unknown mutation action: ${action}`);
-    if (payload !== undefined && (payload === null || typeof payload !== "object" || Array.isArray(payload))) throw new Error("payload must be a JSON object");
+    if (!(MUTATION_ACTIONS as readonly string[]).includes(action)) throw new UserError(`Unknown mutation action: ${action}`);
+    if (payload !== undefined && (payload === null || typeof payload !== "object" || Array.isArray(payload))) throw new UserError("payload must be a JSON object");
     const confirmationToken = randomBytes(24).toString("hex");
     const expiresAt = Date.now() + MUTATION_TOKEN_TTL_MS;
     this.pendingMutations.set(action, { token: confirmationToken, payloadHash: payload === undefined ? undefined : mutationPayloadHash(action, payload), expiresAt });
@@ -1069,7 +1069,7 @@ export class MobileAccount {
   }
 
   async mutateList(action: string, token: string, payload: Record<string, unknown>): Promise<unknown> {
-    if (!WHITELISTED_MUTATIONS.has(action)) throw new Error(`Mutation ${action} is not a whitelisted low-risk mutation; use the matching typed tool instead.`);
+    if (!WHITELISTED_MUTATIONS.has(action)) throw new UserError(`Mutation ${action} is not a whitelisted low-risk mutation; use the matching typed tool instead.`);
     this.assertMutationToken(action, token, payload, "Invalid or expired mutation confirmation token; call prepare_mutation again.");
     validateListPayload(action, payload);
     const result = action === "create" ? await this.api.createCommodityList(payload)
@@ -1090,7 +1090,7 @@ export class MobileAccount {
       : action === "basket_update" ? await this.api.updateBasket(Number(payload.basket_id), Boolean(payload.flag), Boolean(payload.is_delayed_payment ?? false))
       : action === "basket_unlock" ? await this.api.unlockBasket()
       : action === "gdpr_export" ? await this.sendGdprExport(payload)
-      : (() => { throw new Error(`Unsupported list mutation: ${action}`); })();
+      : (() => { throw new UserError(`Unsupported list mutation: ${action}`); })();
     return result;
   }
 
@@ -1099,7 +1099,7 @@ export class MobileAccount {
   }
 
   async addToCart(code: string, quantity = 1): Promise<unknown> {
-    if (quantity < 1 || quantity > 99) throw new Error("quantity must be between 1 and 99");
+    if (quantity < 1 || quantity > 99) throw new UserError("quantity must be between 1 and 99");
     return this.api.addByCode(code, quantity);
   }
 
@@ -1116,10 +1116,10 @@ export class MobileAccount {
 
   async submitOrder(token: string, deliveryPayment: Record<string, unknown>, userInfo: Record<string, unknown>, completeOrder: Record<string, unknown>): Promise<unknown> {
     const pending = this.pending;
-    if (!pending || typeof token !== "string" || !tokensEqual(pending.confirmationToken, token)) throw new Error("Invalid or expired confirmation token; call checkout_preview again.");
+    if (!pending || typeof token !== "string" || !tokensEqual(pending.confirmationToken, token)) throw new UserError("Invalid or expired confirmation token; call checkout_preview again.");
     // Consume before the first await (issue #56): one checkout_preview token, one submission.
     this.pending = undefined;
-    if (Date.now() >= pending.expiresAt) throw new Error(`The checkout token expired (tokens are valid for ${MUTATION_TOKEN_TTL_MS / 60_000} minutes); nothing was sent — call checkout_preview again.`);
+    if (Date.now() >= pending.expiresAt) throw new UserError(`The checkout token expired (tokens are valid for ${MUTATION_TOKEN_TTL_MS / 60_000} minutes); nothing was sent — call checkout_preview again.`);
     const selected = await this.api.sendOrder2(deliveryPayment);
     const user = await this.api.sendOrder3(userInfo);
     const approved = await this.api.approveOrder4();

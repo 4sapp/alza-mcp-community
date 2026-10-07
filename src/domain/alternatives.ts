@@ -2,6 +2,7 @@ import type { MobileApi } from "../infra/mobile-api.js";
 import { NotFoundError } from "../infra/errors.js";
 import { log } from "../infra/logger.js";
 import type { Catalog } from "./catalog.js";
+import { availabilityFields } from "./availability.js";
 import type { Product } from "./types.js";
 
 export type AlternativeMode = "cheaper" | "better-specs" | "same-brand";
@@ -48,7 +49,7 @@ export function parseAlternatives(raw: unknown, currency: string): Product[] {
       image: typeof d.img === "string" ? d.img : undefined,
       price,
       currency,
-      availability: typeof d.avail === "string" ? d.avail : undefined,
+      ...availabilityFields(typeof d.avail === "string" ? d.avail : undefined),
       rating: typeof d.rating === "number" && d.rating > 0 ? d.rating : undefined,
       category: typeof d.categoryName === "string" ? d.categoryName : undefined,
     });

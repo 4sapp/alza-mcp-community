@@ -262,6 +262,7 @@ const PRODUCT = z
     originalPrice: z.number().optional(),
     currency: z.string(),
     availability: z.string().optional(),
+    availabilityText: z.string().optional(),
     rating: z.number().optional(),
     brand: z.string().optional(),
     category: z.string().optional(),
@@ -275,7 +276,11 @@ export const SEARCH_PRODUCTS_OUTPUT = z
     query: z.string(),
     total: z.number(),
     page: z.number(),
-    pageSize: z.number(),
+    pageSize: z.number().describe("Cards per rendered Alza result page (the real page capacity), not the requested limit."),
+    /** True when Alza renders more result pages beyond the last one scanned. */
+    hasMore: z.boolean().optional(),
+    /** The `page` value that continues after the last scanned page; present when `hasMore`. */
+    nextPage: z.number().optional(),
     products: z.array(PRODUCT),
     /** Present when a client-side price/rating sort swept multiple pages. */
     candidatesScanned: z.number().optional(),
@@ -341,6 +346,8 @@ export const COMPARE_PRODUCTS_OUTPUT = z
         .passthrough(),
     ),
     rows: z.array(z.object({ name: z.string(), values: z.array(z.string().nullable()) }).passthrough()),
+    /** Requested codes dropped as duplicates of an earlier one. */
+    duplicatesIgnored: z.array(z.string()).optional(),
     summary: z
       .object({
         status: z.enum(["generated", "unavailable", "failed"]),
@@ -483,6 +490,8 @@ export const PC_BUILD_OUTPUT = z
     total: z.number(),
     currency: z.string(),
     unpriced: z.array(z.string()),
+    totalIncomplete: z.boolean().describe("true when total leaves out unpriced parts"),
+    missingRoles: z.array(z.string()).describe("Required roles (cpu, motherboard, ram, psu, case) the build lacks"),
     verdicts: z.array(
       z
         .object({
@@ -494,7 +503,7 @@ export const PC_BUILD_OUTPUT = z
         })
         .passthrough(),
     ),
-    overall: z.enum(["compatible", "incompatible", "needs_review"]),
+    overall: z.enum(["compatible", "incompatible", "needs_review", "no_conflicts_found"]),
     powerEstimate: z.record(z.string(), z.unknown()).optional(),
     notes: z.array(z.string()),
     detailFetches: z.number().int(),
