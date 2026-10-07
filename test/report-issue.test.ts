@@ -55,6 +55,7 @@ describe("redact", () => {
     ["Unicode e-mail", "řeřicha.čech@příklad.cz wrote", "řeřicha"],
     ["local phone (spaced)", "call 777 123 456 now", "777 123 456"],
     ["local phone (contiguous)", "call 777123456 now", "777123456"],
+    ["00-prefixed phone", "call 00420777123456 now", "777123456"],
     ["userId", "userId=U-889900 and user_id: 55", "U-889900"],
     ["invoiceNumber", "invoiceNumber=2026123456", "2026123456"],
     ["commodityClientId", "commodityClientId=99887766", "99887766"],

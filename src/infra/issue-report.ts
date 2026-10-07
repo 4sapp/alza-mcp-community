@@ -85,7 +85,7 @@ const REDACTIONS: Redaction[] = [
   // E-mail addresses, Unicode-aware and including the %40-encoded form seen in URLs.
   [/[\p{L}\p{N}._%+-]+(?:@|%40)[\p{L}\p{N}.-]+\.\p{L}{2,}/giu, "<email>"],
   // Phone numbers with an international prefix (+420 123 456 789, +421123456789).
-  [/\+\d{1,3}[\s-]?\d{3}[\s-]?\d{3}[\s-]?\d{3,4}\b/g, "<phone>"],
+  [/(?:\+|(?<![\w.\/=+-])00)\d{1,3}[\s-]?\d{3}[\s-]?\d{3}[\s-]?\d{3,4}\b/g, "<phone>"],
   // Local 9-digit phone numbers, spaced (777 123 456) or contiguous (777123456).
   [/(?<![\w.\/=+-])\d{3}[ -]\d{3}[ -]\d{3}(?![\w.-])/g, "<phone>"],
   [/(?<![\w.\/=+-])[2-9]\d{8}(?![\w.-])/g, "<phone>"],
