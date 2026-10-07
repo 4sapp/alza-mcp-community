@@ -7,7 +7,7 @@ import { Pickup } from "./domain/pickup.js";
 import { Alternatives } from "./domain/alternatives.js";
 import { Reviews } from "./domain/reviews.js";
 import { AlzaBrowser } from "./infra/browser.js";
-import { AuthenticationError, ConfigurationError, NotFoundError, OutcomeUnknownError, UpstreamError, UserError, truncateInput } from "./infra/errors.js";
+import { AlzaRejectedError, AuthenticationError, ConfigurationError, NotFoundError, OutcomeUnknownError, UpstreamError, UserError, truncateInput } from "./infra/errors.js";
 import { log } from "./infra/logger.js";
 import { findProductPrompt } from "./prompts/find-product.js";
 import { createProductResource } from "./resources/product.js";
@@ -192,7 +192,8 @@ function isUserError(err: unknown): boolean {
     err instanceof NotFoundError ||
     err instanceof ConfigurationError ||
     err instanceof UserError ||
-    err instanceof AuthenticationError
+    err instanceof AuthenticationError ||
+    err instanceof AlzaRejectedError
   );
 }
 

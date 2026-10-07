@@ -130,7 +130,10 @@ export function formatOrder(env: unknown): string {
   const top = asRecord(env) ?? {};
   const order = asRecord(top.order);
   const lines: string[] = ["# Alza order"];
-  if (order) {
+  if (order && num(order.err) === 1) {
+    // Issue #79: the order read itself carries the rejection (`{order: {err: 1, msg}}`).
+    lines.push("", `Alza rejected the read (err:1): ${str(order.msg) ?? "no message"}.`);
+  } else if (order) {
     const id = scalar(order.orderId) ?? scalar(order.order_id);
     if (id) lines.push(`orderId: ${id}`);
     const status = str(order.orderStatus) ?? str(order.status) ?? str(order.statusDesc);

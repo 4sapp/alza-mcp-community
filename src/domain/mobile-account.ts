@@ -1,5 +1,6 @@
-import { UserError } from "../infra/errors.js";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { z, ZodError } from "zod";
+import { UserError, assertNotRejected } from "../infra/errors.js";
 import type { MobileApi, OAuthStart } from "../infra/mobile-api.js";
 import { APP_ACTION_ROUTE_POLICIES, type AppActionFilePart, type AppActionRoutePolicy, type AppActionValue, type ServerAppAction } from "../infra/app-action.js";
 import { WATCHDOG_ID_RE, parseWatchdogDialog, parseWatchdogList, type WatchdogEntry } from "./watchdog.js";
@@ -24,6 +25,57 @@ export const MUTATION_ACTIONS = [
   // native price/stock watchdog (B9/B9b, live-verified 2026-10-06): typed tools
   "watchdog_set", "watchdog_delete",
 ] as const;
+
+/** How long a `prepare_mutation` / `checkout_preview` token stays valid. */
+export const MUTATION_TOKEN_TTL_MS = 5 * 60 * 1000;
+
+/** Defaults the typed tools' input schemas fill in when an argument is omitted.
+ * They are merged into both the prepared and the presented payload before
+ * hashing, so leaving a defaulted argument out of `prepare_mutation` still
+ * matches the call (kept in sync with the tool schemas by a test). */
+export const MUTATION_PAYLOAD_DEFAULTS: Readonly<Partial<Record<string, Readonly<Record<string, unknown>>>>> = {
+  cancel_order: { reason: 0 },
+  web_place_order: { register_user: false, country_id: 0, quotation: false },
+  web_after_order_payment: { invoice_id: "0" },
+  watchdog_set: { track_stock: true },
+};
+
+/** Stable JSON: object keys sorted, `undefined` members dropped, recursively. */
+function canonicalJson(value: unknown): string {
+  if (value === undefined) return "null";
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
+}
+
+/** SHA-256 over the action and the canonical payload (with the action's schema defaults). */
+export function mutationPayloadHash(action: string, payload: Record<string, unknown>): string {
+  const merged: Record<string, unknown> = { ...(MUTATION_PAYLOAD_DEFAULTS[action] ?? {}) };
+  for (const [k, v] of Object.entries(payload)) if (v !== undefined) merged[k] = v;
+  return createHash("sha256").update(action).update("\0").update(canonicalJson(merged)).digest("hex");
+}
+
+function tokensEqual(a: string, b: string): boolean {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
+}
+
+/** Credential/identity mutations that confirm `user_id` against a fresh
+ * `user_data` read and refuse when the signed-in user id cannot be confirmed. */
+type IdentityCheckedMutation = "change_password" | "email_change" | "phone_change" | "delete_account" | "two_factor_set";
+
+/** Positive numeric `user_id` of a getUserData envelope; undefined otherwise
+ * (anonymous visitor `-1`, missing, malformed). */
+function sessionUserIdFrom(env: unknown): string | undefined {
+  if (!env || typeof env !== "object" || Array.isArray(env)) return undefined;
+  const raw = (env as Record<string, unknown>).user_id;
+  const s = typeof raw === "number" && Number.isSafeInteger(raw) ? String(raw) : typeof raw === "string" ? raw.trim() : "";
+  return /^[1-9]\d{0,15}$/.test(s) ? s : undefined;
+}
 
 const WHITELISTED_MUTATIONS = new Set<string>([
   "create", "rename", "delete", "add", "remove", "move", "set_country", "set_isic",
@@ -171,32 +223,126 @@ function validateListPayload(action: string, payload: Record<string, unknown>): 
   if (action === "send_feedback" && (typeof payload.text !== "string" || typeof payload.info !== "string")) throw new UserError("feedback text and info must be strings");
 }
 
+/** Required `mobile_read` arguments per operation (issue #79). Missing or
+ * non-numeric values are refused before any request, instead of reaching Alza
+ * as `/api/users//…` or `NaN`. Other (optional) args pass through unchanged. */
+const numberAsString = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? String(v) : v);
+const numericStringAsNumber = (v: unknown) => (typeof v === "string" && v.trim() !== "" ? Number(v) : v);
+const readUserId = z.preprocess(numberAsString, z.string({ required_error: "user_id is required (the numeric Alza user id from profile/user_data)", invalid_type_error: "user_id must be the numeric Alza user id from profile/user_data" })
+  .regex(/^\d{1,16}$/, "user_id must be the numeric Alza user id from profile/user_data"));
+const readPositiveInt = (name: string) => z.preprocess(numericStringAsNumber, z.number({ required_error: `${name} is required`, invalid_type_error: `${name} must be a positive integer` })
+  .int(`${name} must be a positive integer`).positive(`${name} must be a positive integer`));
+const readText = (name: string, max = 200) => z.preprocess(numberAsString, z.string({ required_error: `${name} is required`, invalid_type_error: `${name} must be a string` })
+  .min(1, `${name} must be a non-empty string`).max(max, `${name} must be at most ${max} characters`));
+const readFinite = (name: string) => z.preprocess(numericStringAsNumber, z.number({ required_error: `${name} is required`, invalid_type_error: `${name} must be a number` }).finite(`${name} must be a finite number`));
+const READ_REQUIRED_ARGS: Partial<Record<string, z.ZodRawShape>> = {
+  url_info: { url: readText("url", 2000) },
+  legacy_product: { product_id: readPositiveInt("product_id") },
+  router_product: { product_id: readPositiveInt("product_id") },
+  quick_order_summary: { user_id: readUserId, commodity_id: readPositiveInt("commodity_id"), pgrik: readText("pgrik", 64), ucik: readText("ucik", 64) },
+  user_review: { commodity_id: readPositiveInt("commodity_id") },
+  discussion_posts: { commodity_id: readPositiveInt("commodity_id") },
+  premium_trial: { user_id: readUserId },
+  validate_login_name: { email: readText("email", 100) },
+  validate_isic: { card_number: readText("card_number", 64), name: readText("name", 100) },
+  user_navigation: { user_id: readUserId },
+  anonymous_orders: { invoice_number: readText("invoice_number", 64) },
+  anonymous_order: { order_id: readText("order_id", 64) },
+  user_order: { order_id: readText("order_id", 64) },
+  order_part: { order_id: readText("order_id", 64), part_id: readText("part_id", 64) },
+  after_order_payments: { order_id: readText("order_id", 64), part_id: readText("part_id", 64) },
+  commodity_list: { list_id: readPositiveInt("list_id") },
+  alternatives: { commodity_id: readPositiveInt("commodity_id") },
+  branches: { latitude: readFinite("latitude"), longitude: readFinite("longitude") },
+  search: { search_term: readText("search_term", 200) },
+  category: { category_id: readPositiveInt("category_id") },
+  facets: { category_id: readPositiveInt("category_id") },
+  web_after_payment_dialog: { order_id: readText("order_id", 64) },
+};
+
+/** Throws a ZodError (reported as "Invalid arguments — args.<field>: …", no bug-report hint). */
+function validateReadArgs(operation: string, args: Record<string, unknown>): void {
+  const shape = READ_REQUIRED_ARGS[operation];
+  if (!shape) return;
+  const parsed = z.object(shape).passthrough().safeParse(args);
+  if (!parsed.success) {
+    throw new ZodError(parsed.error.issues.map((i) => ({ ...i, path: ["args", ...i.path], message: `${operation}: ${i.message}` })));
+  }
+}
+
 export class MobileAccount {
-  private pending?: MobileCheckoutPreview;
-  private pendingMutation?: { token: string; action: string };
-  constructor(private readonly api: MobileApi) {}
+  private pending?: MobileCheckoutPreview & { expiresAt: number };
+  /** One pending token per action (several actions may be pending at once). */
+  private readonly pendingMutations = new Map<string, { token: string; payloadHash?: string; expiresAt: number }>();
+  /** Numeric user id of the signed-in account, learned from a `user_data` read. */
+  private knownUserId?: string;
+  constructor(private readonly api: MobileApi) {
+    if (api.userId !== undefined && Number.isSafeInteger(api.userId) && api.userId > 0) this.knownUserId = String(api.userId);
+  }
 
   async authStart(): Promise<OAuthStart> { return this.api.startOAuth(); }
   async authDiscovery(): Promise<unknown> { return this.api.discovery(); }
-  async authExchange(code: string, state?: string): Promise<unknown> { return this.api.exchangeOAuthCode(code, state); }
+  async authExchange(code: string, state?: string): Promise<unknown> {
+    // A new sign-in may belong to another account: forget the learned user id.
+    this.knownUserId = undefined;
+    return this.api.exchangeOAuthCode(code, state);
+  }
+
+  /** Remember the signed-in user id from a getUserData envelope. */
+  private learnUserId(env: unknown): unknown {
+    const id = sessionUserIdFrom(env);
+    if (id) this.knownUserId = id;
+    return env;
+  }
+
+  /** `requireUserId` plus a refusal when the id differs from the signed-in
+   * account's id (known once `profile`/`user_data` has been read). */
+  private userIdFor(value: unknown): string {
+    const uid = requireUserId(value);
+    if (this.knownUserId !== undefined && uid !== this.knownUserId) {
+      throw new UserError(`user_id ${uid} is not the signed-in account (profile/user_data reports user_id ${this.knownUserId}); refusing to send it.`);
+    }
+    return uid;
+  }
+
+  /** Credential/identity mutations: confirm `user_id` against a fresh
+   * `user_data` read right before sending. Fails closed — if the signed-in
+   * user id cannot be read, nothing is sent. */
+  private async confirmSessionUserId(value: unknown, action: IdentityCheckedMutation): Promise<string> {
+    const uid = requireUserId(value);
+    let env: unknown;
+    try {
+      env = await this.api.userData();
+    } catch (err) {
+      throw new Error(`${action} refused: could not confirm the signed-in account's user id (user_data read failed: ${err instanceof Error ? err.message : String(err)}). Nothing was sent; check account_status and retry with a new prepare_mutation token.`);
+    }
+    const sessionId = sessionUserIdFrom(env);
+    if (!sessionId) {
+      throw new UserError(`${action} refused: user_data did not report a signed-in user id (anonymous or expired session). Nothing was sent; sign in with auth_start → auth_exchange first.`);
+    }
+    this.knownUserId = sessionId;
+    if (uid !== sessionId) throw new UserError(`${action} refused: user_id ${uid} is not the signed-in account (user_data reports user_id ${sessionId}). Nothing was sent.`);
+    return uid;
+  }
 
   async read(operation: string, args: Record<string, unknown> = {}): Promise<unknown> {
+    validateReadArgs(operation, args);
     switch (operation) {
       case "url_info": return this.api.urlInfo(String(args.url ?? ""));
       case "legacy_product": return this.api.legacyProduct(Number(args.product_id), { pgrik: args.pgrik ? String(args.pgrik) : undefined, ucik: args.ucik ? String(args.ucik) : undefined, country: args.country ? String(args.country) : undefined, electronicContentOnly: args.electronic_content_only === undefined ? undefined : Boolean(args.electronic_content_only) });
       case "router_product": return this.api.routerProduct(Number(args.product_id), { pgrik: args.pgrik ? String(args.pgrik) : undefined, ucik: args.ucik ? String(args.ucik) : undefined, country: args.country ? String(args.country) : undefined, electronicContentOnly: args.electronic_content_only === undefined ? undefined : Boolean(args.electronic_content_only) });
-      case "quick_order_summary": return this.api.quickOrderSummary(String(args.user_id ?? ""), Number(args.commodity_id), { pgrik: args.pgrik ? String(args.pgrik) : undefined, ucik: args.ucik ? String(args.ucik) : undefined });
+      case "quick_order_summary": return this.api.quickOrderSummary(this.userIdFor(args.user_id), Number(args.commodity_id), { pgrik: args.pgrik ? String(args.pgrik) : undefined, ucik: args.ucik ? String(args.ucik) : undefined });
       case "user_review": return this.api.commodityReviews(Number(args.commodity_id));
       case "discussion_posts": return this.api.discussionPosts(Number(args.commodity_id), Number(args.page_start ?? 0), { parentId: args.parent_id === undefined ? undefined : Number(args.parent_id), showOnlyWithoutAnswer: args.show_only_without_answer === undefined ? undefined : Boolean(args.show_only_without_answer), orderBy: args.order_by === undefined ? undefined : Number(args.order_by) });
-      case "premium_trial": return this.api.premiumTrial(String(args.user_id ?? ""));
+      case "premium_trial": return this.api.premiumTrial(this.userIdFor(args.user_id));
       case "validate_login_name": return this.api.validateLoginName(String(args.email ?? ""));
       case "o3_info": return this.api.o3Info();
       case "validate_isic": return this.api.validateIsic({ cardNumber: String(args.card_number ?? ""), name: String(args.name ?? "") });
       case "order_helpdesk_questions": return this.api.orderHelpdeskQuestions();
-      case "user_data": return this.api.userData();
+      case "user_data": return this.learnUserId(await this.api.userData());
       case "contacts": return this.api.contacts();
       case "visitor_navigation": return this.api.visitorNavigation();
-      case "user_navigation": return this.api.userNavigation(String(args.user_id ?? ""), args.eshop_url ? String(args.eshop_url) : undefined);
+      case "user_navigation": return this.api.userNavigation(this.userIdFor(args.user_id), args.eshop_url ? String(args.eshop_url) : undefined);
       case "catalog_user_navigation": return this.api.catalogUserNavigation();
       case "anonymous_orders": return this.api.anonymousOrders(String(args.invoice_number ?? ""));
       case "anonymous_order": return this.api.anonymousOrder(String(args.order_id ?? ""));
@@ -252,12 +398,12 @@ export class MobileAccount {
   }
 
   /** Typed user-management reads (profile/address book, contacts). */
-  async profile(): Promise<unknown> { return this.api.userData(); }
+  async profile(): Promise<unknown> { return this.learnUserId(await this.api.userData()); }
   async contacts(): Promise<unknown> { return this.api.contacts(); }
 
   /** Registration (APK `Register` DTO) — high-impact, one-time token. */
   async register(payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("register", token);
+    this.assertMutationToken("register", token, payload);
     validateRegisterPayload(payload);
     const result = await this.api.register({ email: payload.email as string, phone: payload.phone as string, pwd: payload.pwd as string, code: optionalString(payload, "code", 32) });
     return result;
@@ -267,11 +413,22 @@ export class MobileAccount {
    * caller's first `await` (issue #56): concurrent calls carrying the same
    * token cannot all pass, and a failed or rejected attempt also spends it —
    * a retry needs a fresh `prepare_mutation`. A token presented for a
-   * different action is not consumed. */
-  private assertMutationToken(action: string, token: string, message = `Invalid or expired ${action} confirmation token; call prepare_mutation again.`): void {
-    const pending = this.pendingMutation;
-    if (!pending || pending.action !== action || pending.token !== token) throw new UserError(message);
-    this.pendingMutation = undefined;
+   * different action is not consumed.
+   *
+   * Issue #79: each action has its own pending slot; a token expires after
+   * MUTATION_TOKEN_TTL_MS; and a token prepared with a payload is accepted only
+   * for the same payload (canonical SHA-256, see `mutationPayloadHash`). An
+   * expired or payload-mismatched token is spent, so nothing is sent. */
+  private assertMutationToken(action: string, token: string, bound: Record<string, unknown>, message = `Invalid or expired ${action} confirmation token; call prepare_mutation again.`): void {
+    const pending = this.pendingMutations.get(action);
+    if (!pending || typeof token !== "string" || !tokensEqual(pending.token, token)) throw new UserError(message);
+    this.pendingMutations.delete(action);
+    if (Date.now() >= pending.expiresAt) {
+      throw new UserError(`The ${action} confirmation token expired (tokens are valid for ${MUTATION_TOKEN_TTL_MS / 60_000} minutes); nothing was sent — call prepare_mutation again.`);
+    }
+    if (pending.payloadHash !== undefined && mutationPayloadHash(action, bound) !== pending.payloadHash) {
+      throw new UserError(`The ${action} arguments differ from the payload confirmed with prepare_mutation; nothing was sent and the token is spent. Call prepare_mutation again with exactly the arguments you will pass (all except confirmation_token).`);
+    }
   }
 
   private actionFrom(action: Record<string, unknown>): ServerAppAction {
@@ -295,7 +452,7 @@ export class MobileAccount {
   /** Address-book create/edit (dynamic form action from the profile response). */
   async addressUpsert(kind: "create" | "edit", action: Record<string, unknown>, payload: Record<string, unknown>, token: string): Promise<unknown> {
     const op = kind === "create" ? "address_create" : "address_edit";
-    this.assertMutationToken(op, token);
+    this.assertMutationToken(op, token, { kind, action, ...payload });
     validateAddressPayload(payload);
     const extra: AppActionValue[] = [
       { name: "name", value: payload.name, kind: "text" },
@@ -317,7 +474,7 @@ export class MobileAccount {
 
   /** Address-book delete (per-address delete action from the profile response). */
   async addressDelete(action: Record<string, unknown>, payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("address_delete", token);
+    this.assertMutationToken("address_delete", token, { action, ...payload });
     const addressId = requireInt(payload, "address_id");
     const result = await this.executeAction(this.actionFrom(action), APP_ACTION_ROUTE_POLICIES.addressWrite, { token, extraValues: [{ name: "id", value: addressId, kind: "integer" }] });
     return result;
@@ -342,7 +499,7 @@ export class MobileAccount {
   async orderSearch(searchTerm: string, userId?: string): Promise<unknown> {
     const term = String(searchTerm ?? "").trim();
     if (term.length === 0 || term.length > 64) throw new UserError("search_term must be 1-64 characters (e.g. an order number like '1058 423 434')");
-    const uid = requireUserId(userId ?? this.api.userId);
+    const uid = this.userIdFor(userId ?? this.api.userId);
     return this.api.orderSearch(uid, term);
   }
 
@@ -351,7 +508,7 @@ export class MobileAccount {
    * Read-only (no token). `hide_cancelled_orders` mirrors the app's
    * "Skrýt zrušené" toggle; the APK form default is `false` (include cancelled). */
   async orderArchive(opts: { user_id?: string; hide_cancelled_orders?: boolean; limit?: number } = {}): Promise<unknown> {
-    const uid = requireUserId(opts.user_id ?? this.api.userId);
+    const uid = this.userIdFor(opts.user_id ?? this.api.userId);
     const hide = opts.hide_cancelled_orders ?? false;
     if (typeof hide !== "boolean") throw new UserError("hide_cancelled_orders must be a boolean");
     let limit: number | undefined;
@@ -380,7 +537,7 @@ export class MobileAccount {
    * (`gdprInfoAction` + `deleteAccountAction`) plus the export dialog
    * (`AccountGdprDialog` with `emailInfo` + `sendGdprInfoForm`). Read-only. */
   async gdprInfo(userId: string): Promise<unknown> {
-    const uid = requireUserId(userId);
+    const uid = this.userIdFor(userId);
     const personalDetails = await this.api.userAccountPersonalDetails(uid);
     const pd = (personalDetails ?? {}) as Record<string, unknown>;
     const action = (pd.gdprInfoAction ?? {}) as Record<string, unknown>;
@@ -398,13 +555,13 @@ export class MobileAccount {
   /** A17 (2026-09-22): GDPR export trigger (low-risk mutation, one-time token).
    * Sends the XML personal-data export to the account's own login email. */
   async gdprExport(payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("gdpr_export", token);
+    this.assertMutationToken("gdpr_export", token, payload);
     return this.sendGdprExport(payload);
   }
 
   /** Token already consumed by the caller (`gdprExport` or `mutateList`). */
   private async sendGdprExport(payload: Record<string, unknown>): Promise<unknown> {
-    const uid = requireUserId(payload.user_id);
+    const uid = this.userIdFor(payload.user_id);
     const result = await this.api.gdprExport(uid);
     return result ?? { accepted: true };
   }
@@ -412,24 +569,26 @@ export class MobileAccount {
   /** A14 (2026-09-22): change the account password (credential mutation, one-time
    * token). Logs the user out of every device on success. */
   async changePassword(payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("change_password", token);
-    const uid = requireUserId(payload.user_id);
+    this.assertMutationToken("change_password", token, payload);
+    requireUserId(payload.user_id);
     const oldPassword = requireString(payload, "old_password", 64);
     const newPassword = requireString(payload, "new_password", 64);
     const confirm = requireString(payload, "new_password_confirm", 64);
     if (newPassword.length < 8) throw new UserError("new_password must be at least 8 characters");
     if (newPassword !== confirm) throw new UserError("new_password and new_password_confirm must match");
     if (newPassword === oldPassword) throw new UserError("new_password must differ from old_password");
+    const uid = await this.confirmSessionUserId(payload.user_id, "change_password");
     const result = await this.api.changePassword(uid, oldPassword, newPassword);
     return result ?? { changed: true };
   }
 
   /** A15 (2026-09-22): enable/disable SMS two-factor (one-time token). */
   async twoFactorSet(payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("two_factor_set", token);
-    const uid = requireUserId(payload.user_id);
+    this.assertMutationToken("two_factor_set", token, payload);
+    requireUserId(payload.user_id);
     const enabled = payload.enabled;
     if (typeof enabled !== "boolean") throw new UserError("enabled must be a boolean (true to turn 2FA on, false to turn it off)");
+    const uid = await this.confirmSessionUserId(payload.user_id, "two_factor_set");
     const result = await this.api.setTwoFactor(uid, enabled);
     return result ?? { enabled };
   }
@@ -438,28 +597,31 @@ export class MobileAccount {
    * Accepts separators (`+420 777 123 456`); sends the compact international
    * form (the account's stored shape, e.g. `+420601234567`). */
   async phoneChange(payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("phone_change", token);
-    const uid = requireUserId(payload.user_id);
+    this.assertMutationToken("phone_change", token, payload);
+    requireUserId(payload.user_id);
     const phone = requireString(payload, "phone", 24).replace(/[\s-]/g, "");
     if (!/^\+\d{1,3}\d{5,15}$/.test(phone)) throw new UserError("phone must be an international number, e.g. '+420777123456' (separators allowed)");
+    const uid = await this.confirmSessionUserId(payload.user_id, "phone_change");
     const result = await this.api.changePhone(uid, phone);
     return result ?? { phone };
   }
 
   /** A16 bonus (2026-09-22): change the contact email (one-time token). */
   async emailChange(payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("email_change", token);
-    const uid = requireUserId(payload.user_id);
+    this.assertMutationToken("email_change", token, payload);
+    requireUserId(payload.user_id);
     const email = requireString(payload, "email", 100);
     if (!EMAIL_RE.test(email)) throw new UserError("email must be a valid address");
+    const uid = await this.confirmSessionUserId(payload.user_id, "email_change");
     const result = await this.api.changeEmail(uid, email);
     return result ?? { email };
   }
 
   /** A18 (2026-09-22): delete the account (irreversible, one-time token). */
   async deleteAccount(payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("delete_account", token);
-    const uid = requireUserId(payload.user_id);
+    this.assertMutationToken("delete_account", token, payload);
+    requireUserId(payload.user_id);
+    const uid = await this.confirmSessionUserId(payload.user_id, "delete_account");
     const result = await this.api.deleteAccount(uid);
     return result ?? { deleted: true };
   }
@@ -498,12 +660,15 @@ export class MobileAccount {
   async afterOrderPayments(orderId: string, partId: string): Promise<unknown> {
     if (typeof orderId !== "string" || orderId.length === 0 || orderId.length > 64) throw new UserError("order_id must be a non-empty string (max 64)");
     if (typeof partId !== "string" || partId.length === 0 || partId.length > 64) throw new UserError("part_id must be a non-empty string (max 64)");
-    return this.api.afterOrderPayments(orderId, partId);
+    // Issue #79: a 200 `err:1` envelope ("order does not exist") is a failure, not a list.
+    const res = await this.api.afterOrderPayments(orderId, partId);
+    assertNotRejected(res);
+    return res;
   }
 
   /** After-order payment execution (APK `AfterOrderRequestBody`) — money movement, one-time token. */
   async payAfterOrder(payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("after_order_payment", token);
+    this.assertMutationToken("after_order_payment", token, payload);
     validateAfterOrderPaymentPayload(payload);
     const result = await this.api.afterOrderPayment({
       id: payload.order_id as string,
@@ -605,7 +770,7 @@ export class MobileAccount {
    * 113-gate retry → CheckOrder4 → SendOrder4). High-impact, one-time token.
    * The `save2` state skips the AlzaPlus/leasing gates (subscription/leasing id 0). */
   async webPlaceOrder(payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("web_place_order", token);
+    this.assertMutationToken("web_place_order", token, payload);
     const deliveryId = requireInt(payload, "delivery_id");
     if (deliveryId < 1) throw new UserError("delivery_id must be a positive integer");
     const groupId = optionalInt(payload, "delivery_group_id");
@@ -695,7 +860,7 @@ export class MobileAccount {
    * the verified real-payment path (2026-09-06: MojePlatba → KB SSO).
    * Money movement, high-impact, one-time token. */
   async webAfterOrderPayment(payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("web_after_order_payment", token);
+    this.assertMutationToken("web_after_order_payment", token, payload);
     const orderId = requireString(payload, "order_id", 64);
     const paymentId = requireInt(payload, "payment_id");
     if (paymentId < 1) throw new UserError("payment_id must be a positive integer");
@@ -716,7 +881,7 @@ export class MobileAccount {
     if (typeof orderId !== "string" || orderId.length === 0 || orderId.length > 64) throw new UserError("order_id must be a non-empty string (max 64)");
     if (partId !== undefined && (typeof partId !== "string" || partId.length === 0 || partId.length > 64)) throw new UserError("part_id must be a non-empty string (max 64)");
     // Issue #60: the route segment is the numeric user id, never the 0/1 flag.
-    const uid = requireUserId(userId ?? this.api.userId);
+    const uid = this.userIdFor(userId ?? this.api.userId);
     if (uid === "0" || uid === "1") throw new UserError("user_id must be the numeric Alza user id from profile/user_data, not the old 0/1 user_flag");
     const order = await this.api.userOrder(uid, orderId, initialCreated);
     if (partId === undefined) return { order };
@@ -730,7 +895,7 @@ export class MobileAccount {
    * order re-read may briefly show a "processing changes" transitional state
    * before settling to cancelled. */
   async cancelOrder(orderId: string, hash: string, partId: string, reason: number, token: string): Promise<unknown> {
-    this.assertMutationToken("cancel_order", token);
+    this.assertMutationToken("cancel_order", token, { order_id: orderId, hash, part_id: partId, reason });
     if (typeof orderId !== "string" || orderId.length === 0 || orderId.length > 64) throw new UserError("order_id must be a non-empty string (max 64)");
     if (typeof hash !== "string" || hash.length === 0 || hash.length > 128) throw new UserError("hash must be a non-empty string (max 128)");
     if (typeof partId !== "string" || partId.length === 0 || partId.length > 64) throw new UserError("part_id must be a non-empty string (max 64)");
@@ -742,7 +907,7 @@ export class MobileAccount {
 
   /** Reviews / complaints / subscriptions / attachments (server-provided AppAction forms). */
   async reviewSubmit(action: Record<string, unknown>, payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("review_submit", token);
+    this.assertMutationToken("review_submit", token, { action, ...payload });
     const rating = requireInt(payload, "rating");
     if (rating < 1 || rating > 5) throw new UserError("rating must be an integer between 1 and 5");
     const text = optionalString(payload, "text", 10000);
@@ -765,7 +930,7 @@ export class MobileAccount {
   /** K1 typed read (issue #72): no tool emits the AppAction `complaintClaims`
    * needs, so the list is read directly by user id + scope. */
   async warrantyClaims(userId: string | undefined, scope: unknown = "active"): Promise<unknown> {
-    const uid = requireUserId(userId ?? this.api.userId);
+    const uid = this.userIdFor(userId ?? this.api.userId);
     if (scope !== "active" && scope !== "archive") throw new UserError("scope must be 'active' or 'archive'");
     return this.api.warrantyClaims(uid, scope);
   }
@@ -777,7 +942,7 @@ export class MobileAccount {
 
   /** S1 typed read (issue #72): the navigation's `userSubscription` section, by user id. */
   async userSubscription(userId: string | undefined): Promise<unknown> {
-    return this.api.userSubscription(requireUserId(userId ?? this.api.userId));
+    return this.api.userSubscription(this.userIdFor(userId ?? this.api.userId));
   }
 
   /** Issue #72: claim lists and navigation return plain HATEOAS links
@@ -801,7 +966,7 @@ export class MobileAccount {
   }
 
   async subscriptionActivate(action: Record<string, unknown>, payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("subscription_activate", token);
+    this.assertMutationToken("subscription_activate", token, { action, ...payload });
     const values = payload.values;
     if (values !== undefined && !Array.isArray(values)) throw new UserError("values must be an array of {name, value, kind?}");
     const extra = values === undefined ? undefined : validateTypedValues(values);
@@ -810,7 +975,7 @@ export class MobileAccount {
   }
 
   async subscriptionUpdateInstallment(action: Record<string, unknown>, payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("subscription_update_installment", token);
+    this.assertMutationToken("subscription_update_installment", token, { action, ...payload });
     const values = payload.values;
     if (values !== undefined && !Array.isArray(values)) throw new UserError("values must be an array of {name, value, kind?}");
     const extra = values === undefined ? undefined : validateTypedValues(values);
@@ -820,7 +985,7 @@ export class MobileAccount {
 
   /** Attachment upload (multipart AppAction, one-time token). */
   async uploadAttachment(action: Record<string, unknown>, payload: Record<string, unknown>, token: string): Promise<unknown> {
-    this.assertMutationToken("attachment_upload", token);
+    this.assertMutationToken("attachment_upload", token, { action, ...payload });
     if (!Array.isArray(payload.files)) throw new UserError("files must be an array of file parts");
     const fileParts = validateFileParts(payload.files as Array<Record<string, unknown>>);
     const values = payload.values;
@@ -832,7 +997,7 @@ export class MobileAccount {
 
   /** B9a (2026-10-06): the user's watchdogs, normalised (no email in output). */
   async watchdogList(userId: unknown, limit?: number): Promise<{ count: number; has_more: boolean; empty_message: string | null; items: WatchdogEntry[] }> {
-    const uid = requireUserId(userId);
+    const uid = this.userIdFor(userId);
     if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 100)) throw new UserError("limit must be an integer between 1 and 100");
     const parsed = parseWatchdogList(await this.api.watchdogList(uid, limit));
     return { count: parsed.items.length, has_more: parsed.hasMore, empty_message: parsed.emptyMessage, items: parsed.items };
@@ -842,8 +1007,8 @@ export class MobileAccount {
    * (one-time token). Refuses when one already exists for the product — there
    * is no live-verified update path, so delete-then-set is the supported flow. */
   async watchdogSet(payload: Record<string, unknown>, token: string): Promise<Record<string, unknown>> {
-    this.assertMutationToken("watchdog_set", token);
-    const uid = requireUserId(payload.user_id);
+    this.assertMutationToken("watchdog_set", token, payload);
+    const uid = this.userIdFor(payload.user_id);
     const commodityId = requireInt(payload, "commodity_id");
     if (commodityId < 1) throw new UserError("commodity_id must be a positive integer");
     const trackStock = payload.track_stock === undefined ? true : payload.track_stock;
@@ -870,8 +1035,8 @@ export class MobileAccount {
   /** B9b (2026-10-06): delete a watchdog by id (from watchdog_list) or by the
    * product it watches (resolved through the dialog's deleteAction). One-time token. */
   async watchdogDelete(payload: Record<string, unknown>, token: string): Promise<Record<string, unknown>> {
-    this.assertMutationToken("watchdog_delete", token);
-    const uid = requireUserId(payload.user_id);
+    this.assertMutationToken("watchdog_delete", token, payload);
+    const uid = this.userIdFor(payload.user_id);
     let watchdogId: string | undefined;
     let commodityId: number | undefined;
     if (payload.watchdog_id !== undefined && payload.watchdog_id !== null) {
@@ -889,16 +1054,23 @@ export class MobileAccount {
     return { deleted: true, watchdog_id: watchdogId, ...(commodityId === undefined ? {} : { commodity_id: commodityId }) };
   }
 
-  prepareMutation(action: string): { action: string; confirmationToken: string } {
+  /** Issues a one-time token for `action`, valid for MUTATION_TOKEN_TTL_MS.
+   * With `payload`, the token is bound to it: the mutation call must carry the
+   * same arguments (the `prepare_mutation` tool always passes one). Preparing
+   * the same action again replaces that action's earlier token; tokens for
+   * other actions stay valid. */
+  prepareMutation(action: string, payload?: Record<string, unknown>): { action: string; confirmationToken: string; expiresAt: string; payloadBound: boolean } {
     if (!(MUTATION_ACTIONS as readonly string[]).includes(action)) throw new UserError(`Unknown mutation action: ${action}`);
+    if (payload !== undefined && (payload === null || typeof payload !== "object" || Array.isArray(payload))) throw new UserError("payload must be a JSON object");
     const confirmationToken = randomBytes(24).toString("hex");
-    this.pendingMutation = { action, token: confirmationToken };
-    return { action, confirmationToken };
+    const expiresAt = Date.now() + MUTATION_TOKEN_TTL_MS;
+    this.pendingMutations.set(action, { token: confirmationToken, payloadHash: payload === undefined ? undefined : mutationPayloadHash(action, payload), expiresAt });
+    return { action, confirmationToken, expiresAt: new Date(expiresAt).toISOString(), payloadBound: payload !== undefined };
   }
 
   async mutateList(action: string, token: string, payload: Record<string, unknown>): Promise<unknown> {
     if (!WHITELISTED_MUTATIONS.has(action)) throw new UserError(`Mutation ${action} is not a whitelisted low-risk mutation; use the matching typed tool instead.`);
-    this.assertMutationToken(action, token, "Invalid or expired mutation confirmation token; call prepare_mutation again.");
+    this.assertMutationToken(action, token, payload, "Invalid or expired mutation confirmation token; call prepare_mutation again.");
     validateListPayload(action, payload);
     const result = action === "create" ? await this.api.createCommodityList(payload)
       : action === "rename" ? await this.api.renameCommodityList(payload)
@@ -938,14 +1110,16 @@ export class MobileAccount {
     const checkoutState = await this.api.sendOrder1();
     const deliveryPaymentGroups = await this.api.deliveryPaymentGroups(selectedDeliveryOptionId);
     const preview = { cart: await this.cart(), deliveryPaymentGroups, checkoutState, confirmationToken: randomBytes(24).toString("hex") };
-    this.pending = preview;
+    this.pending = { ...preview, expiresAt: Date.now() + MUTATION_TOKEN_TTL_MS };
     return preview;
   }
 
   async submitOrder(token: string, deliveryPayment: Record<string, unknown>, userInfo: Record<string, unknown>, completeOrder: Record<string, unknown>): Promise<unknown> {
-    if (!this.pending || this.pending.confirmationToken !== token) throw new UserError("Invalid or expired confirmation token; call checkout_preview again.");
+    const pending = this.pending;
+    if (!pending || typeof token !== "string" || !tokensEqual(pending.confirmationToken, token)) throw new UserError("Invalid or expired confirmation token; call checkout_preview again.");
     // Consume before the first await (issue #56): one checkout_preview token, one submission.
     this.pending = undefined;
+    if (Date.now() >= pending.expiresAt) throw new UserError(`The checkout token expired (tokens are valid for ${MUTATION_TOKEN_TTL_MS / 60_000} minutes); nothing was sent — call checkout_preview again.`);
     const selected = await this.api.sendOrder2(deliveryPayment);
     const user = await this.api.sendOrder3(userInfo);
     const approved = await this.api.approveOrder4();

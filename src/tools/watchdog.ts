@@ -110,7 +110,7 @@ export function createWatchdogTools(deps: ToolDeps): RegisterableTool[] {
             commodity_id: commodityId.optional().describe("Product id whose watchdog should be removed. Used when `watchdog_id` is omitted."),
             confirmation_token: confirmationToken,
           },
-          annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
+          annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: true, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["watchdog_delete"],
         },
         async (args) => wrap("watchdog_delete", async () => {

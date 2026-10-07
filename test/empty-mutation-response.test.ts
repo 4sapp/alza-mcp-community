@@ -41,8 +41,8 @@ async function connect() {
   return client;
 }
 
-async function token(client: Client, action: string): Promise<string> {
-  const res = await client.callTool({ name: "prepare_mutation", arguments: { action } });
+async function token(client: Client, action: string, payload: Record<string, unknown>): Promise<string> {
+  const res = await client.callTool({ name: "prepare_mutation", arguments: { action, payload } });
   return (res.structuredContent as { confirmationToken: string }).confirmationToken;
 }
 
@@ -62,7 +62,7 @@ describe("non-object 2xx bodies are reported as accepted, not as errors (#63)", 
       calls.length = 0;
       const client = await connect();
       const action = (href: string) => ({ form: { meta: { href, method: "POST", rel: ["form"] }, values: [] } });
-      // [tool, prepare_mutation action, arguments]; one token slot, so prepare right before each call.
+      // [tool, prepare_mutation action, arguments]; each token is bound to its call's arguments (#79).
       const runs: Array<[string, string, Record<string, unknown>]> = [
         ["pay_after_order", "after_order_payment", { order_id: "O1", invoice_number: "I1", payment_id: 7 }],
         ["address_delete", "address_delete", { action: action("/api/users/1/addresses/4/delete"), address_id: 4 }],
@@ -70,7 +70,7 @@ describe("non-object 2xx bodies are reported as accepted, not as errors (#63)", 
         ["mutate_list", "coupon_add", { action: "coupon_add", payload: { coupon: "SAVE10" } }],
       ];
       for (const [name, prepared, args] of runs) {
-        const res = await client.callTool({ name, arguments: { ...args, confirmation_token: await token(client, prepared) } });
+        const res = await client.callTool({ name, arguments: { ...args, confirmation_token: await token(client, prepared, name === "mutate_list" ? (args.payload as Record<string, unknown>) : args) } });
         expect(res.isError, `${name}: ${JSON.stringify(res.content)}`).toBeFalsy();
         const sc = res.structuredContent as Record<string, unknown>;
         expect(sc.accepted).toBe(true);
@@ -94,7 +94,7 @@ describe("non-object 2xx bodies are reported as accepted, not as errors (#63)", 
     installFetch();
     upstream = () => new Response(JSON.stringify({ err: 0, msg: null, data: { id: 1 } }), { status: 200 });
     const client = await connect();
-    const res = await client.callTool({ name: "pay_after_order", arguments: { order_id: "O1", invoice_number: "I1", payment_id: 7, confirmation_token: await token(client, "after_order_payment") } });
+    const res = await client.callTool({ name: "pay_after_order", arguments: { order_id: "O1", invoice_number: "I1", payment_id: 7, confirmation_token: await token(client, "after_order_payment", { order_id: "O1", invoice_number: "I1", payment_id: 7 }) } });
     expect(res.isError).toBeFalsy();
     expect(res.structuredContent).toEqual({ err: 0, msg: null, data: { id: 1 } });
   });
