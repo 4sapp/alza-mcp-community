@@ -254,14 +254,18 @@ export class MobileAccount {
     this.assertMutationToken("register", token);
     validateRegisterPayload(payload);
     const result = await this.api.register({ email: payload.email as string, phone: payload.phone as string, pwd: payload.pwd as string, code: optionalString(payload, "code", 32) });
-    this.pendingMutation = undefined;
     return result;
   }
 
-  private assertMutationToken(action: string, token: string): void {
-    if (!this.pendingMutation || this.pendingMutation.action !== action || this.pendingMutation.token !== token) {
-      throw new Error(`Invalid or expired ${action} confirmation token; call prepare_mutation again.`);
-    }
+  /** Checks AND consumes the pending one-time token synchronously, before the
+   * caller's first `await` (issue #56): concurrent calls carrying the same
+   * token cannot all pass, and a failed or rejected attempt also spends it —
+   * a retry needs a fresh `prepare_mutation`. A token presented for a
+   * different action is not consumed. */
+  private assertMutationToken(action: string, token: string, message = `Invalid or expired ${action} confirmation token; call prepare_mutation again.`): void {
+    const pending = this.pendingMutation;
+    if (!pending || pending.action !== action || pending.token !== token) throw new Error(message);
+    this.pendingMutation = undefined;
   }
 
   private actionFrom(action: Record<string, unknown>): ServerAppAction {
@@ -301,7 +305,6 @@ export class MobileAccount {
     const addressId = optionalInt(payload, "address_id");
     if (kind === "edit" && addressId !== undefined) extra.push({ name: "id", value: addressId, kind: "integer" });
     const result = await this.executeAction(this.actionFrom(action), { token, extraValues: extra });
-    this.pendingMutation = undefined;
     return result;
   }
 
@@ -310,7 +313,6 @@ export class MobileAccount {
     this.assertMutationToken("address_delete", token);
     const addressId = requireInt(payload, "address_id");
     const result = await this.executeAction(this.actionFrom(action), { token, extraValues: [{ name: "id", value: addressId, kind: "integer" }] });
-    this.pendingMutation = undefined;
     return result;
   }
 
@@ -382,9 +384,13 @@ export class MobileAccount {
    * Sends the XML personal-data export to the account's own login email. */
   async gdprExport(payload: Record<string, unknown>, token: string): Promise<unknown> {
     this.assertMutationToken("gdpr_export", token);
+    return this.sendGdprExport(payload);
+  }
+
+  /** Token already consumed by the caller (`gdprExport` or `mutateList`). */
+  private async sendGdprExport(payload: Record<string, unknown>): Promise<unknown> {
     const uid = requireUserId(payload.user_id);
     const result = await this.api.gdprExport(uid);
-    this.pendingMutation = undefined;
     return result ?? { accepted: true };
   }
 
@@ -400,7 +406,6 @@ export class MobileAccount {
     if (newPassword !== confirm) throw new Error("new_password and new_password_confirm must match");
     if (newPassword === oldPassword) throw new Error("new_password must differ from old_password");
     const result = await this.api.changePassword(uid, oldPassword, newPassword);
-    this.pendingMutation = undefined;
     return result ?? { changed: true };
   }
 
@@ -411,7 +416,6 @@ export class MobileAccount {
     const enabled = payload.enabled;
     if (typeof enabled !== "boolean") throw new Error("enabled must be a boolean (true to turn 2FA on, false to turn it off)");
     const result = await this.api.setTwoFactor(uid, enabled);
-    this.pendingMutation = undefined;
     return result ?? { enabled };
   }
 
@@ -424,7 +428,6 @@ export class MobileAccount {
     const phone = requireString(payload, "phone", 24).replace(/[\s-]/g, "");
     if (!/^\+\d{1,3}\d{5,15}$/.test(phone)) throw new Error("phone must be an international number, e.g. '+420777123456' (separators allowed)");
     const result = await this.api.changePhone(uid, phone);
-    this.pendingMutation = undefined;
     return result ?? { phone };
   }
 
@@ -435,7 +438,6 @@ export class MobileAccount {
     const email = requireString(payload, "email", 100);
     if (!EMAIL_RE.test(email)) throw new Error("email must be a valid address");
     const result = await this.api.changeEmail(uid, email);
-    this.pendingMutation = undefined;
     return result ?? { email };
   }
 
@@ -444,7 +446,6 @@ export class MobileAccount {
     this.assertMutationToken("delete_account", token);
     const uid = requireUserId(payload.user_id);
     const result = await this.api.deleteAccount(uid);
-    this.pendingMutation = undefined;
     return result ?? { deleted: true };
   }
 
@@ -493,7 +494,6 @@ export class MobileAccount {
       cardId: optionalInt(payload, "card_id"),
       deviceFingerprint: optionalString(payload, "device_fingerprint", 128),
     });
-    this.pendingMutation = undefined;
     return result;
   }
 
@@ -647,7 +647,6 @@ export class MobileAccount {
     checkStep("CheckOrder4", checkRes);
     const sendRes = await this.api.webWcfStep("SendOrder4", send4);
     checkStep("SendOrder4", sendRes);
-    this.pendingMutation = undefined;
     const detail = (sendRes.GetOrderDetailAction ?? {}) as Record<string, unknown>;
     const webLink = typeof detail.webLink === "string" ? detail.webLink : typeof detail.href === "string" ? detail.href : undefined;
     // Live behavior (2026-09-06 and 2026-09-08): the top-level `OrderId` field of
@@ -691,7 +690,6 @@ export class MobileAccount {
       smsCode: null, smsId: 0, isTrusted: false,
       amountToPay: price ?? null, headerId: null, orderPaymentId: "0",
     });
-    this.pendingMutation = undefined;
     return res;
   }
 
@@ -719,7 +717,6 @@ export class MobileAccount {
     if (!Number.isInteger(reason) || reason < 0 || reason > 5) throw new Error("reason must be an integer between 0 and 5");
     await this.api.orderCancelForm(orderId, hash, partId);
     await this.api.orderCancel(orderId, hash, partId, reason);
-    this.pendingMutation = undefined;
     return { accepted: true, order_id: orderId, part_id: partId, reason };
   }
 
@@ -737,7 +734,6 @@ export class MobileAccount {
       extra.push(...validateTypedValues(values));
     }
     const result = await this.executeAction(this.actionFrom(action), { token, extraValues: extra });
-    this.pendingMutation = undefined;
     return result;
   }
 
@@ -755,7 +751,6 @@ export class MobileAccount {
     if (values !== undefined && !Array.isArray(values)) throw new Error("values must be an array of {name, value, kind?}");
     const extra = values === undefined ? undefined : validateTypedValues(values);
     const result = await this.executeAction(this.actionFrom(action), { token, extraValues: extra });
-    this.pendingMutation = undefined;
     return result;
   }
 
@@ -765,7 +760,6 @@ export class MobileAccount {
     if (values !== undefined && !Array.isArray(values)) throw new Error("values must be an array of {name, value, kind?}");
     const extra = values === undefined ? undefined : validateTypedValues(values);
     const result = await this.executeAction(this.actionFrom(action), { token, extraValues: extra });
-    this.pendingMutation = undefined;
     return result;
   }
 
@@ -778,7 +772,6 @@ export class MobileAccount {
     if (values !== undefined && !Array.isArray(values)) throw new Error("values must be an array of {name, value, kind?}");
     const extra = values === undefined ? undefined : validateTypedValues(values);
     const result = await this.executeAction(this.actionFrom(action), { token, extraValues: extra, files: fileParts });
-    this.pendingMutation = undefined;
     return result;
   }
 
@@ -808,7 +801,6 @@ export class MobileAccount {
     if (!dialog.email) throw new Error("Alza's watchdog form did not pre-fill the account email; is the session authenticated? (check account_status)");
     if (maxPrice !== undefined && dialog.priceMax !== null && maxPrice >= dialog.priceMax) throw new Error(`max_price must be below the current price (${dialog.priceMax} Kč)`);
     const created = (await this.api.watchdogCreate(uid, { commodityId, email: dialog.email, isTrackingStock: trackStock, price: maxPrice ?? null })) as Record<string, unknown> | null;
-    this.pendingMutation = undefined;
     return {
       created: true,
       watchdog_id: typeof created?.watchdogId === "string" ? created.watchdogId : null,
@@ -839,7 +831,6 @@ export class MobileAccount {
       watchdogId = dialog.existingWatchdogId;
     }
     await this.api.watchdogDelete(uid, watchdogId);
-    this.pendingMutation = undefined;
     return { deleted: true, watchdog_id: watchdogId, ...(commodityId === undefined ? {} : { commodity_id: commodityId }) };
   }
 
@@ -851,8 +842,8 @@ export class MobileAccount {
   }
 
   async mutateList(action: string, token: string, payload: Record<string, unknown>): Promise<unknown> {
-    if (!this.pendingMutation || this.pendingMutation.action !== action || this.pendingMutation.token !== token) throw new Error("Invalid or expired mutation confirmation token; call prepare_mutation again.");
     if (!WHITELISTED_MUTATIONS.has(action)) throw new Error(`Mutation ${action} is not a whitelisted low-risk mutation; use the matching typed tool instead.`);
+    this.assertMutationToken(action, token, "Invalid or expired mutation confirmation token; call prepare_mutation again.");
     validateListPayload(action, payload);
     const result = action === "create" ? await this.api.createCommodityList(payload)
       : action === "rename" ? await this.api.renameCommodityList(payload)
@@ -871,9 +862,8 @@ export class MobileAccount {
       : action === "coupon_remove" ? await this.api.deleteCoupon(String(payload.couponId))
       : action === "basket_update" ? await this.api.updateBasket(Number(payload.basket_id), Boolean(payload.flag), Boolean(payload.is_delayed_payment ?? false))
       : action === "basket_unlock" ? await this.api.unlockBasket()
-      : action === "gdpr_export" ? await this.gdprExport(payload, token)
+      : action === "gdpr_export" ? await this.sendGdprExport(payload)
       : (() => { throw new Error(`Unsupported list mutation: ${action}`); })();
-    this.pendingMutation = undefined;
     return result;
   }
 
@@ -899,11 +889,12 @@ export class MobileAccount {
 
   async submitOrder(token: string, deliveryPayment: Record<string, unknown>, userInfo: Record<string, unknown>, completeOrder: Record<string, unknown>): Promise<unknown> {
     if (!this.pending || this.pending.confirmationToken !== token) throw new Error("Invalid or expired confirmation token; call checkout_preview again.");
+    // Consume before the first await (issue #56): one checkout_preview token, one submission.
+    this.pending = undefined;
     const selected = await this.api.sendOrder2(deliveryPayment);
     const user = await this.api.sendOrder3(userInfo);
     const approved = await this.api.approveOrder4();
     const finished = await this.api.finishOrder(completeOrder);
-    this.pending = undefined;
     return { selectedDeliveryPayment: selected, userInfoResult: user, approval: approved, orderFinished: finished };
   }
 }

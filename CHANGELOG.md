@@ -75,6 +75,7 @@ The first release with outside contributions: account, cart, checkout, order and
 
 ### Fixed
 
+- **Confirmation tokens are now consumed atomically** ([#56](https://github.com/lukabudik/alza-mcp/issues/56)). `prepare_mutation` tokens and the `checkout_preview` token were cleared only after the awaited upstream call succeeded, so parallel `tools/call` requests carrying one token all passed the check (three concurrent `pay_after_order` calls sent three payment POSTs). The token is now checked and spent synchronously before the first request; concurrent duplicates fail with `Invalid or expired ... confirmation token`. A failed attempt also spends the token, so a retry needs a fresh `prepare_mutation`. Concurrency regression tests use a counting fetch mock.
 - **`get_product` no longer silently returns no specs for products using the `additionalProperty` JSON-LD template** (found live-verifying a router search: Mikrotik CRS304-4XG-IN returned `params: undefined` despite Alza's page clearly listing its port speeds). `getProduct` now merges the JSON-LD `Product.additionalProperty` (schema.org `PropertyValue[]`) with the existing DOM `.paramTbl` scrape instead of relying on the DOM table alone — live-verified (21 rows recovered, including the exact 10 Gbit port count) with no regression on products that already worked via the DOM table. See `docs/gap-analysis.md`.
 
 ### Added

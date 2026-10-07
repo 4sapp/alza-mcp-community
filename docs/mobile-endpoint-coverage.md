@@ -32,7 +32,9 @@ exposed, and how it was verified.
   sensitive field-name blocklist (password/token/card/cvv/iban/payment...), one-time
   confirmation token for every mutation.
 - Mutating or high-impact tools require a one-time token from `alza_prepare_mutation`
-  (or the `alza_checkout_preview` token for the order flow). The token is single-use.
+  (or the `alza_checkout_preview` token for the order flow). The token is single-use and is
+  consumed synchronously by the first call that presents it, before any request is sent, so
+  concurrent calls with one token run at most once; a failed attempt also spends it (issue #56).
 - OAuth stays PKCE authorization-code flow; credentials never enter the MCP.
 
 ## In-scope families (12)
