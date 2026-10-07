@@ -5,6 +5,7 @@ import {
   formatCheckoutPreview,
   formatOrder,
   formatProfile,
+  isAnonymousUserData,
   withConciseText,
 } from "../src/tools/account-format.js";
 
@@ -78,7 +79,7 @@ describe("account envelope formatters (concise text channel)", () => {
 
   it("formatProfile: anonymous shape (user_id -1) is still reported", () => {
     const text = formatProfile({ err: 0, user_id: -1, email: null });
-    expect(text).toContain("user -1");
+    expect(text).toContain("`user_id: -1`");
   });
 
   it("formatAddToCart: surfaces the added line + new basket count", () => {
@@ -150,5 +151,16 @@ describe("account envelope formatters (concise text channel)", () => {
     const env = { info: { err: 0, basket_cnt: 1 } };
     const res = withConciseText(env, formatCart);
     expect(res.structuredContent).toEqual(env);
+  });
+
+  it("formatProfile / isAnonymousUserData: flags the anonymous account Alza returns without a token", () => {
+    const anon = { user_id: -1, email: null, vip: false, twoFactorAuth: false };
+    expect(isAnonymousUserData(anon)).toBe(true);
+    expect(isAnonymousUserData({ user_id: 100000001 })).toBe(false);
+    expect(isAnonymousUserData(null)).toBe(false);
+    const text = formatProfile(anon);
+    expect(text).toContain("not signed in");
+    expect(text).toContain("auth_start");
+    expect(text).not.toContain("(user -1)");
   });
 });

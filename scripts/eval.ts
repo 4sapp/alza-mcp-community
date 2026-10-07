@@ -227,11 +227,18 @@ async function run(): Promise<void> {
       check(c, "authenticated user_data err 0 or object", Boolean(sc2), JSON.stringify(sc2).slice(0, 80));
     } else {
       const text = ((call2.content as { type: string; text: string }[])[0] ?? {}).text ?? "";
-      check(c, "unauthenticated user_data surfaces as an error result", Boolean(call2.isError) === true, String(call2.isError));
-      // Unauthenticated mobile-API reads are IP-blocked upstream (HTTP 403 with
-      // an HTML body, observed 2026-09-13); the tool must surface that as an
-      // actionable error result naming the failing endpoint/HTTP status.
-      check(c, "unauthenticated user_data surfaces as an error result naming HTTP", /HTTP \d+/.test(text) && text.length > 0 && !text.includes("at "), text.slice(0, 160));
+      const sc2 = (call2.structuredContent ?? {}) as { user_id?: unknown };
+      // Two upstream behaviours are both acceptable, as long as the agent can tell it
+      // is not signed in: an IP-blocked read (HTTP 403 with an HTML body, observed
+      // 2026-09-13) surfaces as an error result naming the HTTP status; an anonymous
+      // read (HTTP 200, user_id -1, observed 2026-10-07 via the sidecar) carries the
+      // "Not signed in" note.
+      if (call2.isError) {
+        check(c, "unauthenticated user_data error names the HTTP status", /HTTP \d+/.test(text) && !text.includes("at "), text.slice(0, 160));
+      } else {
+        check(c, "unauthenticated user_data returns the anonymous account (user_id -1)", sc2.user_id === -1, String(sc2.user_id));
+        check(c, "anonymous user_data text says it is not signed in", text.startsWith("Not signed in"), text.slice(0, 160));
+      }
     }
   }));
 

@@ -1424,10 +1424,9 @@ function stripSchema(v: string | undefined): string | undefined {
   return v.replace(/^https?:\/\/schema\.org\//, "");
 }
 
-function stripHtmlEntities(s: string): string {
-  return s
-    .replace(/&amp;/g, "&")
-    .replace(/&#(\d+);/g, (m, n: string) => codePoint(m, Number(n)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (m, n: string) => codePoint(m, parseInt(n, 16)))
-    .replace(/&[a-z]+;/g, "");
+export function stripHtmlEntities(s: string): string {
+  // JSON-LD names are often double-encoded (`27&amp;quot; Philips`): undo the outer
+  // `&amp;` first, then decode the common named and numeric entities so `27"`
+  // keeps its inch mark (it was being deleted), and only then drop unknown ones.
+  return decodeBasicEntities(s.replace(/&amp;(?=#?[a-z0-9]+;)/gi, "&")).replace(/&[a-z]+;/g, "");
 }

@@ -74,7 +74,7 @@ export function formatReviews(r: ProductReviews): string {
   // (live 2026-10-07: 11 on the page, 18 listed incl. Slovak ones).
   if (r.reviewCount !== undefined && r.reviews.length > r.reviewCount) {
     lines.push(
-      `_Note: the list has ${r.reviews.length} reviews, more than the aggregate count of ${r.reviewCount}; it also includes reviews from other storefronts (for example Slovak), which the aggregate does not cover._`
+      `_Note: the list has ${r.reviews.length} reviews, more than the aggregate count of ${r.reviewCount}; the API appears to also return reviews from other storefronts (Slovak-language reviews have been seen), which the aggregate likely does not cover._`
     );
   }
   lines.push("", "## Recent reviews (newest first)");

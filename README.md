@@ -112,7 +112,7 @@ Catalog tools:
 | **`search_products`** | Keyword search, price/stock/screen-size filters, and bounded client-side sorting (price filters and sorts apply to the top ~72 ranked candidates, `pageSize` is the real cards-per-page, `hasMore`/`nextPage` page on; an inverted price range or a blank query is rejected); brand/attribute filters use category pages and ignore `query` |
 | **`get_product`** | Full detail for one product — price, availability, brand, image, URL |
 | **`compare_products`** | 2–6 products side by side — one aligned table of price, availability, rating and every spec row; optional `summarize: true` verdict via MCP sampling when the client supports it |
-| **`get_product_reviews`** | Aggregate rating + review count + individual reviews (author, date, rating, body, pros/cons) via the reviews API, newest first; the list can include other storefronts' reviews, so it may be longer than the aggregate count |
+| **`get_product_reviews`** | Aggregate rating + review count + individual reviews (author, date, rating, body, pros/cons) via the reviews API, newest first; the list may be longer than the aggregate count (it appears to include other storefronts' reviews) |
 | **`recommend_alternatives`** | Cheaper / better-rated / same-brand alternatives to a product (Alza's own alternatives list, same-category search fallback) |
 | **`find_pickup_points`** | Nearest AlzaBox lockers and AlzaShop showrooms by 5-digit postal code, merged by distance, with opening hours, no cart needed. The postal code is geocoded with the public OpenStreetMap Nominatim service (`nominatim.openstreetmap.org`), so the normalised code and country are sent to that third party (not to Alza); results are cached for a week. It can't tell whether a specific product fits an AlzaBox; use `delivery_options` for that |
 | **`list_category_filters`** | Category brands (`brands[].valueId`) and attribute facets with live ids/counts — use `producer_ids` or `filters` with `category_id` (`{param_id, value_id}` for checkbox facets, `{param_id, min?, max?}` for slider ranges such as screen size or refresh rate); unsupported URL filters return an error (checkbox values work only where Alza publishes a landing page for the value — HDMI does, monitor panel type and resolution do not) |
@@ -251,6 +251,7 @@ On HTTP the server is stricter than on stdio, because a network endpoint can be 
 | Env var / flag | Default | Purpose |
 |---|---|---|
 | `--http`, `ALZA_TRANSPORT=http` | stdio | Serve over Streamable HTTP |
+| `--help`, `--version` (`-h`, `-v`) | | Print usage or the version and exit |
 | `--port N`, `ALZA_HTTP_PORT` (or `PORT`) | `3000` | Listen port (`0` picks a free one) |
 | `--host H`, `ALZA_HTTP_HOST` | `127.0.0.1` | Bind address |
 | `ALZA_HTTP_ALLOWED_HOSTS` | loopback names when bound to loopback, otherwise no check | Comma-separated hostnames accepted in `Host`/`Origin` |

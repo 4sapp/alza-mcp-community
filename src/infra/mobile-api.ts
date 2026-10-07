@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Page } from "playwright";
 import { AppActionExecutor, type ExecuteAppActionOptions, type FetchLike, type ServerAppAction } from "./app-action.js";
-import { AlzaError, AuthenticationError, ConfigurationError, OutcomeUnknownError } from "./errors.js";
+import { AlzaError, AuthenticationError, ConfigurationError, OutcomeUnknownError, UserError } from "./errors.js";
 import { TransportUnavailableError } from "./impersonate-transport.js";
 import { log } from "./logger.js";
 import { proxyConfigured } from "./proxy.js";
@@ -46,7 +46,7 @@ export interface MobileApiOptions {
 
 /** fetch-shaped transport (the sidecar adapter satisfies this). */
 export interface HttpFetch {
-  (url: string, init: { method?: string; headers?: Record<string, string>; body?: string | null }): Promise<{
+  (url: string, init: { method?: string; headers?: Record<string, string>; body?: string | null; redirect?: "follow" | "manual" }): Promise<{
     status: number;
     text(): Promise<string>;
     /** Binary-safe body (the CF sidecar adapter provides this). */
@@ -384,7 +384,7 @@ export class MobileApi {
       let value: unknown;
       try { value = raw.text ? JSON.parse(raw.text) : null; } catch { value = raw.text; }
       if (raw.status < 200 || raw.status >= 300) {
-        throw new Error(`Alza API ${method} ${path} failed with HTTP ${raw.status}: ${summarize(value)}`);
+        throw apiHttpFailure(method, url, raw.status, value);
       }
       return { value, sentWith };
     };
@@ -1068,8 +1068,13 @@ export class MobileApi {
     let contentType: string | null;
     let buf: Buffer;
     if (this.httpFetch) {
-      const r = await this.httpFetch(u.toString(), { method: "GET", headers });
+      const r = await this.httpFetch(u.toString(), { method: "GET", headers, redirect: "manual" });
       status = r.status;
+      if (status >= 300 && status < 400) {
+        // Never follow with the bearer token attached (same rule as the direct-fetch path).
+        const location = r.header?.("location") ?? null;
+        throw new Error(`document download redirected to a non-allowlisted location: ${location ?? "(unknown)"}`);
+      }
       if (r.arrayBuffer) {
         contentType = r.header?.("content-type") ?? null;
         buf = Buffer.from(await r.arrayBuffer());
@@ -1250,6 +1255,30 @@ function isAnonymousEnvelope(value: unknown): boolean {
   if (top.user_id === -1) return true;
   const info = top.info;
   return Boolean(info && typeof info === "object" && (info as Record<string, unknown>).user_id === -1);
+}
+
+const HTML_BODY = /^\s*(<!doctype\s+html|<html[\s>]|<head[\s>]|<body[\s>]|<script[\s>])/i;
+
+/** Error for a non-2xx answer. Never embeds a raw HTML page or the query string
+ * (which carries the visitor id); sign-in and user_id problems are UserErrors. */
+export function apiHttpFailure(method: string, url: string, status: number, value: unknown): Error {
+  const target = displayTarget(url);
+  if (typeof value === "string" && HTML_BODY.test(value)) {
+    const challenge = status === 403 || status === 429 || status === 503 || /cloudflare|just a moment|cf-chl|cf_chl/i.test(value);
+    return new Error(
+      `Alza API ${method} ${target} failed with HTTP ${status}: ` +
+        (challenge
+          ? "Cloudflare bot challenge (HTML block page). Try another egress (ALZA_PROXY_URL) or retry later."
+          : "the server answered with an HTML error page."),
+    );
+  }
+  if (status === 401) {
+    return new UserError(`Alza rejected the request to ${target} (HTTP 401): you are not signed in or the token expired. Sign in with \`auth_start\` → \`auth_exchange\` (check \`account_status\`).`);
+  }
+  if (status === 403 && /\/api\/users\/\d+/.test(url)) {
+    return new UserError(`Alza refused ${target} (HTTP 403): \`user_id\` must equal the signed-in account's own id (\`profile.user_id\`).`);
+  }
+  return new Error(`Alza API ${method} ${target} failed with HTTP ${status}: ${summarize(value)}`);
 }
 
 function summarize(value: unknown): string {
