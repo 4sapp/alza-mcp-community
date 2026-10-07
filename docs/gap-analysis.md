@@ -191,7 +191,7 @@ After the 2026-09-08 goal closed, a fresh triage of `docs/mobile-endpoint-covera
 + this report found four actionable items; all are now closed:
 
 - **G4 (above)** — `web_add_to_cart` + `web_cart` typed tools; the
-  basket add is visitor-keyed (cookie-less Balancer-Guid add live-verified), so
+  basket add is visitor-keyed (cookie-less Balancer-Guid add live-verified 2026-09-09, `docs/live-evidence/gap-fix-probe-2026-09-09.json`), so
   the tools work with the standard MCP transport. `webCart` needs only the
   basket_id (the `visitors/{visitorId}` path segment is not validated
   server-side — a placeholder UUID returned the same cart).
@@ -329,7 +329,7 @@ gaps that don't change which endpoints work, but were actively misleading
 about *how* the working tools relate to each other:
 
 - **`OR11` (order cancellation) closed**: now a typed tool, `cancel_order`
-  (one-time token, `reason` 0–5), live-verified against the real order above
+  (one-time token, `reason` 0–5), live-verified 2026-09-06 against the real order above (`docs/live-evidence/e2e-order-payment-complete.md`)
   (`PUT .../cancellations` → 202). Unit-tested.
 - **Cart-pairing correction**: `web_place_order` submits the cart populated by
   `add_to_cart` (mobile `restservice.svc/v2/basket/add`), **not** the separate
@@ -679,7 +679,7 @@ Question: where can a read-only tool get discounted products with current price,
 
 - **What shipped:** `pc_build_check` and `pc_build_suggest` live in the new `pc_builder` toolset, which is off by default. The compatibility rules are pure functions in `src/domain/pc-build.ts`. They cover socket, RAM generation / DIMM type / slots, RAM ↔ CPU, PSU wattage + headroom, GPU length, cooler height or radiator size, cooler socket, motherboard and PSU form factor, and display output. The spec names come from a Czech per-component map. Live evidence is in `docs/live-evidence/2026-10-06-pc-builder.md`.
 - **`blocked`: socket / memory-type / form-factor URL filters in CPU and motherboard categories.** `list_category_filters` reports them as checkbox facets (CPU `Socket` 432, motherboard `Socket` 408 / `Formát základní desky` 411 / `Typ paměti` 414). Alza 30x-redirects every such `-par…` URL to the unfiltered category (live 2026-10-06), and `search_products` errors as designed. The builder narrows candidates on the client instead: first chipset/DDR/wattage name hints on the listing cards, then the detail page's `params`. RAM uses the dedicated DDR5 and DDR4 categories. Only the brand facet (`producer_ids`) is used as a URL filter. Re-test target: a different URL encoding for these facets.
-- **`live-verified` (negative): `/search.htm?idc={category}` is not category-scoped.** "psu" scoped to the PSU category returned dog food. `pc_build_suggest` browses the category listing page `/{categoryId}.htm` instead, through the internal `SearchOptions.browse`.
+- **`live-verified` (negative, 2026-10-06): `/search.htm?idc={category}` is not category-scoped.** "psu" scoped to the PSU category returned dog food. `pc_build_suggest` browses the category listing page `/{categoryId}.htm` instead, through the internal `SearchOptions.browse`.
 - **`get_product`'s 30-row spec cap:** a GPU's `TDP` was row 29 of 30. `Catalog.getProductSpecs` keeps up to 80 rows for the builder from the same page load and cache. The public `get_product` contract (≤ 30 rows) is unchanged.
 - **Spec-table render race, fixed:** one live run got a PSU page (`AAnagp2a4`) with no spec rows at the `load` event. A read a minute later had the full table. `getProduct`/`getProductSpecs` now wait up to 4 s for the table and read the page again whenever both spec sources are empty.
 - **Remaining limits (`unresolved`):**

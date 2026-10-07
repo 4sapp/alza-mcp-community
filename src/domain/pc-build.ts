@@ -843,6 +843,44 @@ export function rankCandidates<T extends { name: string; price?: number }>(role:
   return [...within, ...over];
 }
 
+/** Maximum cheaper-choice combinations `pc_build_suggest` tries when a later role cannot be filled. */
+export const MAX_BACKTRACK_ATTEMPTS = 20;
+
+/**
+ * Bounded, deterministic backtracking plan. `levels` lists, per role, the
+ * distinct candidate prices strictly below the greedy pick, most expensive
+ * first (so level 0 = "next cheaper choice"). Returns up to `max` price caps
+ * (a role absent from a cap object is unconstrained), cheapest total
+ * downgrade first: one step down on one role before two steps, ties broken
+ * in favour of the earlier role in `levels` (callers list gpu before cpu).
+ */
+export function backtrackCaps(levels: Partial<Record<PcRole, number[]>>, max = MAX_BACKTRACK_ATTEMPTS): Array<Partial<Record<PcRole, number>>> {
+  const roles = (Object.keys(levels) as PcRole[]).filter((r) => (levels[r]?.length ?? 0) > 0);
+  const vectors: number[][] = [[]];
+  for (const r of roles) {
+    const n = levels[r]!.length;
+    const next: number[][] = [];
+    for (const v of vectors) for (let step = 0; step <= n; step++) next.push([...v, step]);
+    vectors.splice(0, vectors.length, ...next);
+  }
+  const sum = (v: number[]) => v.reduce((a, b) => a + b, 0);
+  const lexDesc = (a: number[], b: number[]) => {
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return b[i]! - a[i]!;
+    return 0;
+  };
+  return vectors
+    .filter((v) => sum(v) > 0)
+    .sort((a, b) => sum(a) - sum(b) || lexDesc(a, b))
+    .slice(0, max)
+    .map((v) => {
+      const caps: Partial<Record<PcRole, number>> = {};
+      roles.forEach((r, i) => {
+        if (v[i]! > 0) caps[r] = levels[r]![v[i]! - 1]!;
+      });
+      return caps;
+    });
+}
+
 export type BuildProfile = "gaming" | "workstation" | "office";
 
 /** Budget share per role (sums to 1 over the roles the profile includes). */
