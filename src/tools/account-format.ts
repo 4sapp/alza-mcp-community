@@ -76,9 +76,19 @@ export function formatCart(env: unknown): string {
   return lines.join("\n");
 }
 
+/** Without a valid token Alza still answers the `user_data` read with HTTP 200, but with
+ * an anonymous account: `user_id: -1` and a null e-mail (observed 2026-10-07). */
+export function isAnonymousUserData(env: unknown): boolean {
+  return num(asRecord(env)?.user_id) === -1;
+}
+
+export const ANONYMOUS_NOTE =
+  "Not signed in: Alza returned the anonymous account (`user_id: -1`). Account data below is not the user's. Check `account_status`, then sign in with `auth_start` / `auth_exchange`.";
+
 export function formatProfile(env: unknown): string {
   const top = asRecord(env) ?? {};
   if (num(top.err) === 1) return `# Alza profile\n\nAlza rejected the read (err:1): ${str(top.msg) ?? "no message"}.`;
+  if (isAnonymousUserData(top)) return `# Alza profile: not signed in\n\n${ANONYMOUS_NOTE}\n\n${FOOTER}`;
   const lines: string[] = [];
   const userId = num(top.user_id);
   lines.push(`# Alza profile${userId !== undefined ? ` (user ${userId})` : ""}`);
