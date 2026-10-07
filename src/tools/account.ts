@@ -2,7 +2,7 @@ import { z } from "zod";
 import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import type { MobileAccount } from "../domain/mobile-account.js";
 import type { RegisterableTool, ToolDeps, ToolResult } from "./types.js";
-import { ANONYMOUS_NOTE, formatAddToCart, formatCart, formatCheckoutPreview, isAnonymousUserData, withConciseText } from "./account-format.js";
+import { ANONYMOUS_NOTE, formatAddToCart, formatCart, formatCheckoutPreview, formatDeliveryOptions, isAnonymousUserData, jsonResult, withConciseText } from "./account-format.js";
 
 function apiAccount(deps: ToolDeps): MobileAccount {
   if (!deps.mobileAccount) throw new Error("mobile API account tools are not configured");
@@ -10,10 +10,8 @@ function apiAccount(deps: ToolDeps): MobileAccount {
 }
 
 function result(value: unknown): ToolResult {
-  return {
-    content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
-    structuredContent: value as Record<string, unknown>,
-  };
+  // Issue #73: the text channel is capped; structuredContent keeps the full value.
+  return jsonResult(value);
 }
 
 const jsonObject = z.record(z.string(), z.unknown());
@@ -129,7 +127,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           title: "Read a raw Alza mobile API operation",
           description:
             "Read-only escape hatch for Alza mobile API operations that have no dedicated tool. " +
-            "Prefer the typed tool when one exists — `cart` (operation `basket_info`), `profile` (`user_data`), `contacts` (`contacts`), `search_products` (`search`), `list_categories` (`category`), `order` (`user_order`) — and use `mobile_read` for the rest. " +
+            "Prefer the typed tool when one exists — `cart` (operation `basket_info`), `profile` (`user_data`), `contacts` (`contacts`), `search_products` (`search`), `list_categories` (`category`), `order` (`user_order` {order_id, user_id} — the numeric user id from `profile`, not a 0/1 flag) — and use `mobile_read` for the rest. " +
             "High-value operations: `router_product` {product_id} returns the full product envelope including the `parameterGroups` spec sheet (product_id is the numeric `d########` id from the product URL, e.g. 13078770 from https://www.alza.cz/...-d13078770.htm); `legacy_product` {product_id, ucik, pgrik, country} is the same with the server-required UCÍK/PGŘÍK values (copy them from a `router_product` response); also `alternatives` {product_id}, `ean_lookup`, `facets`, `hierarchical_filter`, `commodity_list(s)`, `cost_estimate`, `delivery_countries`, `web_after_payment_dialog` {order_id}, `order_part`/`order2_info` {order_id, ...}, `order_helpdesk_questions`, `user_review`, `discussion_posts`, `premium_trial`, `validate_login_name`, `validate_isic`, `o3_info`, `quick_order_summary`, `home_categories` (requires the server-side pgri/ui query values — copy them from an upstream `self` href in a navigation response, e.g. `?pgri=p__…&ui=u__…`), `zip_codes`/`web_zip_codes`, `branches`, `visitor_navigation`/`user_navigation`/`catalog_user_navigation`, `anonymous_orders`/`anonymous_order`, `url_info`. " +
             "This tool never accepts arbitrary URLs or credentials, and never mutates state. " +
             "Account-scoped operations " + AUTH_PREREQ + " Returns the raw upstream envelope (`err`/`msg`/`data`); `err:1` with a `msg` is an Alza-side validation (e.g. unknown product id).",
@@ -160,7 +158,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           description:
             "Start a two-step mutation by returning a one-time confirmation token bound to exactly one action. This call itself sends nothing to Alza. " +
             "Use it before the high-impact typed mutations — `register` (action `register`), `address_upsert` (`address_create` or `address_edit`), `address_delete` (`address_delete`), `pay_after_order` (`after_order_payment`), `web_place_order` (`web_place_order`), `web_pay_after_order` (`web_after_order_payment`), `cancel_order` (`cancel_order`), `review_submit` (`review_submit`), `subscription_activate` (`subscription_activate`), `subscription_update_installment` (`subscription_update_installment`), `upload_attachment` (`attachment_upload`), `watchdog_set` (`watchdog_set`), `watchdog_delete` (`watchdog_delete`) — and before any low-risk `mutate_list` action (" + LOW_RISK_ACTIONS.map((a) => "`" + a + "`").join(", ") + "). " +
-            "Pass the returned token as `confirmation_token` on the matching call; the token is single-use and only valid for the exact action you prepared. " +
+            "Pass the returned token as `confirmation_token` on the matching call; the token is single-use — the first call that presents it spends it, even if that call fails, so prepare a new one to retry — and only valid for the exact action you prepared. " +
             "Do not use for read-only tools, and not for `add_to_cart` (which is a low-risk cart write that needs no token).",
           inputSchema: {
             action: z.enum([...LOW_RISK_ACTIONS, ...HIGH_IMPACT_ACTIONS, ...TYPED_LOW_RISK_ACTIONS]).describe("Which mutation you are about to perform; the token will only be accepted by that action's tool."),
@@ -205,7 +203,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
         {
           title: "Check mobile API auth status",
           description:
-            "Report whether a mobile API access token is loaded in this server process. " +
+            "Report whether a mobile API access token is loaded in this server process, and when it expires (`expiresAt`, `expired`) if that is known. An expired token is refreshed automatically before the next account call when a refresh token is loaded. " +
             "Use as a first check before account-scoped tools (`cart`, `profile`, `order`, `add_to_cart`), or to diagnose \"not authenticated\" failures. " +
             "If no token is loaded, run `auth_start`, have the user complete the browser sign-in, then `auth_exchange`. " +
             "Read-only; no network call.",
@@ -249,7 +247,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             "Use when the user wants a product put into their Alza account; pass `quantity` (default 1, max 99). " +
             "Side effect: mutates the cart — the item stays there until removed or ordered (there is no basket-remove tool). " +
             "Do not use for the separate HATEOAS web checkout cart — that is `web_add_to_cart` (does not share state with this tool; see its description). " +
-            "LIVE NOTE (2026-09-26): despite the usual auth prerequisite, this call also succeeds with no OAuth token loaded — it falls back to an anonymous, visitor-keyed (Balancer-Guid) WCF cart (`account_status` still reports `authenticated: true` but `user_id: -1`). " +
+            "LIVE NOTE (2026-09-26): despite the usual auth prerequisite, this call also succeeds with no OAuth token loaded — it falls back to an anonymous, visitor-keyed (Balancer-Guid) WCF cart (`user_id: -1`). With a token loaded, an anonymous answer means the token is stale: it is refreshed before the call when expired, and an anonymous answer to a loaded token is reported as an error (not retried) so nothing lands in the visitor cart unnoticed. " +
             "That anonymous cart is exactly what `delivery_options` + `web_place_order` need for the working (non-500) anonymous order pipeline — do NOT use `checkout_preview`/`place_order` for anonymous checkout, their `sendOrder3` step 500s unconditionally (docs/gap-analysis.md G1/G5). " +
             AUTH_PREREQ + " The response echoes the added line and the new basket count; verify with `cart` if in doubt. Example: `add_to_cart({code: \"RI054b1\", quantity: 1})`.",
           inputSchema: {
@@ -282,7 +280,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["delivery_options"],
         },
-        async (args) => wrap("delivery_options", async () => result(await apiAccount(deps).deliveryOptions(args.selected_delivery_option_id))),
+        async (args) => wrap("delivery_options", async () => withConciseText(await apiAccount(deps).deliveryOptions(args.selected_delivery_option_id), formatDeliveryOptions)),
       );
     },
   };

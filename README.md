@@ -103,7 +103,7 @@ With 63 domain tools (66 including `list_toolsets`, `set_toolset` and `report_is
 
 Call **`list_toolsets`** to see every group and **`set_toolset({id, enabled: true})`** to turn one on before using its tools — e.g. enable `basket_and_checkout` before adding something to a cart. This is standard MCP progressive disclosure (`RegisteredTool.enable()`/`.disable()`, which fires the normal `tools/list_changed` notification) — no functionality is removed, it's just not all visible at once.
 
-**Reporting problems.** `report_issue` is always available, whichever toolsets are on. When a tool fails unexpectedly, returns clearly wrong data, or breaks because Alza changed something, the server instructions and the error message itself point the agent to it. It returns a redacted draft (with version, Node, platform, storefront, transport and this session's recent tool errors), a `gh issue list` command to check for duplicates, a ready-to-run `gh issue create --repo lukabudik/alza-mcp …` command, and a prefilled new-issue link for agents without a shell. The server files nothing itself: the agent shows the draft to you and files it from your GitHub account only if you agree. Credentials, e-mails, phone numbers, account ids and home-directory paths are redacted automatically. Invalid arguments and unknown products don't trigger the hint.
+**Reporting problems.** `report_issue` is always available, whichever toolsets are on. When a tool fails unexpectedly, returns clearly wrong data, or breaks because Alza changed something, the server instructions and the error message itself point the agent to it. It returns a redacted draft (with version, Node, platform, storefront, transport and this session's recent tool errors), a `gh issue list` command to check for duplicates, a ready-to-run `gh issue create --repo lukabudik/alza-mcp …` command, and a prefilled new-issue link for agents without a shell. The server files nothing itself: the agent shows the draft to you and files it from your GitHub account only if you agree. Credentials (including cookies and API keys), e-mails, phone numbers, UUIDs, URL query values, account ids and home-directory paths are redacted automatically, and recent errors keep only route and status. Invalid arguments and unknown products don't trigger the hint.
 
 Catalog tools:
 
@@ -161,24 +161,24 @@ User-management, payments, orders, and post-purchase tools:
 | **`register`** | Registers a new Alza account (credential-bearing, one-time token) |
 | **`address_upsert`** | Creates/edits a delivery address through the server-provided address form |
 | **`address_delete`** | Deletes a delivery address via its per-address action |
-| **`address_search`** | Follows the server-provided address-search action (read-only) |
+| **`address_search`** | Zip/city search via the verified `getZipCodes` lookup, or a profile `addressSearchAction` if one is supplied (read-only) |
 | **`payment_methods`** | Lists payment methods from the APK delivery-payment-group endpoint |
 | **`after_order_payments`** | Lists after-order payment options for an order part |
 | **`pay_after_order`** | Executes an after-order payment (APK `AfterOrderRequestBody`, one-time token) |
 | **`web_place_order`** | Places an order through the live-verified legacy web WCF pipeline (SaveOrder2→3, 113-gate retry, CheckOrder4, SendOrder4; one-time token) — the working submission path while mobile `sendOrder3` 500s |
 | **`web_pay_after_order`** | Executes a web after-order payment through the live-verified WCF `CreateAfterPayment` (one-time token) |
-| **`order`** | Reads a user order (+ optional part detail, milestones, invoice refs) |
+| **`order`** | Reads a user order by numeric `user_id` + `order_id` (+ optional part detail, milestones, invoice refs) |
 | **`review_submit`** | Submits a product review through the server-provided review form |
-| **`complaint_claims`** | Lists warranty claims via the server-provided claims action |
-| **`subscription_overview`** | Reads AlzaSubscription overview via the server-provided subscription action |
+| **`complaint_claims`** | Lists active or archived warranty claims by `user_id` (K1; read-only) |
+| **`subscription_overview`** | Reads the account's subscription section (the navigation's `userSubscription` link) by `user_id` (S1; response shape not yet live-verified) |
 | **`subscription_activate`** | Activates AlzaSubscription (one-time token) |
 | **`subscription_update_installment`** | Changes the installment plan (one-time token) |
 | **`upload_attachment`** | Uploads image attachments via the multipart server-provided action (one-time token) |
 | **`order_search`** | Searches the account's orders by term (OR6; read-only) |
 | **`order_archive`** | Reads the account's archived orders (OR7; read-only; the "Skrýt zrušené" include/hide-cancelled toggle) |
-| **`order_document`** | Downloads an order invoice/document from its server-provided href (OR10; origin-validated to the Alza host family) |
+| **`order_document`** | Downloads an order invoice/document from its server-provided href (OR10; origin-validated to the Alza host family; the body is returned in `structuredContent` only) |
 | **`gdpr_info`** | Reads the GDPR section + export dialog (A17; read-only — where the data export will be sent) |
-| **`claim_detail`** | Reads one warranty claim's detail via its server-provided action (K2; read-only) |
+| **`claim_detail`** | Reads one warranty claim's detail from its `detailAction` link (K2; read-only; pinned to the warranty-claims routes) |
 | **`change_password`** | Changes the account password (A14; one-time token; logs the user out of every device) |
 | **`two_factor_set`** | Enables/disables SMS two-factor (A15; one-time token) |
 | **`phone_change`** | Changes the contact phone number (A16; one-time token) |
@@ -190,7 +190,7 @@ User-management, payments, orders, and post-purchase tools:
 
 High-impact mutations require one-time confirmation tokens (`checkout_preview` for mobile `place_order`, `prepare_mutation` for the other guarded mutations); the full route inventory, exposure decisions, and verification labels live in [docs/mobile-endpoint-coverage.md](docs/mobile-endpoint-coverage.md).
 
-OAuth sign-in happens outside the MCP; `auth_exchange` exchanges the returned code and the server holds access/refresh tokens in memory or loads them from the configured token file.
+OAuth sign-in happens outside the MCP; `auth_exchange` exchanges the returned code and the server holds access/refresh tokens in memory or loads them from the configured token file. An access token that is expired (or within 60 s of its JWT `exp`) is refreshed before the next account call, and parallel calls share one refresh. `account_status` reports `expiresAt`/`expired`. When the tokens were loaded from the token file, refreshed tokens are written back to it (atomically, mode 0600), so a restart does not begin with a stale token; tokens from an in-process `auth_exchange` stay in memory.
 
 > **"Při přihlášení došlo k chybě." after signing in?** The sign-in usually worked. Alza redirects to `alza://identity?code=…&state=…`, which a desktop browser can't open, so the page stalls and a 40-second timer in Alza's login page shows that message. Before signing in, open DevTools and turn on **Network → Preserve log**. After you sign in, copy the `alza://identity?code=…` URL from the redirect's `Location` header, or from the Console error about failing to launch `alza://`. Pass the whole URL to `auth_exchange` as `code`. The code expires quickly, so exchange it right away. Registration and credential-change tools do accept passwords or verification codes as arguments, guarded by one-time confirmation tokens. Account/cart/order tools issue API requests and can fall back to browser-backed requests when challenged; they do not automate checkout forms.
 
@@ -205,7 +205,7 @@ Mobile API environment variables:
 | `ALZA_OAUTH_AUTHORITY` | OAuth authority, default `https://identity.alza.cz` |
 | `ALZA_OAUTH_CLIENT_SECRET` | The `alza_Android` OAuth client is confidential — token requests need its APK-embedded secret (default: the source-verified value; set `""` to omit it for public clients). Used by `auth_exchange` and token refresh |
 | `ALZA_CLIENT_SECRET` | Same secret for the PKCE exchange scripts (`scripts/e2e-order-payment.browser.mjs exchange`, `scripts/alza-auth-exchange.mjs`) |
-| `ALZA_TOKEN_FILE` | JSON token store written by `scripts/alza-auth-login*` / `scripts/alza_auth_login.py` (default `~/.alza-mcp/tokens.json`; set `none` to disable auto-load) |
+| `ALZA_TOKEN_FILE` | JSON token store written by `scripts/alza-auth-login*` / `scripts/alza_auth_login.py` (default `~/.alza-mcp/tokens.json`; set `none` to disable auto-load). The server rewrites it (atomic, 0600) after refreshing tokens it loaded from it; with `none` it is neither read nor written |
 
 Plus:
 
@@ -225,7 +225,7 @@ All optional — `alza-mcp` works out of the box.
 | `ALZA_CDP_URL` | _unset_ | Connect to your already-running Chrome via CDP instead of launching a managed Chromium. Reuses the existing browser session; set `ALZA_MCP_SKIP_INSTALL=1` separately to skip the installation-time download. Launch Chrome with `--remote-debugging-port=9222` and set `ALZA_CDP_URL=http://localhost:9222`. |
 | `ALZA_HEADLESS` | `true` | Set `false` to show the browser used for scraping and API fallback; OAuth/MFA/payment interactions remain user-controlled |
 | `ALZA_IDLE_TTL_MS` | `180000` | Close the headless Chromium after this many ms with no tool calls. Lower it on memory-constrained machines; raise it (or disable by setting absurdly high) if you make many calls in quick succession and don't want the relaunch latency. |
-| `ALZA_PROXY_URL` | _unset_ | Route Alza traffic through an HTTP(S) or SOCKS5 proxy (`http://user:pass@host:port`, `socks5://host:port`), for example a residential proxy when this machine's IP gets Cloudflare challenges (datacenter and CI IPs do). Used by the managed Chromium and the `curl_cffi` sidecar; plain-fetch fallbacks and `ALZA_CDP_URL` browsers are not proxied. |
+| `ALZA_PROXY_URL` | _unset_ | Route Alza traffic through an HTTP(S) or SOCKS5 proxy (`http://user:pass@host:port`, `socks5://host:port`), for example a residential proxy when this machine's IP gets Cloudflare challenges (datacenter and CI IPs do). Used by the managed Chromium and the `curl_cffi` sidecar. While it is set, the account stack never falls back to an un-proxied plain fetch (only to the managed browser), and with the sidecar disabled (`ALZA_CF_TRANSPORT=0`) OAuth, AppAction and document requests are refused instead of sent directly, so a proxy failure is reported instead of bypassed. An invalid value stops the server at startup with a one-line error. Not proxied: `ALZA_CDP_URL` browsers and multipart uploads (`upload_attachment`), which the sidecar cannot carry. |
 | `ALZA_DEBUG` | `false` | Verbose stderr logging |
 
 ---
@@ -245,7 +245,7 @@ On HTTP the server is stricter than on stdio, because a network endpoint can be 
 
 - **Catalog only by default.** Only the read-only, anonymous toolsets are usable: `catalog` (on) and `pc_builder` (enable with `set_toolset`). Every other toolset (`auth`, basket/checkout, account, orders/payments, reviews/subscriptions, chat, `advanced_raw`) is **locked**: `list_toolsets` shows it with the reason, and `set_toolset` refuses to enable it. These tools sign in to and act on a real Alza account (orders, payments, credentials), so a shared endpoint must not offer them by accident. Set `ALZA_HTTP_ENABLE_ACCOUNT=1` to unlock them.
 - **One server per MCP session.** Each `Mcp-Session-Id` gets its own server instance: its own toolset state, OAuth tokens and one-time confirmation tokens. With `ALZA_HTTP_ENABLE_ACCOUNT=1`, each session also gets its own browser context and Chrome-fingerprint sidecar, because both keep Alza cookies. Sessions expire after 30 idle minutes.
-- **No token file.** `ALZA_TOKEN_FILE` (`~/.alza-mcp/tokens.json`) holds one person's login, so HTTP mode does not load it. Each session signs in with `auth_start` → `auth_exchange`. For a single-user localhost setup you can set `ALZA_HTTP_ALLOW_TOKEN_FILE=1` (together with `ALZA_HTTP_ENABLE_ACCOUNT=1`); every session then starts signed in as that account, so never do this on a shared host. All sessions start from the same refresh token and Alza rotates it on refresh, so the first session that refreshes invalidates the copy the others hold (they then need `auth_start` → `auth_exchange`); keep to one active session in this mode.
+- **No token file.** `ALZA_TOKEN_FILE` (`~/.alza-mcp/tokens.json`) holds one person's login, so HTTP mode does not load it. Each session signs in with `auth_start` → `auth_exchange`. For a single-user localhost setup you can set `ALZA_HTTP_ALLOW_TOKEN_FILE=1` (together with `ALZA_HTTP_ENABLE_ACCOUNT=1`); every session then starts signed in as that account, so never do this on a shared host. All sessions start from the same refresh token. Alza may rotate it on refresh (reported on 2026-09-10; a 2026-10-07 run saw the same refresh token come back six times, so treat rotation as possible, not guaranteed), in which case the first session that refreshes invalidates the copy the others hold (they then need `auth_start` → `auth_exchange`). Each session writes its refreshed tokens back to the token file, so a restart picks up the newest ones; keep to one active session in this mode.
 - **Localhost only by default.** It binds `127.0.0.1` and rejects requests whose `Host` or `Origin` is not a loopback name (DNS-rebinding protection). There is no built-in authentication or TLS. If you bind elsewhere (`--host 0.0.0.0`), put it behind a reverse proxy that does both, and set `ALZA_HTTP_ALLOWED_HOSTS`.
 
 | Env var / flag | Default | Purpose |
@@ -284,7 +284,7 @@ Run `/reload` (or `mcp connect alza` — the gateway respawns the stdio process,
 
 Alza has no public consumer API. This project reverse-engineers the Android app's REST surface (route names and DTOs recovered from the APK) and the website's own checkout pipeline. Neither is a supported or documented interface, so any of it can change or break without notice.
 
-**Cloudflare Bot Management.** Alza sits behind it and returns HTTP 403 to plain HTTP clients. This server gets past it in two ways: a headless Chromium (catalog scraping) and a Chrome-fingerprint HTTP sidecar (`scripts/cf-transport.py`, using `curl_cffi` to impersonate Chrome's TLS/HTTP2 fingerprint) for the account/checkout API. That is circumvention of a bot-protection measure, which Alza's terms of use may prohibit. The sidecar and its setup script ship in the npm package, and postinstall tries to set up its `curl_cffi` venv. It stays optional: without Python or `curl_cffi`, the account stack (including OAuth sign-in) falls back to plain fetch and, for same-origin API calls, the browser. See the [Disclaimer](#disclaimer) and [SECURITY.md](SECURITY.md) before using it.
+**Cloudflare Bot Management.** Alza sits behind it and returns HTTP 403 to plain HTTP clients. This server gets past it in two ways: a headless Chromium (catalog scraping) and a Chrome-fingerprint HTTP sidecar (`scripts/cf-transport.py`, using `curl_cffi` to impersonate Chrome's TLS/HTTP2 fingerprint) for the account/checkout API. That is circumvention of a bot-protection measure, which Alza's terms of use may prohibit. The sidecar and its setup script ship in the npm package, and postinstall tries to set up its `curl_cffi` venv. It stays optional: without Python or `curl_cffi`, the account stack (including OAuth sign-in) falls back to plain fetch and, for same-origin API calls, the browser. A request that changes something (POST/PUT/PATCH/DELETE) is only re-sent another way when the sidecar never sent it; if the sidecar fails after sending (timeout, connection error), the tool reports that the outcome is unknown instead of sending the order, payment or account change a second time. See the [Disclaimer](#disclaimer) and [SECURITY.md](SECURITY.md) before using it.
 
 **Link attribution.** Product, category and suggestion links that the catalog tools return (`search_products`, `get_product`, `compare_products`, `recommend_alternatives`, `get_deals`, `autocomplete`, `list_categories`, `pc_build_*`, `watchdog_list` and the `alza://product/{code}` resource) carry `utm_source=alza-mcp-community&utm_medium=mcp`, at Alza's request, so Alza can see visits that came through this server. The parameters are only added to Alza storefront links shown to you. The server's own requests to Alza, sign-in, payment, API, PDF and image URLs, and the account and checkout tools' raw responses are not tagged. No other data is added.
 
@@ -292,7 +292,7 @@ No generic arbitrary-route tool is exposed. What is and isn't covered:
 
 - Excluded: administrative login routes, telemetry/audit routes, device-token and anonymous-activity routes, and external payment hand-offs (Klarna, Google Pay) plus the quick-order payment family (documented as `blocked` in the coverage matrix).
 - Included, behind one-time tokens: order placement and cancellation, account registration, and credential/identity changes (password, 2FA, phone, email, account deletion — `delete_account` is irreversible).
-- Server-driven action URLs are followed only when returned by a confirmed response, through the origin-validated `AppActionExecutor` (GET/POST, path allowlist, sensitive-field blocklist, one-time confirmation token); they are not accepted as arbitrary MCP URLs.
+- Server-driven action URLs are followed only when returned by a confirmed response, through the origin-validated `AppActionExecutor` (GET/POST, path allowlist, a per-tool route family and method, a denylist of credential/payment/order and GET-write routes, sensitive-field blocklist, one-time confirmation token); they are not accepted as arbitrary MCP URLs.
 
 The complete 12-family route inventory with method, DTO, prerequisites, side effects, exposure, and verification status is maintained in [docs/mobile-endpoint-coverage.md](docs/mobile-endpoint-coverage.md).
 

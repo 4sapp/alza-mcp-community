@@ -1,3 +1,4 @@
+import type { Page } from "playwright";
 import type { AlzaBrowser } from "../infra/browser.js";
 import { TtlCache } from "../infra/cache.js";
 import { NotFoundError } from "../infra/errors.js";
@@ -100,8 +101,10 @@ const CARD_EXTRACTOR_FN = `function(root) {
     // every card, so only exact CTA texts are trusted.
     var inStock = null;
     var ctas = Array.from(card.querySelectorAll('a, button')).map(function(e) { return (e.textContent || '').replace(/\\u00a0/g, ' ').trim(); });
-    if (ctas.some(function(t) { return /Do košíku|Vybrat variantu/.test(t); })) inStock = true;
-    else if (ctas.some(function(t) { return t === 'Hlídat'; })) inStock = false;
+    // Slovak equivalents (alza.sk, live-verified 2026-10-07): "Do košíka" /
+    // "Vybrať variant" = purchasable, standalone "Strážiť" = watch button.
+    if (ctas.some(function(t) { return /Do košíku|Do košíka|Vybrat variantu|Vybrať variant/.test(t); })) inStock = true;
+    else if (ctas.some(function(t) { return t === 'Hlídat' || t === 'Strážiť'; })) inStock = false;
     return {
       code: card.getAttribute('data-code'),
       id: card.getAttribute('data-id'),
@@ -189,6 +192,9 @@ const PRODUCT_PAGE_EXTRACTOR = `(function() {
   };
 })()`;
 
+/** Highest result page `search_products` accepts (the page-link extractor only trusts anchors up to -p50). */
+export const MAX_SEARCH_PAGE = 50;
+
 export class Catalog {
   private readonly searchCache = new TtlCache<string, SearchResult>(60 * 1000);
   /** Products with the full (up to PRODUCT_PARAMS_SCRAPE_CAP) spec list. */
@@ -207,6 +213,14 @@ export class Catalog {
     }
     const limit = clamp(opts.limit ?? 20, 1, 50);
     const page = Math.max(1, opts.page ?? 1);
+    if (page > MAX_SEARCH_PAGE) {
+      throw new Error(`page must be at most ${MAX_SEARCH_PAGE} (got ${page}) — Alza renders no more result pages than that`);
+    }
+    if (opts.producerIds && opts.producerIds.length > 1) {
+      throw new Error(
+        "producer_ids accepts exactly one brand id per call: Alza has no multi-brand category URL (combined -v{id}-v{id} URLs return a 404 page). Call once per brand and merge the results."
+      );
+    }
     const cacheKey = JSON.stringify({ ...opts, limit, page });
 
     // Slider (range) filters, including screen size backed by the category's
@@ -215,6 +229,10 @@ export class Catalog {
     if (rangePlan) {
       return this.searchCache.memoize(cacheKey, () => this.searchWithRanges(opts, rangePlan, limit, page));
     }
+
+    // Keyword search silently ignores an unknown `idc=` (unrelated results);
+    // the category-browse and range paths 404 on their own and report it.
+    if (opts.categoryId && !hasAttrFilters && !opts.browse) await this.assertCategoryExists(opts.categoryId);
 
     // Alza's search page ignores server-side sort (verified 2026-09-12) and
     // cards carry no explicit stock attribute, so for price/rating orders we
@@ -234,8 +252,7 @@ export class Catalog {
       // Pagination links resolved from the rendered page-number anchors (see
       // PAGE_URLS_EXTRACTOR); search.htm?pg=N is ignored by Alza.
       let pageLinks: Record<string, string> = {};
-      for (let n = 1; n < page + maxPages; n++) {
-        if (n < page) continue; // explicit page: skip earlier pages
+      for (let n = page; n < page + maxPages; n++) {
         // Filtered category pages render pagination anchors that drop the
         // -par segments (live-verified 2026-10-03), but `{filteredUrl}-pN.htm`
         // keeps them — so build those URLs instead of following the anchors.
@@ -475,13 +492,7 @@ export class Catalog {
       if (!resp.ok()) throw new Error(`Alza range-filter request failed: HTTP ${resp.status()}`);
       // Same redirect guard as the checkbox path: a path segment Alza has no
       // landing page for is dropped by a redirect (the hash survives it).
-      const dropped = droppedFilterSegments(p.url(), opts.producerIds, opts.filters);
-      if (dropped.length > 0) {
-        throw new Error(
-          `Alza does not support URL filtering for ${dropped.join(", ")} in category ${opts.categoryId} ` +
-            "(it redirected to an unfiltered page). Drop that filter and compare candidates with get_product's params instead."
-        );
-      }
+      await this.assertFiltersApplied(p, opts);
       const applied = parseAppliedRanges(safeJsonParse(resp.request().postData()));
       for (const r of ranges) {
         if (!applied.some((a) => a.paramId === r.paramId)) {
@@ -546,6 +557,59 @@ export class Catalog {
     return { categoryIds, candidatesScanned: all.scanned, deals };
   }
 
+  private readonly categoryExistsCache = new TtlCache<number, true>(60 * 60 * 1000);
+
+  /**
+   * Throws NotFoundError for a category id Alza has no page for. Alza answers
+   * `/{id}.htm` for an unknown id with a 404 error page, while keyword search
+   * (`search.htm?idc=`) silently ignores a bogus id and returns unrelated
+   * results (live-verified 2026-10-07). Only successes are cached.
+   */
+  private async assertCategoryExists(categoryId: number): Promise<void> {
+    await this.categoryExistsCache.memoize(categoryId, async () => {
+      const status = await this.browser.withPage(async (p) => {
+        const res = await p.goto(`${this.browser.locale.baseUrl}/${categoryId}.htm`, { waitUntil: "commit", timeout: 30_000 });
+        return res?.status();
+      });
+      if (status === 404) throw new NotFoundError(`category ${categoryId}`);
+      return true as const;
+    });
+  }
+
+  /**
+   * Redirect guard for filtered category URLs. Alza redirects an unsupported
+   * `-v{id}` / `-par{p}-{v}` segment to a less-filtered page, so a dropped
+   * segment normally means the filter was not applied. One exception
+   * (live-verified 2026-10-07): for a major brand Alza redirects page 1 to its
+   * curated brand landing page under a different category id (phones +
+   * Samsung -> /mobily-samsung/18855066.htm), which IS filtered; page 2+
+   * (`-p2`) keeps the `-v{id}` segment. That redirect is accepted when it is
+   * the only dropped segment, leaves the requested category id, and the
+   * landing page's title/heading names the requested brand.
+   */
+  private async assertFiltersApplied(p: Page, opts: SearchOptions): Promise<void> {
+    const dropped = droppedFilterSegments(p.url(), opts.producerIds, opts.filters);
+    if (dropped.length === 0) return;
+    if (dropped.length === 1 && dropped[0]?.startsWith("producer ") && opts.producerIds?.length === 1 && opts.categoryId) {
+      const landedId = new URL(p.url()).pathname.match(/(\d+)\.htm$/)?.[1];
+      if (landedId !== undefined && Number(landedId) !== opts.categoryId) {
+        const brand = await this.getCategoryFilters(opts.categoryId)
+          .then((f) => f.brands.find((b) => b.valueId === opts.producerIds?.[0])?.description)
+          .catch(() => undefined);
+        if (brand) {
+          const heading = (await p.evaluate(
+            "(document.title || '') + ' ' + ((document.querySelector('h1') || {}).textContent || '')"
+          )) as string;
+          if (normText(heading).includes(normText(brand))) return;
+        }
+      }
+    }
+    throw new Error(
+      `Alza does not support URL filtering for ${dropped.join(", ")} in category ${opts.categoryId} ` +
+        "(it redirected to an unfiltered page). Drop that filter and compare candidates with get_product's params instead."
+    );
+  }
+
   private async fetchSearchPage(
     opts: SearchOptions,
     explicitUrl?: string
@@ -556,17 +620,19 @@ export class Catalog {
       const res = await p.goto(url, { waitUntil: "commit", timeout: 30_000 });
       await p.waitForLoadState("load", { timeout: 30_000 }).catch(() => {});
       if (res && res.status() >= 400) {
+        if (res.status() === 404 && opts.categoryId && (opts.producerIds?.length || opts.filters?.length)) {
+          await this.assertCategoryExists(opts.categoryId); // unknown category -> NotFoundError
+          // The category exists, so Alza has no page for this
+          // brand/attribute combination — say so instead of reporting 0 results.
+          throw new Error(
+            `Alza has no filtered page for category ${opts.categoryId} with the requested producer_ids/filters (HTTP 404) — check the ids with list_category_filters; combining several brands in one call is not supported.`
+          );
+        }
         // Some "no results" pages are legit 404 — degrade gracefully.
         return { cards: [] as RawCard[], pageUrls: {} };
       }
       if (opts.categoryId && (opts.producerIds?.length || opts.filters?.length)) {
-        const dropped = droppedFilterSegments(p.url(), opts.producerIds, opts.filters);
-        if (dropped.length > 0) {
-          throw new Error(
-            `Alza does not support URL filtering for ${dropped.join(", ")} in category ${opts.categoryId} ` +
-              "(it redirected to an unfiltered page). Drop that filter and compare candidates with get_product's params instead."
-          );
-        }
+        await this.assertFiltersApplied(p, opts);
       }
       // Render-race guard (observed 2026-09-12): the first navigation after a
       // cold browser launch can finish "load" with the result grid still
@@ -677,7 +743,8 @@ export class Catalog {
       const pageUrl = `${this.browser.locale.baseUrl}/${categoryId}.htm`;
       const apiUrl = `/services/restservice.svc/v3/params/${categoryId}?type=CATEGORY&typeId=0&search=`;
       return this.browser.withPage(async (p) => {
-        await p.goto(pageUrl, { waitUntil: "commit", timeout: 30_000 });
+        const res = await p.goto(pageUrl, { waitUntil: "commit", timeout: 30_000 });
+        if (res?.status() === 404) throw new NotFoundError(`category ${categoryId}`);
         await p.waitForLoadState("load", { timeout: 20_000 }).catch(() => {});
         const raw = (await p.evaluate(
           `fetch(${JSON.stringify(apiUrl)}, { headers: { accept: "application/json" } }).then((r) => r.json())`
@@ -694,7 +761,8 @@ export class Catalog {
         : this.browser.locale.baseUrl;
 
       return this.browser.withPage(async (p) => {
-        await p.goto(url, { waitUntil: "commit", timeout: 30_000 });
+        const res = await p.goto(url, { waitUntil: "commit", timeout: 30_000 });
+        if (parentId && res?.status() === 404) throw new NotFoundError(`category ${parentId}`);
         await p.waitForLoadState("load", { timeout: 20_000 }).catch(() => {});
 
         // Top-level: the homepage's MUI category navigation. Sub-level: the
@@ -837,6 +905,10 @@ interface ProductPageData {
   params: Array<{ name: string; value: string }>;
 }
 
+function normText(s: string): string {
+  return s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+}
+
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
 }
@@ -880,9 +952,15 @@ export function compareForSort(a: Product, b: Product, sort?: SortOrder): number
   return 0;
 }
 
-function filterByPrice(p: Product, opts: SearchOptions): boolean {
-  if (opts.minPrice !== undefined && (p.price ?? Infinity) < opts.minPrice) return false;
-  if (opts.maxPrice !== undefined && (p.price ?? -Infinity) > opts.maxPrice) return false;
+/**
+ * Price window. A product whose price could not be read is excluded whenever a
+ * bound is set (it cannot be shown to satisfy the filter), like `passesInStock`.
+ */
+export function filterByPrice(p: Product, opts: Pick<SearchOptions, "minPrice" | "maxPrice">): boolean {
+  if (opts.minPrice === undefined && opts.maxPrice === undefined) return true;
+  if (p.price === undefined) return false;
+  if (opts.minPrice !== undefined && p.price < opts.minPrice) return false;
+  if (opts.maxPrice !== undefined && p.price > opts.maxPrice) return false;
   return true;
 }
 
@@ -1149,14 +1227,15 @@ function filterByScreenSize(p: Product, opts: SearchOptions): boolean {
   return true;
 }
 
-function parsePrice(raw: string | null | undefined): number | undefined {
+export function parsePrice(raw: string | null | undefined): number | undefined {
   if (!raw) return undefined;
-  // Alza search cards show prices like "5 290,-" or "Super cena 4 399,- Ušetříte 91,-".
-  // Take the first price-shaped number.
-  const m = raw.match(/(\d[\d\s]{1,7})\s*,-/);
+  // Alza search cards show prices like "5 290,-" / "Super cena 4 399,- Ušetříte 91,-"
+  // (alza.cz) and "395,90 €" / "297 €" (alza.sk, live-verified 2026-10-07).
+  // Take the first price-shaped number: digits with optional space-grouped
+  // thousands and optional decimals, followed by ",-", "€" or "Kč".
+  const m = raw.match(/(\d{1,3}(?:\s\d{3})+|\d+)(?:,(\d{1,2}))?\s*(?:,-|€|Kč)/);
   if (!m) return undefined;
-  const cleaned = (m[1] ?? "").replace(/\s+/g, "");
-  const n = Number(cleaned);
+  const n = Number(`${(m[1] ?? "").replace(/\s+/g, "")}${m[2] ? `.${m[2]}` : ""}`);
   return Number.isFinite(n) ? n : undefined;
 }
 

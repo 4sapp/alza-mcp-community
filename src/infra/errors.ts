@@ -34,3 +34,29 @@ export class HandshakeError extends AlzaError {
     super(`Handshake failed: ${message}`, cause);
   }
 }
+
+/** Bad operator configuration (e.g. an invalid ALZA_PROXY_URL). Not a bug in
+ * alza-mcp or a change on Alza's side, so no `report_issue` hint. */
+export class ConfigurationError extends AlzaError {
+  override readonly name = "ConfigurationError";
+}
+
+/** The access token was rejected (or Alza answered as an anonymous visitor)
+ * and could not be renewed. */
+export class AuthenticationError extends AlzaError {
+  override readonly name = "AuthenticationError";
+}
+
+/** A non-idempotent request (POST/PUT/PATCH/DELETE) failed after it was handed
+ * to the transport: it may or may not have reached Alza, so it is never
+ * replayed automatically. */
+export class OutcomeUnknownError extends AlzaError {
+  override readonly name = "OutcomeUnknownError";
+  constructor(method: string, target: string, cause: unknown) {
+    super(
+      `${method} ${target}: the request may or may not have reached Alza — the transport failed after the request was sent (${cause instanceof Error ? cause.message : String(cause)}). ` +
+        "It was NOT retried automatically, so nothing was sent twice. Check the current state first (for example `order_archive`, `cart` or `profile`) and only retry if the change is not there.",
+      cause,
+    );
+  }
+}
