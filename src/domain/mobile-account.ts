@@ -31,6 +31,11 @@ const WHITELISTED_MUTATIONS = new Set<string>([
   "gdpr_export",
 ]);
 
+/** Hosts and route families for the plain-link reads added for issue #72. */
+const USER_LINK_HOSTS = new Set(["www.alza.cz", "m.alza.cz", "webapi.alza.cz"]);
+const WARRANTY_CLAIMS_PATH = /^\/api\/users\/\d{1,16}\/v1\/warrantyClaims(?:\/[\w-]+)*\/?$/;
+const SUBSCRIPTION_PATH = /^\/api\/users\/\d{1,16}\/v1\/subscription\/?$/;
+
 const ADDRESS_TYPES = new Set(["HOME", "WORK", "OTHER"]);
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const ZIP_RE = /^[\dA-Za-z -]{3,12}$/;
@@ -194,7 +199,7 @@ export class MobileAccount {
       case "catalog_user_navigation": return this.api.catalogUserNavigation();
       case "anonymous_orders": return this.api.anonymousOrders(String(args.invoice_number ?? ""));
       case "anonymous_order": return this.api.anonymousOrder(String(args.order_id ?? ""));
-      case "user_order": return this.api.userOrder(Number(args.user_flag ?? 0), String(args.order_id ?? ""), Boolean(args.initial_created));
+      case "user_order": return this.order(String(args.order_id ?? ""), undefined, args.user_id === undefined ? undefined : String(args.user_id), Boolean(args.initial_created)).then((r) => (r as { order: unknown }).order);
       case "order_part": return this.api.orderPart(String(args.order_id ?? ""), String(args.part_id ?? ""));
       case "after_order_payments": return this.api.afterOrderPayments(String(args.order_id ?? ""), String(args.part_id ?? ""));
       case "order_add_info": return this.api.orderAddInfo();
@@ -321,6 +326,14 @@ export class MobileAccount {
   async addressSearch(action: Record<string, unknown>, query: string): Promise<unknown> {
     if (typeof query !== "string" || query.length === 0 || query.length > 50) throw new Error("query must be a non-empty string (max 50)");
     return this.api.executeAppAction(this.actionFrom(action), { extraValues: [{ name: "search", value: query, kind: "text" }], routePolicy: APP_ACTION_ROUTE_POLICIES.addressSearch });
+  }
+
+  /** Issue #72: `addressSearchAction` is only present when the profile carries
+   * it, so without one the zip/city search uses the live-verified D5 lookup
+   * (`GET /services/restservice.svc/v1/getZipCodes?deliveryId=0&search=`). */
+  async zipCitySearch(query: string): Promise<unknown> {
+    if (typeof query !== "string" || query.trim().length === 0 || query.length > 50) throw new Error("query must be a non-empty string (max 50)");
+    return this.api.zipCodes(query.trim());
   }
 
   /** OR6 (2026-09-22): order search — typed read over the server-provided
@@ -454,6 +467,9 @@ export class MobileAccount {
    * `detailAction` copied verbatim from the `complaint_claims` list response
    * (same executor pattern as K1; read-only, no token). */
   async claimDetail(action: Record<string, unknown>): Promise<unknown> {
+    // Issue #72: the per-claim `detailAction` is a plain link; read it as a
+    // GET pinned to the warranty-claims route family.
+    if (MobileAccount.isPlainLink(action)) return this.readUserLink(action, WARRANTY_CLAIMS_PATH, "action");
     return this.api.executeAppAction(this.actionFrom(action), { routePolicy: APP_ACTION_ROUTE_POLICIES.claimsRead });
   }
 
@@ -695,11 +711,13 @@ export class MobileAccount {
   }
 
   /** Orders family: order read (+ optional part detail). */
-  async order(orderId: string, partId?: string, userFlag = 0, initialCreated = false): Promise<unknown> {
+  async order(orderId: string, partId?: string, userId?: string, initialCreated = false): Promise<unknown> {
     if (typeof orderId !== "string" || orderId.length === 0 || orderId.length > 64) throw new Error("order_id must be a non-empty string (max 64)");
-    if (userFlag !== 0 && userFlag !== 1) throw new Error("user_flag must be 0 or 1");
     if (partId !== undefined && (typeof partId !== "string" || partId.length === 0 || partId.length > 64)) throw new Error("part_id must be a non-empty string (max 64)");
-    const order = await this.api.userOrder(userFlag, orderId, initialCreated);
+    // Issue #60: the route segment is the numeric user id, never the 0/1 flag.
+    const uid = requireUserId(userId ?? this.api.userId);
+    if (uid === "0" || uid === "1") throw new Error("user_id must be the numeric Alza user id from profile/user_data, not the old 0/1 user_flag");
+    const order = await this.api.userOrder(uid, orderId, initialCreated);
     if (partId === undefined) return { order };
     const part = await this.api.orderPart(orderId, partId);
     return { order, part };
@@ -739,11 +757,46 @@ export class MobileAccount {
   }
 
   async complaintClaims(action: Record<string, unknown>): Promise<unknown> {
+    if (MobileAccount.isPlainLink(action)) return this.readUserLink(action, WARRANTY_CLAIMS_PATH, "action");
     return this.api.executeAppAction(this.actionFrom(action), { routePolicy: APP_ACTION_ROUTE_POLICIES.claimsRead });
   }
 
+  /** K1 typed read (issue #72): no tool emits the AppAction `complaintClaims`
+   * needs, so the list is read directly by user id + scope. */
+  async warrantyClaims(userId: string | undefined, scope: unknown = "active"): Promise<unknown> {
+    const uid = requireUserId(userId ?? this.api.userId);
+    if (scope !== "active" && scope !== "archive") throw new Error("scope must be 'active' or 'archive'");
+    return this.api.warrantyClaims(uid, scope);
+  }
+
   async subscriptionOverview(action: Record<string, unknown>): Promise<unknown> {
+    if (MobileAccount.isPlainLink(action)) return this.readUserLink(action, SUBSCRIPTION_PATH, "action");
     return this.api.executeAppAction(this.actionFrom(action), { routePolicy: APP_ACTION_ROUTE_POLICIES.subscriptionRead });
+  }
+
+  /** S1 typed read (issue #72): the navigation's `userSubscription` section, by user id. */
+  async userSubscription(userId: string | undefined): Promise<unknown> {
+    return this.api.userSubscription(requireUserId(userId ?? this.api.userId));
+  }
+
+  /** Issue #72: claim lists and navigation return plain HATEOAS links
+   * (`{href, appLink, enabled}`), not `form.meta.href` AppActions. This reads
+   * such a link with GET only, after pinning it to HTTPS on an Alza API host
+   * and to the user-route family the calling tool owns. */
+  private async readUserLink(link: Record<string, unknown>, family: RegExp, what: string): Promise<unknown> {
+    const href = link?.href;
+    if (typeof href !== "string" || href.length === 0 || href.length > 800) throw new Error(`${what} must be a link object with an href (copy it verbatim from a prior response)`);
+    let u: URL;
+    try { u = new URL(href, this.api.baseUrl); } catch { throw new Error(`${what}.href is not a valid URL`); }
+    const base = new URL(this.api.baseUrl);
+    const onAlzaHost = u.host === base.host || (USER_LINK_HOSTS.has(u.hostname) && u.port === "");
+    if (u.protocol !== "https:" || !onAlzaHost || u.username !== "" || u.password !== "") throw new Error(`${what}.href must be an https Alza API URL (${[...USER_LINK_HOSTS].join(", ")})`);
+    if (!family.test(u.pathname)) throw new Error(`${what}.href is outside the route family this tool reads`);
+    return this.api.request(u.toString());
+  }
+
+  private static isPlainLink(action: Record<string, unknown>): boolean {
+    return Boolean(action) && typeof action === "object" && typeof action.href === "string" && !("form" in action);
   }
 
   async subscriptionActivate(action: Record<string, unknown>, payload: Record<string, unknown>, token: string): Promise<unknown> {

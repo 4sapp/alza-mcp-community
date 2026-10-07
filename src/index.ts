@@ -13,10 +13,14 @@ async function main(): Promise<void> {
     cdpUrl: process.env.ALZA_CDP_URL,
   });
 
+  let shuttingDown = false;
   const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     log.info(`alza-mcp shutting down on ${signal}`);
     try {
-      await close();
+      // Don't let a stuck browser/sidecar close keep an orphaned server alive.
+      await Promise.race([close(), new Promise((r) => setTimeout(r, 5000).unref())]);
     } finally {
       process.exit(0);
     }
@@ -26,6 +30,10 @@ async function main(): Promise<void> {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
+  // The host closed (or crashed and dropped) our stdin: there is nobody left to talk to. Without
+  // this, the sidecar's piped stdio and Chromium keep the event loop alive forever.
+  process.stdin.on("end", () => void shutdown("stdin end"));
+  process.stdin.on("close", () => void shutdown("stdin close"));
   log.info("alza-mcp ready", {
     baseUrl: process.env.ALZA_BASE_URL ?? "https://www.alza.cz",
     cdp: !!process.env.ALZA_CDP_URL,

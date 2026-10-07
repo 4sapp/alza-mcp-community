@@ -5,7 +5,7 @@ import type { RegisterableTool, ToolDeps } from "./types.js";
 import { tagLinks } from "./tracking.js";
 
 const inputSchema = {
-  query: z.string().min(1).describe("Search keywords. Required. Example: 'iPhone 15 Pro', 'PlayStation 5', 'gaming mouse Logitech'."),
+  query: z.string().min(1).max(200).describe("Search keywords. Required. Example: 'iPhone 15 Pro', 'PlayStation 5', 'gaming mouse Logitech'."),
   limit: z
     .number()
     .int()
@@ -17,9 +17,10 @@ const inputSchema = {
     .number()
     .int()
     .min(1)
+    .max(50)
     .optional()
     .describe(
-      "1-indexed result page (follows Alza's rendered pagination). Only pages Alza actually renders are reachable — a page beyond the rendered set returns no results rather than repeating page 1. Paginating this way does not change which page the sweep scans (sorting still scans from page 1)."
+      "1-indexed result page (1-50) (follows Alza's rendered pagination). Only pages Alza actually renders are reachable — a page beyond the rendered set returns no results rather than repeating page 1. Paginating this way does not change which page the sweep scans (sorting still scans from page 1)."
     ),
   sort: z
     .enum(["relevance", "price-asc", "price-desc", "rating", "newest"])
@@ -27,13 +28,13 @@ const inputSchema = {
     .describe(
       "Sort order, default 'relevance'. Alza's search page ignores server-side sort parameters, so price (asc/desc) and rating sorts gather candidates from up to 3 result pages (~72 items — the top of Alza's relevance ranking) and sort them client-side; the response's `candidatesScanned` says how many candidates were scanned. 'newest' is best-effort (Alza's newest-sort is client-side JS, so it returns relevance order). For an absolute price floor, also pass `max_price` and/or narrow `category_id`."
     ),
-  min_price: z.number().min(0).optional().describe("Minimum price in the locale's currency."),
-  max_price: z.number().min(0).optional().describe("Maximum price in the locale's currency."),
+  min_price: z.number().min(0).optional().describe("Minimum price in the locale's currency. Products whose price could not be read are excluded."),
+  max_price: z.number().min(0).optional().describe("Maximum price in the locale's currency. Products whose price could not be read are excluded."),
   in_stock: z
     .boolean()
     .optional()
     .describe(
-      "If true, keep only products purchasable right now (card shows a 'Do košíku'/'Vybrat variantu' purchase CTA; cards with a 'Hlídat' watch button are excluded). Derived from the search card's CTA — for real delivery dates use `get_product`."
+      "If true, keep only products purchasable right now (card shows a 'Do košíku'/'Vybrat variantu' (alza.sk: 'Do košíka'/'Vybrať variant') purchase CTA; cards with a 'Hlídat'/'Strážiť' watch button are excluded). Derived from the search card's CTA — for real delivery dates use `get_product`."
     ),
   category_id: z
     .number()
@@ -56,9 +57,10 @@ const inputSchema = {
     .describe("Maximum screen diagonal in inches. See `min_screen_inches` for when this is a server-side filter vs a name-based fallback."),
   producer_ids: z
     .array(z.number().int().positive())
+    .max(1)
     .optional()
     .describe(
-      "Filter by brand id(s) — get real ids from `list_category_filters`'s `brands`. Requires `category_id`. Works in every category."
+      "Filter by ONE brand id (an array of at most one — Alza has no multi-brand category URL; to compare brands call once per brand) — get real ids from `list_category_filters`'s `brands`. Requires `category_id`. Works in every category."
     ),
   filters: z
     .array(

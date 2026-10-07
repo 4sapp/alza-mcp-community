@@ -75,8 +75,17 @@ export function matchesBrand(p: Product, brand: string, sourceName?: string): bo
   if (p.brand) return norm(p.brand).trim() === norm(brand).trim();
   const w = words(p.name);
   if (b.every((x) => w.includes(x))) return true;
-  const lead = sourceName ? words(sourceName)[0] : undefined;
-  return lead !== undefined && w[0] === lead;
+  const lead = sourceName ? leadingWord(sourceName) : undefined;
+  return lead !== undefined && leadingWord(p.name) === lead;
+}
+
+/**
+ * First word of a name that is not purely numeric. Display names lead with the
+ * screen diagonal (`34" AOC CU34G2XP`, `27" iiyama ProLite`), so the plain first
+ * token is the size, not the brand, and would match every 34" product.
+ */
+function leadingWord(name: string): string | undefined {
+  return words(name).find((x) => !/^\d+$/.test(x));
 }
 
 const byPriceAsc = (a: Product, b: Product): number =>

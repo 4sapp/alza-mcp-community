@@ -72,8 +72,16 @@ export class AlzaBrowser {
     this.inFlight++;
     let page: Page | undefined;
     try {
-      const ctx = await this.ensureContext();
-      page = await ctx.newPage();
+      try {
+        page = await (await this.ensureContext()).newPage();
+      } catch (err) {
+        // The browser vanished between calls (e.g. the user restarted the Chrome we attached
+        // to over CDP): drop the stale handles and retry once on a fresh connection.
+        if (!/has been closed|disconnected|Target closed/i.test((err as Error)?.message ?? "")) throw err;
+        log.info("alza-browser: browser went away, reconnecting");
+        await this.dropBrowser();
+        page = await (await this.ensureContext()).newPage();
+      }
       page.setDefaultTimeout(PAGE_TIMEOUT_MS);
       page.setDefaultNavigationTimeout(PAGE_TIMEOUT_MS);
       return await fn(page);
@@ -122,7 +130,16 @@ export class AlzaBrowser {
     }
   }
 
+  /** Forget the current browser/context without closing anything (they are already gone). */
+  private async dropBrowser(): Promise<void> {
+    const ctx = this.context;
+    this.context = undefined;
+    this.browser = undefined;
+    await ctx?.close().catch(() => {});
+  }
+
   private async ensureContext(): Promise<BrowserContext> {
+    if (this.browser && !this.browser.isConnected()) await this.dropBrowser();
     if (this.context) return this.context;
     const browser = await this.ensureBrowser();
     const context = await browser.newContext({
@@ -160,23 +177,29 @@ export class AlzaBrowser {
         log.info("alza-browser: connecting via CDP", { cdpUrl: this.cdpUrl });
         const browser = await chromium.connectOverCDP(this.cdpUrl);
         this.browser = browser;
+        this.watchDisconnect(browser);
         return browser;
       }
       log.info("alza-browser: launching managed Chromium", { headless: this.headless });
       const browser = await this.launchChromiumWithFallback();
       this.browser = browser;
-      browser.on("disconnected", () => {
-        // External shutdown (crashed, killed by user) — clear refs so we can relaunch on next use.
-        log.info("alza-browser: chromium disconnected");
-        this.browser = undefined;
-        this.context = undefined;
-      });
+      this.watchDisconnect(browser);
       return browser;
     })().finally(() => {
       this.launching = undefined;
     });
 
     return this.launching;
+  }
+
+  /** External shutdown (crash, user restarted Chrome) — clear refs so the next call reconnects/relaunches. */
+  private watchDisconnect(browser: Browser): void {
+    browser.on("disconnected", () => {
+      log.info("alza-browser: browser disconnected");
+      if (this.browser !== browser) return;
+      this.browser = undefined;
+      this.context = undefined;
+    });
   }
 
   private async launchChromiumWithFallback(): Promise<Browser> {
@@ -213,9 +236,14 @@ export class AlzaBrowser {
   }
 }
 
-async function ensureChromiumInstalled(): Promise<void> {
-  let cliPath: string;
-  try {
+/**
+ * Downloads the Chromium headless shell via Playwright's CLI. The child's stdout is sent to our
+ * stderr: on a stdio server stdout is the JSON-RPC channel, and Playwright's progress output
+ * ("Downloading Chrome Headless Shell …") would corrupt it. `installer` overrides the command (tests).
+ */
+export async function ensureChromiumInstalled(installer?: { command: string; args: string[] }): Promise<void> {
+  let cliPath = "";
+  if (!installer) try {
     const path = await import("node:path");
     const pkgJsonPath = require.resolve("playwright/package.json");
     cliPath = path.join(path.dirname(pkgJsonPath), "cli.js");
@@ -226,9 +254,9 @@ async function ensureChromiumInstalled(): Promise<void> {
     );
   }
   await new Promise<void>((resolve, reject) => {
-    const child = spawn(process.execPath, [cliPath, "install", "chromium", "--only-shell"], {
-      stdio: "inherit",
-    });
+    const command = installer?.command ?? process.execPath;
+    const args = installer?.args ?? [cliPath, "install", "chromium", "--only-shell"];
+    const child = spawn(command, args, { stdio: ["ignore", 2, 2] });
     child.on("error", reject);
     child.on("exit", (code) => {
       if (code === 0) resolve();

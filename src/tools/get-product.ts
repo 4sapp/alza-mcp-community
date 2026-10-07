@@ -8,6 +8,7 @@ const inputSchema = {
   code: z
     .string()
     .min(1)
+    .max(64)
     .describe(
       "Alza product code, e.g. 'WEXOA002B0'. This is the canonical identifier returned by `search_products` (the `code` field). Not the numeric id."
     ),

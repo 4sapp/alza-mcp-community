@@ -103,7 +103,7 @@ With 63 domain tools (66 including `list_toolsets`, `set_toolset` and `report_is
 
 Call **`list_toolsets`** to see every group and **`set_toolset({id, enabled: true})`** to turn one on before using its tools — e.g. enable `basket_and_checkout` before adding something to a cart. This is standard MCP progressive disclosure (`RegisteredTool.enable()`/`.disable()`, which fires the normal `tools/list_changed` notification) — no functionality is removed, it's just not all visible at once.
 
-**Reporting problems.** `report_issue` is always available, whichever toolsets are on. When a tool fails unexpectedly, returns clearly wrong data, or breaks because Alza changed something, the server instructions and the error message itself point the agent to it. It returns a redacted draft (with version, Node, platform, storefront, transport and this session's recent tool errors), a `gh issue list` command to check for duplicates, a ready-to-run `gh issue create --repo lukabudik/alza-mcp …` command, and a prefilled new-issue link for agents without a shell. The server files nothing itself: the agent shows the draft to you and files it from your GitHub account only if you agree. Credentials, e-mails, phone numbers, account ids and home-directory paths are redacted automatically. Invalid arguments and unknown products don't trigger the hint.
+**Reporting problems.** `report_issue` is always available, whichever toolsets are on. When a tool fails unexpectedly, returns clearly wrong data, or breaks because Alza changed something, the server instructions and the error message itself point the agent to it. It returns a redacted draft (with version, Node, platform, storefront, transport and this session's recent tool errors), a `gh issue list` command to check for duplicates, a ready-to-run `gh issue create --repo lukabudik/alza-mcp …` command, and a prefilled new-issue link for agents without a shell. The server files nothing itself: the agent shows the draft to you and files it from your GitHub account only if you agree. Credentials (including cookies and API keys), e-mails, phone numbers, UUIDs, URL query values, account ids and home-directory paths are redacted automatically, and recent errors keep only route and status. Invalid arguments and unknown products don't trigger the hint.
 
 Catalog tools:
 
@@ -161,24 +161,24 @@ User-management, payments, orders, and post-purchase tools:
 | **`register`** | Registers a new Alza account (credential-bearing, one-time token) |
 | **`address_upsert`** | Creates/edits a delivery address through the server-provided address form |
 | **`address_delete`** | Deletes a delivery address via its per-address action |
-| **`address_search`** | Follows the server-provided address-search action (read-only) |
+| **`address_search`** | Zip/city search via the verified `getZipCodes` lookup, or a profile `addressSearchAction` if one is supplied (read-only) |
 | **`payment_methods`** | Lists payment methods from the APK delivery-payment-group endpoint |
 | **`after_order_payments`** | Lists after-order payment options for an order part |
 | **`pay_after_order`** | Executes an after-order payment (APK `AfterOrderRequestBody`, one-time token) |
 | **`web_place_order`** | Places an order through the live-verified legacy web WCF pipeline (SaveOrder2→3, 113-gate retry, CheckOrder4, SendOrder4; one-time token) — the working submission path while mobile `sendOrder3` 500s |
 | **`web_pay_after_order`** | Executes a web after-order payment through the live-verified WCF `CreateAfterPayment` (one-time token) |
-| **`order`** | Reads a user order (+ optional part detail, milestones, invoice refs) |
+| **`order`** | Reads a user order by numeric `user_id` + `order_id` (+ optional part detail, milestones, invoice refs) |
 | **`review_submit`** | Submits a product review through the server-provided review form |
-| **`complaint_claims`** | Lists warranty claims via the server-provided claims action |
-| **`subscription_overview`** | Reads AlzaSubscription overview via the server-provided subscription action |
+| **`complaint_claims`** | Lists active or archived warranty claims by `user_id` (K1; read-only) |
+| **`subscription_overview`** | Reads the account's subscription section (the navigation's `userSubscription` link) by `user_id` (S1; response shape not yet live-verified) |
 | **`subscription_activate`** | Activates AlzaSubscription (one-time token) |
 | **`subscription_update_installment`** | Changes the installment plan (one-time token) |
 | **`upload_attachment`** | Uploads image attachments via the multipart server-provided action (one-time token) |
 | **`order_search`** | Searches the account's orders by term (OR6; read-only) |
 | **`order_archive`** | Reads the account's archived orders (OR7; read-only; the "Skrýt zrušené" include/hide-cancelled toggle) |
-| **`order_document`** | Downloads an order invoice/document from its server-provided href (OR10; origin-validated to the Alza host family) |
+| **`order_document`** | Downloads an order invoice/document from its server-provided href (OR10; origin-validated to the Alza host family; the body is returned in `structuredContent` only) |
 | **`gdpr_info`** | Reads the GDPR section + export dialog (A17; read-only — where the data export will be sent) |
-| **`claim_detail`** | Reads one warranty claim's detail via its server-provided action (K2; read-only) |
+| **`claim_detail`** | Reads one warranty claim's detail from its `detailAction` link (K2; read-only; pinned to the warranty-claims routes) |
 | **`change_password`** | Changes the account password (A14; one-time token; logs the user out of every device) |
 | **`two_factor_set`** | Enables/disables SMS two-factor (A15; one-time token) |
 | **`phone_change`** | Changes the contact phone number (A16; one-time token) |

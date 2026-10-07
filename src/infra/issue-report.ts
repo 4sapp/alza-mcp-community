@@ -49,21 +49,50 @@ export class RecentErrors {
 
 type Redaction = [RegExp, string, ((match: string) => boolean)?];
 
+/** A header/JSON/query value: a quoted string (spaces allowed) or a bare token. */
+const VALUE = `(?:"[^"]*"|'[^']*'|[^\\s"'&,}]+)`;
+
+/** Query parameters whose values are harmless and useful in a bug report. */
+const SAFE_QUERY_KEYS = new Set([
+  "country", "lang", "language", "locale", "culture", "page", "pagesize", "limit", "offset", "sort", "order",
+  "scope", "v", "version", "format", "type", "currency",
+]);
+
 const REDACTIONS: Redaction[] = [
+  // Credentials embedded in a URL (https://user:pass@host) — before the e-mail rule can mangle them.
+  [/([A-Za-z][A-Za-z0-9+.-]*:\/\/)[^\s/@?#]+@/g, "$1<redacted>@"],
+  // Cookie headers carry session ids and the Cloudflare clearance.
+  [/\b((?:Set-)?Cookie["']?\s*:\s*)[^\n]+/gi, "$1<redacted>"],
+  [/\b(cf_clearance|__cf_bm|__cfduid|phpsessid|jsessionid|asp\.net_sessionid)(\s*=\s*)[^\s;,"']+/gi, "$1$2<redacted>"],
+  // Authorization headers of any scheme (Basic, Bearer, Digest, custom).
+  [/\b(Authorization["']?\s*[:=]\s*["']?)(?:(Basic|Bearer|Digest|Token)\s+)?[^\s"',}]+/gi, "$1$2 <redacted>"],
   // Secrets by key name, in query strings, JSON or headers.
-  [/\b(access_token|refresh_token|id_token|client_secret|code_verifier|password|confirmation_token)(["']?\s*[:=]\s*["']?)[^\s"'&,}]+/gi, "$1$2<redacted>"],
-  // OAuth redirect parameters (alza://identity?code=…&state=…). Only as URL query
-  // parameters: a bare `code` elsewhere is usually a product code worth keeping.
-  [/([?&](?:code|state|session_state)=)[^\s&#"']+/g, "$1<redacted>"],
-  [/\bBearer\s+[A-Za-z0-9._~+/=-]+/g, "Bearer <redacted>"],
+  [
+    new RegExp(
+      `\\b(access_token|refresh_token|id_token|client_secret|code_verifier|password|confirmation_token|api[_-]?key|x-api-key|token|sid|sessionid|session_id|secret|visitor(?:_?id)?|user_?id|invoice_?number|commodity_?client_?id)(["']?\\s*[:=]\\s*)${VALUE}`,
+      "gi",
+    ),
+    "$1$2<redacted>",
+  ],
+  // OAuth redirect parameters (alza://identity?code=…&state=…, also in the #fragment).
+  [/([?&#](?:code|state|session_state)=)[^\s&#"']+/g, "$1<redacted>"],
+  // A bare `code=`/`state=` is usually a product code worth keeping; only long (OAuth-sized) values go.
+  [/(?<![\w?&#])((?:code|state|session_state)=)[^\s&#"']{16,}/g, "$1<redacted>"],
+  // Bearer tokens (any case; lowercase prose like "bearer of" is kept unless a long token follows).
+  [/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer <redacted>", (m) => /^Bearer/.test(m) || m.split(/\s+/)[1]!.length >= 8],
   // JWTs.
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, "<jwt>"],
-  // E-mail addresses.
-  [/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "<email>"],
+  // E-mail addresses, Unicode-aware and including the %40-encoded form seen in URLs.
+  [/[\p{L}\p{N}._%+-]+(?:@|%40)[\p{L}\p{N}.-]+\.\p{L}{2,}/giu, "<email>"],
   // Phone numbers with an international prefix (+420 123 456 789, +421123456789).
-  [/\+\d{1,3}[\s-]?\d{3}[\s-]?\d{3}[\s-]?\d{3,4}\b/g, "<phone>"],
+  [/(?:\+|(?<![\w.\/=+-])00)\d{1,3}[\s-]?\d{3}[\s-]?\d{3}[\s-]?\d{3,4}\b/g, "<phone>"],
+  // Local 9-digit phone numbers, spaced (777 123 456) or contiguous (777123456).
+  [/(?<![\w.\/=+-])\d{3}[ -]\d{3}[ -]\d{3}(?![\w.-])/g, "<phone>"],
+  [/(?<![\w.\/=+-])[2-9]\d{8}(?![\w.-])/g, "<phone>"],
   // Account-scoped ids in API paths (/users/123456/…, /orders/987654321).
   [/\/(users|user|customers|orders|order|addresses|claims)\/[^/\s?#]+/gi, "/$1/<id>"],
+  // UUIDs (visitor ids, session ids).
+  [/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "<uuid>"],
   // Long opaque tokens (hex / base64url, 32+ chars) such as visitor ids or session keys.
   [/\b[A-Fa-f0-9]{32,}\b/g, "<hex>"],
   // Mixed-case + digits tells a secret apart from a long lowercase product URL slug.
@@ -71,6 +100,24 @@ const REDACTIONS: Redaction[] = [
   // Local home-directory paths leak the OS username.
   [/(\/home\/|\/Users\/|C:\\Users\\)[^/\\\s]+/g, "$1<user>"],
 ];
+
+/** Redacts every query/fragment value except an allowlist of harmless keys (search terms, ids, tokens). */
+function redactQueryValues(text: string): { text: string; count: number } {
+  let count = 0;
+  const out = text.replace(/([?#])([^\s"'<>]*=[^\s"'<>]*)/g, (_m, lead: string, rest: string) => {
+    const parts = rest.split("&").map((pair) => {
+      const eq = pair.indexOf("=");
+      if (eq < 0) return pair;
+      const key = pair.slice(0, eq);
+      const value = pair.slice(eq + 1);
+      if (!value || value.startsWith("<") || SAFE_QUERY_KEYS.has(key.toLowerCase())) return pair;
+      count++;
+      return `${key}=<redacted>`;
+    });
+    return lead + parts.join("&");
+  });
+  return { text: out, count };
+}
 
 /** Removes credentials and personal data from free text before it goes into a public issue. */
 export function redact(text: string): { text: string; count: number } {
@@ -84,7 +131,20 @@ export function redact(text: string): { text: string; count: number } {
       return replacement.replace(/\$(\d)/g, (_, i: string) => String(m[Number(i)] ?? ""));
     });
   }
-  return { text: out, count };
+  const q = redactQueryValues(out);
+  return { text: q.text, count: count + q.count };
+}
+
+/**
+ * Reduces a recorded tool error to what a maintainer needs: the method/route and status, without
+ * query strings (search terms, visitor ids) or upstream HTML bodies (Cloudflare challenge pages).
+ */
+export function summarizeError(message: string): string {
+  return message
+    .replace(/<!doctype[\s\S]*|<html[\s\S]*/i, "[HTML body omitted]")
+    .replace(/\?[^\s"'<>]*/g, "?<query>")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export interface IssueInput {
@@ -166,7 +226,7 @@ export function buildIssueDraft(input: IssueInput, diag: Diagnostics, recent: Re
       "**Recent tool errors in this session**",
       "",
       "```",
-      ...errors.map((e) => `${e.at} ${e.tool}: ${clean(e.message).replace(/\s+/g, " ").slice(0, 500)}`),
+      ...errors.map((e) => `${e.at} ${e.tool}: ${clean(summarizeError(e.message)).slice(0, 500)}`),
       "```",
     );
   }
