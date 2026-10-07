@@ -28,7 +28,7 @@ const typedValues = z
     }),
   )
   .max(20)
-  .describe("Extra typed form values copied verbatim from the form response (payment/installment/consent fields). Omit if the form returned none.");
+  .describe("Extra typed form values copied verbatim from the form response (installment/consent fields; names containing password, token, card, payment, iban and similar are refused). Omit if the form returned none.");
 const appAction = jsonObject.describe(
   "An AppAction object copied verbatim from a prior tool response (e.g. `profile`); it must contain form.meta.href. Never hand-craft URLs. " +
     "Each tool only executes actions of its own route family (address, review, warranty claim, subscription, attachment); read tools are GET-only and write tools POST-only; credential, payment, order and basket-write routes and sensitive field names (password, token, card, payment, iban, ...) are always refused.",
