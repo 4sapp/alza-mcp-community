@@ -6,7 +6,7 @@ import { Pickup } from "./domain/pickup.js";
 import { Alternatives } from "./domain/alternatives.js";
 import { Reviews } from "./domain/reviews.js";
 import { AlzaBrowser } from "./infra/browser.js";
-import { NotFoundError, UpstreamError } from "./infra/errors.js";
+import { ConfigurationError, NotFoundError, OutcomeUnknownError, UpstreamError } from "./infra/errors.js";
 import { log } from "./infra/logger.js";
 import { findProductPrompt } from "./prompts/find-product.js";
 import { createProductResource } from "./resources/product.js";
@@ -184,10 +184,10 @@ const REPORT_HINT =
 
 /** Errors caused by the request itself: no point asking the maintainers about them. */
 function isUserError(err: unknown): boolean {
-  return err instanceof ZodError || err instanceof NotFoundError;
+  return err instanceof ZodError || err instanceof NotFoundError || err instanceof ConfigurationError;
 }
 
-function friendlyError(err: unknown): string {
+export function friendlyError(err: unknown): string {
   if (err instanceof NotFoundError) return err.message;
   if (err instanceof UpstreamError) {
     return `Alza upstream error (HTTP ${err.status}). ${err.message}`;
@@ -199,9 +199,12 @@ function friendlyError(err: unknown): string {
       .join("; ");
     return `Invalid arguments — ${issues}`;
   }
+  // Never suggest a blind retry: the request may already have changed something.
+  if (err instanceof OutcomeUnknownError) return `Outcome unknown — ${err.message}`;
+  if (err instanceof ConfigurationError) return `Configuration error: ${err.message}`;
   if (err instanceof Error) {
     if (err.message.includes("Timeout") || err.message.includes("timeout")) {
-      return "Alza took too long to respond. The site may be slow right now — please retry.";
+      return "Alza took too long to respond. The site may be slow right now. Retry a read; if the call changes something (order, payment, cart, account), check its current state before retrying — it may already have been applied.";
     }
     if (err.message.includes("net::") || err.message.includes("ERR_")) {
       return `Network error talking to Alza: ${err.message}`;

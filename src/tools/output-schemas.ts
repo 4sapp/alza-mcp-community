@@ -78,6 +78,10 @@ export const ACCOUNT_STATUS = z
     visitorId: z.string(),
     /** Mobile API base URL in use. */
     apiBaseUrl: z.string(),
+    /** Access-token expiry (ISO 8601), when known from the JWT `exp` or the token store. */
+    expiresAt: z.string().optional(),
+    /** True when the access token is expired (or within 60 s of it); the next account call refreshes it first. */
+    expired: z.boolean().optional(),
   })
   .passthrough();
 

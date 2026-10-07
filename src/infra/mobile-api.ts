@@ -1,10 +1,14 @@
 import { randomBytes, createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { Page } from "playwright";
 import { AppActionExecutor, type ExecuteAppActionOptions, type FetchLike, type ServerAppAction } from "./app-action.js";
+import { AlzaError, AuthenticationError, ConfigurationError, OutcomeUnknownError } from "./errors.js";
+import { TransportUnavailableError } from "./impersonate-transport.js";
 import { log } from "./logger.js";
+import { proxyConfigured } from "./proxy.js";
 
 export interface MobileApiOptions {
   baseUrl?: string;
@@ -33,6 +37,9 @@ export interface MobileApiOptions {
    * single user). The Streamable HTTP transport passes false unless the
    * operator explicitly opts in, because the store is single-user by design
    * and must never be shared by every session of a multi-user host.
+   * Tokens refreshed in-process are written back to the same file (atomic,
+   * mode 0600) only when they were loaded from it — never with
+   * ALZA_TOKEN_FILE=none or `loadTokenFile: false`.
    */
   loadTokenFile?: boolean;
 }
@@ -81,6 +88,15 @@ export class MobileApi {
   private readonly fetchImpl?: FetchLike;
   private accessToken?: string;
   private refreshToken?: string;
+  /** Access-token expiry (epoch ms) from the JWT `exp`, else `expires_in`. */
+  private accessTokenExpiresAt?: number;
+  /** Shared in-flight refresh: parallel 401s must not each spend the refresh token. */
+  private refreshing?: Promise<boolean>;
+  /** Refresh token whose last refresh failed — no proactive retries with it. */
+  private failedRefreshToken?: string;
+  /** Token store the current tokens came from; refreshed tokens are written back here. */
+  private tokenFile?: string;
+  private persistQueue: Promise<void> = Promise.resolve();
   private pendingOAuth?: OAuthStart;
   private pendingCodeVerifier?: string;
   private oidc?: OidcDiscovery;
@@ -89,27 +105,84 @@ export class MobileApi {
     return Boolean(this.accessToken);
   }
 
+  /** Expiry of the loaded access token, when known. `expired` includes the
+   * refresh skew, i.e. it is true when the next request refreshes first. */
+  get tokenExpiry(): { expiresAt?: string; expired?: boolean } {
+    if (!this.accessToken || this.accessTokenExpiresAt === undefined) return {};
+    return { expiresAt: new Date(this.accessTokenExpiresAt).toISOString(), expired: this.accessTokenExpired() };
+  }
+
+  private accessTokenExpired(): boolean {
+    return this.accessTokenExpiresAt !== undefined && Date.now() >= this.accessTokenExpiresAt - TOKEN_EXPIRY_SKEW_MS;
+  }
+
   constructor(opts: MobileApiOptions = {}) {
     this.baseUrl = (opts.baseUrl ?? process.env.ALZA_API_BASE_URL ?? "https://www.alza.cz").replace(/\/$/, "");
     this.browser = opts.browser;
     this.httpFetch = opts.httpFetch;
     this.fetchImpl = opts.fetchImpl;
-    const stored = opts.loadTokenFile === false ? undefined : this.readStoredTokens();
+    const loaded = opts.loadTokenFile === false ? undefined : MobileApi.readStoredTokens();
+    const stored = loaded?.tokens;
     const explicitVisitor = opts.visitorId ?? process.env.ALZA_VISITOR_ID;
     this.visitorId = explicitVisitor ?? stored?.visitor_id ?? randomUUID();
     this.userId = opts.userId;
-    if (stored?.access_token) this.accessToken = stored.access_token;
+    if (stored?.access_token) {
+      this.accessToken = stored.access_token;
+      this.accessTokenExpiresAt = jwtExpiryMs(stored.access_token) ?? storedExpiryMs(stored);
+    }
     if (stored?.refresh_token) this.refreshToken = stored.refresh_token;
+    if (loaded && (stored?.access_token || stored?.refresh_token)) this.tokenFile = loaded.file;
   }
 
   /** Read an OAuth token stored by `scripts/alza-auth-login*` (ALZA_TOKEN_FILE, default ~/.alza-mcp/tokens.json).
    * Set ALZA_TOKEN_FILE=none to opt out. */
-  private readStoredTokens(): { access_token?: string; refresh_token?: string; visitor_id?: string } | undefined {
+  private static readStoredTokens(): { file: string; tokens: StoredTokens } | undefined {
     if (process.env.ALZA_TOKEN_FILE === "none") return undefined;
     const file = process.env.ALZA_TOKEN_FILE ?? join(homedir(), ".alza-mcp", "tokens.json");
     try {
-      return JSON.parse(readFileSync(file, "utf8")) as { access_token?: string; refresh_token?: string; visitor_id?: string };
+      const tokens = JSON.parse(readFileSync(file, "utf8")) as unknown;
+      if (!tokens || typeof tokens !== "object" || Array.isArray(tokens)) return undefined;
+      return { file, tokens: tokens as StoredTokens };
     } catch { return undefined; /* no readable token store — remain unauthenticated */ }
+  }
+
+  /** Write refreshed tokens back to the store they were loaded from, so a restart
+   * does not begin with an expired access token (or a spent refresh token, if the
+   * IdP rotates it). Atomic: a temp file created 0600 in the same directory is
+   * renamed over the store. Other fields in the store (scope, token_type, …) are
+   * kept. Failures are logged, never thrown — the in-memory session still works. */
+  private persistTokens(expiresIn: number | undefined): Promise<void> {
+    const file = this.tokenFile;
+    if (!file || !this.accessToken) return Promise.resolve();
+    const update: StoredTokens = {
+      access_token: this.accessToken,
+      ...(this.refreshToken ? { refresh_token: this.refreshToken } : {}),
+      ...(expiresIn !== undefined ? { expires_in: expiresIn } : {}),
+      obtained_at: new Date().toISOString(),
+    };
+    const write = async () => {
+      let existing: Record<string, unknown> = {};
+      try {
+        const parsed = JSON.parse(await readFile(file, "utf8")) as unknown;
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) existing = parsed as Record<string, unknown>;
+      } catch { /* missing or unreadable store — write a fresh one */ }
+      const next = { ...existing, ...update, visitor_id: typeof existing.visitor_id === "string" ? existing.visitor_id : this.visitorId };
+      await mkdir(dirname(file), { recursive: true, mode: 0o700 });
+      const tmp = `${file}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+      try {
+        await writeFile(tmp, JSON.stringify(next, null, 2) + "\n", { mode: 0o600, flag: "wx" });
+        await chmod(tmp, 0o600);
+        await rename(tmp, file);
+      } catch (err) {
+        await rm(tmp, { force: true });
+        throw err;
+      }
+    };
+    // Serialise writes so an older refresh can never land after a newer one.
+    this.persistQueue = this.persistQueue.then(write).catch((err: unknown) => {
+      log.warn("mobile-api: could not persist refreshed tokens to the token store", { error: String(err) });
+    });
+    return this.persistQueue;
   }
 
   /** identity.alza.cz sits behind the same Cloudflare bot wall as www/webapi, so the
@@ -120,7 +193,10 @@ export class MobileApi {
     url: string,
     init: { method?: string; headers?: Headers | Record<string, string>; body?: string } = {},
   ): Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }> {
-    if (!this.httpFetch) return fetch(url, init as RequestInit);
+    if (!this.httpFetch) {
+      assertDirectFetchAllowed("OAuth");
+      return fetch(url, init as RequestInit);
+    }
     const headers: Record<string, string> = {};
     if (init.headers instanceof Headers) {
       for (const [k, v] of init.headers.entries()) headers[k] = v;
@@ -133,7 +209,11 @@ export class MobileApi {
       return { ok: res.status >= 200 && res.status < 300, status: res.status, json: async () => JSON.parse(text) as unknown };
     } catch (err) {
       // Same contract as performRequest: the sidecar is optional (no python3 / curl_cffi,
-      // or it died), so a transport failure degrades to plain fetch instead of failing auth.
+      // or it died), so a transport failure degrades to plain fetch instead of failing auth —
+      // unless the request may already have been sent (token POSTs are single-use) or a
+      // proxy is configured (plain fetch would bypass it).
+      this.assertFallbackAllowed(init.method ?? "GET", url, err);
+      if (proxyConfigured()) throw proxyBypassRefused(err);
       log.warn("mobile-api: cf transport failed for OAuth, falling back", { url, error: String(err) });
       return fetch(url, init as RequestInit);
     }
@@ -221,28 +301,73 @@ export class MobileApi {
     if (!json.access_token) throw new Error("OAuth response did not contain an access token");
     this.accessToken = json.access_token;
     this.refreshToken = json.refresh_token;
+    this.accessTokenExpiresAt = expiryFrom(json.access_token, json.expires_in);
+    // A new in-process sign-in (possibly another account) is not written over the
+    // token store this process loaded; only that store's own session is persisted.
+    this.tokenFile = undefined;
     this.pendingOAuth = undefined;
     this.pendingCodeVerifier = undefined;
     return { authenticated: true, expiresIn: json.expires_in };
   }
 
+  /** Refresh the access token. Concurrent callers share one in-flight refresh,
+   * so parallel 401s spend the refresh token once (it may be one-time-use). */
   async refreshAccessToken(): Promise<boolean> {
-    if (!this.refreshToken) return false;
+    if (!this.refreshing) {
+      this.refreshing = this.doRefreshAccessToken().finally(() => { this.refreshing = undefined; });
+    }
+    return this.refreshing;
+  }
+
+  private async doRefreshAccessToken(): Promise<boolean> {
+    const used = this.refreshToken;
+    if (!used) return false;
+    const ok = await this.redeemRefreshToken(used);
+    this.failedRefreshToken = ok ? undefined : used;
+    return ok;
+  }
+
+  private async redeemRefreshToken(refreshToken: string): Promise<boolean> {
     const discovery = await this.discovery();
     const tokenEndpoint = discovery.token_endpoint ?? "https://identity.alza.cz/connect/token";
     const body = new URLSearchParams({
       grant_type: "refresh_token",
       client_id: process.env.ALZA_OAUTH_CLIENT_ID ?? "alza_Android",
-      refresh_token: this.refreshToken,
+      refresh_token: refreshToken,
       ...(MobileApi.clientSecret() ? { client_secret: MobileApi.clientSecret()! } : {}),
     });
     const res = await this.oauthFetch(tokenEndpoint, { method: "POST", headers: this.mobileHeaders({ "content-type": "application/x-www-form-urlencoded", accept: "application/json" }), body: body.toString() });
     if (!res.ok) return false;
-    const json = await res.json() as { access_token?: string; refresh_token?: string };
+    const json = await res.json() as { access_token?: string; refresh_token?: string; expires_in?: number };
     if (!json.access_token) return false;
     this.accessToken = json.access_token;
     this.refreshToken = json.refresh_token ?? this.refreshToken;
+    this.accessTokenExpiresAt = expiryFrom(json.access_token, json.expires_in);
+    await this.persistTokens(json.expires_in);
     return true;
+  }
+
+  /** Refresh before sending when the loaded access token is expired or about to
+   * be: the legacy restservice routes answer an expired token with HTTP 200 and an
+   * anonymous envelope instead of 401, so waiting for a 401 is not enough. A
+   * refresh token that already failed is not retried proactively. */
+  private async ensureFreshAccessToken(): Promise<void> {
+    if (!this.accessToken || !this.refreshToken || !this.accessTokenExpired()) return;
+    if (this.failedRefreshToken === this.refreshToken) return;
+    try {
+      await this.refreshAccessToken();
+    } catch (err) {
+      log.warn("mobile-api: proactive token refresh failed", { error: String(err) });
+    }
+  }
+
+  /** May a sidecar failure be retried over another transport? Only idempotent
+   * GET/HEAD requests, or requests that provably never left this process
+   * (TransportUnavailableError). Anything else may already have reached Alza —
+   * replaying it could pay, order or delete twice. */
+  private assertFallbackAllowed(method: string, url: string, err: unknown): void {
+    if (isReplaySafe(method, url) || isPreSendFailure(err)) return;
+    throw new OutcomeUnknownError(method.toUpperCase(), displayTarget(url), err);
   }
 
   async request<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
@@ -252,11 +377,38 @@ export class MobileApi {
     const body = init.body == null ? null : String(init.body);
     const freshHeaders = () => Object.fromEntries(this.mobileHeaders(init.headers as unknown as Headers).entries());
 
-    const raw = await this.performRequest(url, method, body, init, freshHeaders);
-    let value: unknown;
-    try { value = raw.text ? JSON.parse(raw.text) : null; } catch { value = raw.text; }
-    if (raw.status < 200 || raw.status >= 300) {
-      throw new Error(`Alza API ${method} ${path} failed with HTTP ${raw.status}: ${summarize(value)}`);
+    await this.ensureFreshAccessToken();
+    const send = async () => {
+      const sentWith = this.accessToken;
+      const raw = await this.performRequest(url, method, body, init, freshHeaders);
+      let value: unknown;
+      try { value = raw.text ? JSON.parse(raw.text) : null; } catch { value = raw.text; }
+      if (raw.status < 200 || raw.status >= 300) {
+        throw new Error(`Alza API ${method} ${path} failed with HTTP ${raw.status}: ${summarize(value)}`);
+      }
+      return { value, sentWith };
+    };
+    const first = await send();
+    let value = first.value;
+    if (first.sentWith && isLegacyRestRoute(url) && !LEGACY_CATALOG_READ_ROUTE.test(url) && isAnonymousEnvelope(value)) {
+      // The legacy restservice routes answer a stale token with 200 + user_id -1
+      // instead of 401. Renew the token (or pick up one a parallel request already
+      // renewed), then retry reads once; never replay a write.
+      const renewed = this.accessToken !== first.sentWith || (Boolean(this.refreshToken) && (await this.refreshAccessToken()));
+      if (!isReplaySafe(method, url)) {
+        throw new AuthenticationError(
+          `Alza answered ${method} ${path} as an anonymous visitor (user_id -1) although an access token is loaded; the token ${renewed ? "has now been refreshed" : "could not be refreshed"}. ` +
+            "The request was NOT retried. It may have been applied to the anonymous visitor basket instead of the account — check `cart` before retrying." +
+            (renewed ? "" : " Sign in again with `auth_start` → `auth_exchange`."),
+        );
+      }
+      if (!renewed) {
+        throw new AuthenticationError(`Alza answered ${path} as an anonymous visitor (user_id -1): the loaded access token is expired or rejected and could not be refreshed. Sign in again with \`auth_start\` → \`auth_exchange\`.`);
+      }
+      value = (await send()).value;
+      if (isAnonymousEnvelope(value)) {
+        throw new AuthenticationError(`Alza still answered ${path} as an anonymous visitor (user_id -1) after the access token was refreshed. Sign in again with \`auth_start\` → \`auth_exchange\`.`);
+      }
     }
     return value as T;
   }
@@ -264,7 +416,11 @@ export class MobileApi {
   /** Transport order: Chrome-fingerprint sidecar (bypasses the Cloudflare bot
    * wall, no browser needed) → plain fetch → in-page browser fetch (last
    * resort; the wall's JS has already run in that context). A 401 triggers a
-   * token refresh + retry within the same transport. */
+   * token refresh + retry within the same transport.
+   *
+   * A sidecar failure falls back only when that cannot duplicate a side effect
+   * (see assertFallbackAllowed). With ALZA_PROXY_URL set, the un-proxied plain
+   * fetch is skipped: the (proxied) browser is the only fallback. */
   private async performRequest(
     url: string,
     method: string,
@@ -282,22 +438,40 @@ export class MobileApi {
     };
 
     const withRefresh = async (kind: "cf" | "plain") => {
+      const sentWith = this.accessToken;
       let raw = await doOnce(kind, freshHeaders());
-      if (raw.status === 401 && this.refreshToken && (await this.refreshAccessToken())) {
-        raw = await doOnce(kind, freshHeaders());
+      if (raw.status === 401 && this.refreshToken) {
+        // Another request may have refreshed while this one was in flight: retry
+        // with that token instead of spending the refresh token again.
+        const renewed = (this.accessToken !== undefined && this.accessToken !== sentWith) || (await this.refreshAccessToken());
+        if (renewed) raw = await doOnce(kind, freshHeaders());
       }
       return raw;
     };
 
+    let cfAnswer: { status: number; text: string } | undefined;
+    let cfError: unknown;
     if (this.httpFetch) {
       try {
         const raw = await withRefresh("cf");
         // Bot-wall despite the fingerprint, or a real API answer: only the
         // wall deserves the browser retry (same semantics as before).
         if (!this.isBotChallenge(raw.status, raw.text)) return { ...raw, via: "cf" };
+        cfAnswer = raw;
       } catch (err) {
-        log.warn("mobile-api: cf transport failed, falling back", { url, error: String(err) });
+        // Our own typed errors (e.g. an ambiguous token refresh) are final.
+        if (err instanceof AlzaError) throw err;
+        this.assertFallbackAllowed(method, url, err);
+        cfError = err;
+        log.warn("mobile-api: cf transport failed, falling back", { url, error: String(err), to: proxyConfigured() ? "browser (ALZA_PROXY_URL set)" : "plain fetch" });
       }
+    }
+
+    if (proxyConfigured()) {
+      const viaBrowser = await this.fetchViaBrowser(url, init, new Headers(freshHeaders()));
+      if (viaBrowser) return { status: viaBrowser.status, text: await viaBrowser.text(), via: "browser" };
+      if (cfAnswer) return { ...cfAnswer, via: "cf" };
+      throw proxyBypassRefused(cfError ?? new Error("the Chrome-fingerprint sidecar is not available"));
     }
 
     const plain = await withRefresh("plain");
@@ -360,6 +534,8 @@ export class MobileApi {
   }
 
   async executeAppAction(action: ServerAppAction, options: ExecuteAppActionOptions = {}): Promise<unknown> {
+    await this.ensureFreshAccessToken();
+    if (!this.fetchImpl) assertDirectFetchAllowed("AppAction execution");
     const executor = new AppActionExecutor({ baseUrl: this.baseUrl, visitorId: this.visitorId, userId: this.userId, authorizationToken: this.accessToken, fetchImpl: this.fetchImpl });
     return executor.execute(action, options);
   }
@@ -879,6 +1055,7 @@ export class MobileApi {
       throw new Error(`document host is not an allowed Alza origin: ${u.hostname} (allowed: ${[...MobileApi.DOCUMENT_HOSTS].join(", ")})`);
     }
     const MAX_BYTES = 8 * 1024 * 1024;
+    await this.ensureFreshAccessToken();
     const headers: Record<string, string> = {
       accept: "application/pdf, application/json, application/xml, text/plain, application/octet-stream",
       "user-agent": "Alza/2026.17.0 (Android)",
@@ -901,6 +1078,7 @@ export class MobileApi {
         buf = Buffer.from(await r.text(), "utf8");
       }
     } else {
+      assertDirectFetchAllowed("document download");
       const r = await fetch(u.toString(), { method: "GET", headers, redirect: "manual" });
       status = r.status;
       contentType = r.headers.get("content-type") ?? null;
@@ -976,6 +1154,103 @@ export class MobileApi {
 }
 
 interface RawHttp { status: number; text: string; via: "cf" | "plain" | "browser"; }
+
+interface StoredTokens {
+  access_token?: string;
+  refresh_token?: string;
+  visitor_id?: string;
+  expires_in?: number | null;
+  /** ISO timestamp (scripts/alza-auth-*) of when the access token was issued. */
+  obtained_at?: string;
+}
+
+/** Refresh this long before the access token's real expiry. */
+const TOKEN_EXPIRY_SKEW_MS = 60_000;
+
+function isIdempotentMethod(method: string): boolean {
+  const m = method.toUpperCase();
+  return m === "GET" || m === "HEAD";
+}
+
+/** Legacy restservice writes that are sent as GET (coupon, basket flag/unlock,
+ * order service, discussion rating). Their method looks idempotent, so they are
+ * named here to keep them out of every automatic replay. */
+const LEGACY_GET_WRITE_ROUTE = /\/services\/restservice\.svc\/v\d+\/(?:addcoupon|delcoupon|updBasket|unlockbasket|addOrderService|rateCommodityDiscussionPosts)(?:[/?]|$)/i;
+
+/** May this request be sent a second time without risk of applying twice? */
+function isReplaySafe(method: string, url: string): boolean {
+  return isIdempotentMethod(method) && !LEGACY_GET_WRITE_ROUTE.test(url);
+}
+
+/** Anonymous catalog reads on the legacy restservice. Their answer is valid for
+ * a visitor, so a user_id -1 envelope there is not treated as a stale token:
+ * the data is returned as before instead of spending a refresh or raising a
+ * sign-in error (POST search/EAN/filter reads included). */
+const LEGACY_CATALOG_READ_ROUTE = /\/services\/restservice\.svc\/v\d+\/(?:search|category|alternatives|params|getProductByEANlist|hierarchicalFilter|getCommodityDiscussionPosts|getAllDeliveryCountries|getZipCodes)(?:[/?]|$)/i;
+
+function isPreSendFailure(err: unknown): boolean {
+  return err instanceof TransportUnavailableError || (err instanceof Error && err.name === "TransportUnavailableError");
+}
+
+/** Host + path for error messages (no query string). */
+function displayTarget(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.host}${u.pathname}`;
+  } catch {
+    return url.split("?")[0] ?? url;
+  }
+}
+
+function proxyBypassRefused(cause: unknown): ConfigurationError {
+  return new ConfigurationError(
+    `ALZA_PROXY_URL is set, so alza-mcp does not fall back to an un-proxied connection, and the proxied Chrome-fingerprint transport failed: ${(cause instanceof Error ? cause.message : String(cause)).replace(/\.+\s*$/, "")}. ` +
+      "Check that the proxy is reachable and its credentials are right, and that the curl_cffi sidecar is installed (scripts/ensure-cf-venv.sh).",
+    cause,
+  );
+}
+
+/** With ALZA_PROXY_URL set, a request must not go out over an un-proxied native
+ * fetch just because the (proxied) sidecar is disabled (ALZA_CF_TRANSPORT=0). */
+function assertDirectFetchAllowed(what: string): void {
+  if (proxyConfigured()) throw proxyBypassRefused(new Error(`the Chrome-fingerprint sidecar is not available for ${what}`));
+}
+
+/** JWT `exp` claim in epoch ms; undefined for opaque or malformed tokens. */
+function jwtExpiryMs(token: string): number | undefined {
+  const parts = token.split(".");
+  if (parts.length !== 3 || !parts[1]) return undefined;
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as { exp?: unknown };
+    return typeof payload.exp === "number" && Number.isFinite(payload.exp) ? payload.exp * 1000 : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function storedExpiryMs(stored: StoredTokens): number | undefined {
+  if (typeof stored.expires_in !== "number" || typeof stored.obtained_at !== "string") return undefined;
+  const obtained = Date.parse(stored.obtained_at);
+  return Number.isFinite(obtained) ? obtained + stored.expires_in * 1000 : undefined;
+}
+
+function expiryFrom(accessToken: string, expiresIn: number | undefined): number | undefined {
+  return jwtExpiryMs(accessToken) ?? (typeof expiresIn === "number" ? Date.now() + expiresIn * 1000 : undefined);
+}
+
+function isLegacyRestRoute(url: string): boolean {
+  return /\/services\/restservice\.svc\//i.test(url);
+}
+
+/** The legacy restservice envelopes carry `user_id` at the top level (getUserData)
+ * or under `info` (gridOrder1); -1 means Alza served the anonymous visitor. */
+function isAnonymousEnvelope(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const top = value as Record<string, unknown>;
+  if (top.user_id === -1) return true;
+  const info = top.info;
+  return Boolean(info && typeof info === "object" && (info as Record<string, unknown>).user_id === -1);
+}
 
 function summarize(value: unknown): string {
   if (typeof value === "string") return value.replace(/\s+/g, " ").slice(0, 300);
