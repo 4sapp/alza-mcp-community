@@ -724,6 +724,21 @@ export class MobileApi {
     return this.request(`/api/users/${encodeURIComponent(userId)}/v1/orders/archive?${q.toString()}`);
   }
 
+  /** K1 (typed, issue #72): warranty-claim lists. The `warrantyClaims` section
+   * links `activeWarrantyClaims` → `.../v1/warrantyClaims/active` and
+   * `archiveWarrantyClaims` → `.../v1/warrantyClaims/archive` (both probed live
+   * 2026-09-22: 200, `docs/live-evidence/task5-a17-or6-or10-k2-2026-09-22.md`). */
+  async warrantyClaims(userId: string, scope: "active" | "archive"): Promise<unknown> {
+    return this.request(`/api/users/${encodeURIComponent(userId)}/v1/warrantyClaims/${scope}?country=CZ`);
+  }
+
+  /** S1 (typed, issue #72): the subscription section that the authenticated
+   * main navigation links as `userSubscription` (webapi host, observed live
+   * 2026-09-22 in `docs/live-evidence/task6-orders-sub-2026-09-22.json`). */
+  async userSubscription(userId: string): Promise<unknown> {
+    return this.request(`https://webapi.alza.cz/api/users/${encodeURIComponent(userId)}/v1/subscription?country=CZ`);
+  }
+
   /** A17 (2026-09-22): the "Osobní údaje" section — APK `PersonalGdprDetails`
    * (`{title, gdprInfoAction, deleteAccountAction}`) served by webapi.
    * Live-verified 2026-09-22 (200 with both actions; sibling probes 404 — the

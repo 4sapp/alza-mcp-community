@@ -47,7 +47,8 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
           title: "Read Alza user profile and address book",
           description:
             "Read the authenticated user's Alza profile: personal data, the delivery-address book with per-address HATEOAS actions (create/edit/delete/search), and account sections. " +
-            "Use to inspect the account, to confirm the account binding (`user_id`, email), and to obtain the `action` objects required by `address_upsert`, `address_delete`, `address_search`, `complaint_claims`, and the subscription tools. " +
+            "Use to inspect the account, to confirm the account binding (`user_id`, email), and to obtain the per-address `action` objects required by `address_upsert` and `address_delete` (present only when the account has saved addresses; `address_search` works without one). " +
+            "The numeric `user_id` is the input for the user-scoped reads (`order`, `order_archive`, `order_search`, `complaint_claims`, `subscription_overview`). " +
             AUTH_PREREQ +
             " Read-only. Honest caveat: with a stale or missing token the API may still answer HTTP 200 with an anonymous shape (`user_id: -1`, null email) — treat `user_id` as the binding signal, and refresh the token via `auth_start`/`auth_exchange` if it is -1.",
           inputSchema: {},
@@ -175,18 +176,18 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
         {
           title: "Search delivery addresses",
           description:
-            "Search the address database (zip/city) by following the server-provided addressSearchAction from the `profile` response. " +
-            "Use to suggest a valid address before `address_upsert`, or to verify a zip/city combination. " +
-            "Pass the `action` object verbatim from `profile` — never hand-craft it. " +
-            "Read-only; no confirmation token required (but the profile action needs a loaded access token).",
+            "Search Alza's zip/city database. Use to suggest a valid address before `address_upsert`, or to verify a zip/city combination. " +
+            "Without `action` it uses the live-verified zip-code lookup (`getZipCodes`, no token needed). " +
+            "If a `profile` response carries an `addressSearchAction`, you may pass that object verbatim as `action` instead — never hand-craft it. " +
+            "Read-only; no confirmation token required.",
           inputSchema: {
-            action: appAction,
+            action: appAction.optional().describe("Optional `addressSearchAction` copied verbatim from `profile` (it must contain form.meta.href). Omit to use the zip-code lookup."),
             query: z.string().min(1).max(50).describe("Zip or city query, e.g. '110 00' or 'Brno'."),
           },
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["address_search"],
         },
-        async (args) => wrap("address_search", async () => result(await apiAccount(deps).addressSearch(args.action, args.query))),
+        async (args) => wrap("address_search", async () => result(args.action ? await apiAccount(deps).addressSearch(args.action, args.query) : await apiAccount(deps).zipCitySearch(args.query))),
       );
     },
   };
@@ -348,16 +349,19 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
         {
           title: "List warranty claims",
           description:
-            "List the account's active warranty claims by following the server-provided warranty-claims action (activeWarrantyClaimsAction / showActiveWarrantyClaimsAction) from authenticated navigation or order detail. " +
-            "Use to show the user their open claims before filing or attaching evidence (see `upload_attachment`). " +
-            "Pass the `action` object verbatim — never hand-craft it. Read-only.",
+            "List the account's warranty claims (row K1): `GET /api/users/{user_id}/v1/warrantyClaims/{scope}` — `scope` `active` (default) or `archive`. " +
+            "Use to show the user their claims before filing or attaching evidence (see `upload_attachment`); each claim's `detailAction` goes to `claim_detail`. " +
+            "Pass `user_id` (the numeric id from `profile`). Alternatively pass a warranty-claims link or AppAction verbatim from a prior response as `action`. " +
+            AUTH_PREREQ + " Read-only.",
           inputSchema: {
-            action: appAction,
+            user_id: z.string().regex(/^\d{1,16}$/).optional().describe("Numeric Alza user id (the `user_id` field of the `profile`/`user_data` response). Required unless `action` is given."),
+            scope: z.enum(["active", "archive"]).default("active").describe("Which claim list to read: 'active' (open claims, default) or 'archive' (closed claims)."),
+            action: jsonObject.optional().describe("Optional: a warranty-claims link (`{href}`) or AppAction copied verbatim from a prior response. Omit to use `user_id` + `scope`."),
           },
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["complaint_claims"],
         },
-        async (args) => wrap("complaint_claims", async () => result(await apiAccount(deps).complaintClaims(args.action))),
+        async (args) => wrap("complaint_claims", async () => result(args.action ? await apiAccount(deps).complaintClaims(args.action) : await apiAccount(deps).warrantyClaims(args.user_id, args.scope))),
       );
     },
   };
@@ -369,16 +373,19 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
         {
           title: "Read AlzaSubscription overview",
           description:
-            "Read the AlzaSubscription overview (phases, savings, trial settings) by following the server-provided subscriptionAction from the account menu or authenticated navigation. " +
+            "Read the account's subscription section — the resource Alza's authenticated navigation links as `userSubscription` (`GET https://webapi.alza.cz/api/users/{user_id}/v1/subscription?country=CZ`). " +
             "Use to show the user their subscription state before `subscription_activate` or `subscription_update_installment`. " +
-            "Pass the `action` object verbatim — never hand-craft it. Read-only.",
+            "Caveat: the link is observed live but its response has not been verified yet, so treat the returned shape as unverified (row S1). " +
+            "Pass `user_id` (the numeric id from `profile`), or pass the `userSubscription` link / an AppAction verbatim as `action`. " +
+            AUTH_PREREQ + " Read-only.",
           inputSchema: {
-            action: appAction,
+            user_id: z.string().regex(/^\d{1,16}$/).optional().describe("Numeric Alza user id (the `user_id` field of the `profile`/`user_data` response). Required unless `action` is given."),
+            action: jsonObject.optional().describe("Optional: the `userSubscription` link (`{href}`) or an AppAction copied verbatim from a prior response. Omit to use `user_id`."),
           },
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["subscription_overview"],
         },
-        async (args) => wrap("subscription_overview", async () => result(await apiAccount(deps).subscriptionOverview(args.action))),
+        async (args) => wrap("subscription_overview", async () => result(args.action ? await apiAccount(deps).subscriptionOverview(args.action) : await apiAccount(deps).userSubscription(args.user_id))),
       );
     },
   };
@@ -636,12 +643,13 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
         {
           title: "Read a warranty claim detail",
           description:
-            "Read the detail of a single warranty claim/complaint (row K2) by executing that claim's `detailAction`, copied verbatim from a `complaint_claims` list response. " +
+            "Read the detail of a single warranty claim/complaint (row K2) by following that claim's `detailAction`, copied verbatim from a `complaint_claims` list response. " +
             "Use to show the full claim state, message banners, and complaint items for one claim. " +
-            "Pass the `action` object verbatim — never hand-craft it. Read-only (no token). " +
+            "Pass the `action` object verbatim — never hand-craft it; plain links (`{href}`) must point at the account's `.../v1/warrantyClaims/...` routes. " +
+            "Read-only; no confirmation token. " +
             AUTH_PREREQ,
           inputSchema: {
-            action: appAction,
+            action: jsonObject.describe("The claim's `detailAction` copied verbatim from `complaint_claims`: a link `{href, appLink?}` or an AppAction with form.meta.href."),
           },
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["claim_detail"],
