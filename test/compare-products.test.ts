@@ -44,8 +44,8 @@ describe("buildComparisonTable (pure alignment)", () => {
       { code: "AAA1", product: A },
       { code: "BBB2", product: B },
     ]);
-    expect(t.rows.map((r) => r.name)).toEqual(["Price", "Availability", "Rating", "Úhlopříčka", "Obnovovací frekvence", "Typ panelu"]);
-    expect(t.rows[0]!.values).toEqual(["9990 CZK (was 10990 CZK)", "8990 CZK"]);
+    expect(t.rows.map((r) => r.name)).toEqual(["Price", "Availability", "Rating", "Brand", "Úhlopříčka", "Obnovovací frekvence", "Typ panelu"]);
+    expect(t.rows[0]!.values).toEqual(["9\u00a0990 CZK (was 10\u00a0990 CZK)", "8\u00a0990 CZK"]);
     expect(t.rows[2]!.values).toEqual(["4.7/5", null]);
     expect(t.rows.find((r) => r.name === "Obnovovací frekvence")!.values).toEqual(["165 Hz", null]);
     expect(t.rows.find((r) => r.name === "Typ panelu")!.values).toEqual([null, "IPS | matný"]);
@@ -73,7 +73,7 @@ describe("buildComparisonTable (pure alignment)", () => {
       { code: "X", product: product("X", { params: [{ name: "Hmotnost", value: "1 kg" }, { name: "Hmotnost", value: "2 kg" }] }) },
       { code: "Y", product: product("Y", { params: [{ name: "Hmotnost (kg)", value: "1.5" }] }) },
     ]);
-    expect(t.rows.slice(3)).toEqual([
+    expect(t.rows.slice(4)).toEqual([
       { name: "Hmotnost", values: ["1 kg", null] },
       { name: "Hmotnost (kg)", values: [null, "1.5"] },
     ]);

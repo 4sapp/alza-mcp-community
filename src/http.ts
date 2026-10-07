@@ -5,6 +5,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { AlzaBrowser } from "./infra/browser.js";
 import { ImpersonateTransport } from "./infra/impersonate-transport.js";
+import { ConfigurationError } from "./infra/errors.js";
 import { log } from "./infra/logger.js";
 import { buildServer, type BuildResult } from "./server.js";
 import { TOOLSET_DEFS, type LockedToolsets } from "./tools/toolsets.js";
@@ -99,13 +100,19 @@ function jsonRpcError(res: ServerResponse, status: number, message: string): voi
   res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32000, message }, id: null }));
 }
 
+class BodyTooLargeError extends Error {
+  constructor() {
+    super(`request body too large (limit ${MAX_BODY_BYTES} bytes)`);
+  }
+}
+
 async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     const b = chunk as Buffer;
     size += b.length;
-    if (size > MAX_BODY_BYTES) throw new Error("request body too large");
+    if (size > MAX_BODY_BYTES) throw new BodyTooLargeError();
     chunks.push(b);
   }
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
@@ -207,13 +214,22 @@ export async function startHttpServer(opts: HttpServerOptions = {}): Promise<Run
       return;
     }
 
-    if (req.method !== "POST") return jsonRpcError(res, 400, "Missing Mcp-Session-Id header");
+    if (req.method !== "POST") {
+      if (req.method === "GET" || req.method === "DELETE") return jsonRpcError(res, 400, "Missing Mcp-Session-Id header");
+      res.setHeader("allow", "POST, GET, DELETE");
+      return jsonRpcError(res, 405, `Method ${req.method} is not supported on ${path}; use POST to initialize a session`);
+    }
     let body: unknown;
     try {
       body = await readJsonBody(req);
     } catch (err) {
+      if (err instanceof BodyTooLargeError) {
+        res.setHeader("connection", "close");
+        return jsonRpcError(res, 413, err.message);
+      }
       return jsonRpcError(res, 400, `Invalid request body: ${(err as Error).message}`);
     }
+    if (Array.isArray(body)) return jsonRpcError(res, 400, "JSON-RPC batches are not supported; send the initialize request on its own (not in an array)");
     if (!isInitializeRequest(body)) return jsonRpcError(res, 400, "Missing Mcp-Session-Id header (only an initialize request may omit it)");
     if (sessions.size >= maxSessions) return jsonRpcError(res, 503, "Too many concurrent sessions; try again later");
 
@@ -294,7 +310,7 @@ const TRUTHY = new Set(["1", "true", "yes", "on"]);
 export function parseCliConfig(argv: string[], env: NodeJS.ProcessEnv = process.env): CliConfig {
   let transport: "stdio" | "http" = env.ALZA_TRANSPORT?.toLowerCase() === "http" ? "http" : "stdio";
   if (env.ALZA_TRANSPORT && !["http", "stdio"].includes(env.ALZA_TRANSPORT.toLowerCase())) {
-    throw new Error(`ALZA_TRANSPORT must be "stdio" or "http" (got "${env.ALZA_TRANSPORT}")`);
+    throw new ConfigurationError(`ALZA_TRANSPORT must be "stdio" or "http" (got ${JSON.stringify(env.ALZA_TRANSPORT.slice(0, 20))})`);
   }
   let port: string | undefined = env.ALZA_HTTP_PORT ?? env.PORT;
   let host: string | undefined = env.ALZA_HTTP_HOST;
@@ -306,18 +322,18 @@ export function parseCliConfig(argv: string[], env: NodeJS.ProcessEnv = process.
     else if (flag === "--stdio") transport = "stdio";
     else if (flag === "--port" || flag === "--host") {
       const value = inline ?? argv[++i];
-      if (value === undefined) throw new Error(`${flag} requires a value`);
+      if (value === undefined) throw new ConfigurationError(`${flag} requires a value`);
       if (flag === "--port") { port = value; portFromArgv = true; } else host = value;
     } else {
-      throw new Error(`Unknown argument "${arg}". Usage: alza-mcp [--http [--port N] [--host H]]`);
+      throw new ConfigurationError(`Unknown argument ${JSON.stringify(arg.slice(0, 40))}. Try --help`);
     }
   }
-  if (portFromArgv && transport !== "http") throw new Error("--port only applies with --http (or ALZA_TRANSPORT=http)");
+  if (portFromArgv && transport !== "http") throw new ConfigurationError("--port only applies with --http (or ALZA_TRANSPORT=http)");
   let portNum: number | undefined;
   // Only validate the port in HTTP mode: a stray PORT in a stdio client's env must not break startup.
   if (port !== undefined && transport === "http") {
     portNum = Number(port);
-    if (!Number.isInteger(portNum) || portNum < 0 || portNum > 65535) throw new Error(`Invalid port "${port}"`);
+    if (!Number.isInteger(portNum) || portNum < 0 || portNum > 65535) throw new ConfigurationError(`Invalid port ${JSON.stringify(port.slice(0, 20))}`);
   }
   const allowedHosts = env.ALZA_HTTP_ALLOWED_HOSTS?.split(",").map((h) => h.trim()).filter(Boolean);
   const idle = Number(env.ALZA_HTTP_SESSION_IDLE_MS);
@@ -332,7 +348,7 @@ export function parseCliConfig(argv: string[], env: NodeJS.ProcessEnv = process.
       allowedHosts,
       maxSessions: Number.isInteger(max) && max > 0 ? max : undefined,
       sessionIdleMs: Number.isFinite(idle) && idle > 0 ? idle : undefined,
-      baseUrl: env.ALZA_BASE_URL,
+      baseUrl: env.ALZA_BASE_URL?.trim() || undefined,
       cdpUrl: env.ALZA_CDP_URL,
     },
   };

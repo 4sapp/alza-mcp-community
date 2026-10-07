@@ -68,7 +68,7 @@ describe("Reviews.getProductReviews", () => {
   it("returns API reviews merged with the page aggregate and passes the schema", async () => {
     const commodity = vi.fn(async () => ({ items: [item(), item({ name: "Eva, Testov", rating: 1, description: "", positives: [], negatives: ["vada"] })], paging: {} }));
     const res = await build({ commodity }).getProductReviews("T1", 10);
-    expect(commodity).toHaveBeenCalledWith(111, { limit: 10, offset: 0 });
+    expect(commodity).toHaveBeenCalledWith(111, { limit: 50, offset: 0 });
     expect(res.ratingAverage).toBe(4.6);
     expect(res.reviewCount).toBe(250);
     expect(res.reviews).toHaveLength(2);
@@ -79,15 +79,15 @@ describe("Reviews.getProductReviews", () => {
     expect(text).toContain("- vada");
   });
 
-  it("paginates when the endpoint returns fewer than the limit and caps at limit", async () => {
+  it("paginates when the endpoint returns fewer than the window and caps at limit", async () => {
     const commodity = vi.fn(async (_id: number, o: { limit?: number; offset?: number }) =>
       o.offset === 0
         ? { items: [item(), item()], paging: { next: {} } }
-        : { items: [item(), item(), item()], paging: { next: {} } }
+        : { items: [item(), item(), item()], paging: {} }
     );
     const res = await build({ commodity }).getProductReviews("T2", 4);
     expect(commodity).toHaveBeenCalledTimes(2);
-    expect(commodity).toHaveBeenLastCalledWith(111, { limit: 2, offset: 2 });
+    expect(commodity).toHaveBeenLastCalledWith(111, { limit: 48, offset: 2 });
     expect(res.reviews).toHaveLength(4);
   });
 

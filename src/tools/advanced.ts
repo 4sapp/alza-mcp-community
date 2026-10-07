@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import type { MobileAccount } from "../domain/mobile-account.js";
+import { assertNotRejected } from "../infra/errors.js";
 import type { RegisterableTool, ToolDeps, ToolResult } from "./types.js";
 import { formatOrder, formatOrderDocument, formatPaymentMethods, formatProfile, jsonResult, withConciseText } from "./account-format.js";
 
@@ -35,6 +36,9 @@ const confirmationToken = z
   .describe("One-time token from `prepare_mutation` prepared with the matching action.");
 const AUTH_PREREQ =
   "Requires a loaded mobile API access token — check `account_status` first; if none is loaded, run `auth_start`, have the user complete the browser sign-in, then `auth_exchange` with the returned code and state.";
+/** Issue #79: credential/identity mutations confirm `user_id` before sending. */
+const IDENTITY_CHECK =
+  " Before anything is sent, `user_id` is checked against the signed-in account with a fresh `user_data` read; a different id, or a session whose user id cannot be read, is refused.";
 
 export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
   const profile: RegisterableTool = {
@@ -136,7 +140,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
               if (v.kind === "edit" && v.address_id === undefined)
                 ctx.addIssue({ code: z.ZodIssueCode.custom, message: "address_id is required when kind=edit", path: ["address_id"] });
             }),
-          annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
+          annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: true, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["address_upsert"],
         },
         async (args) => wrap("address_upsert", async () => result(await apiAccount(deps).addressUpsert(args.kind, args.action, { name: args.name, street: args.street, city: args.city, zip_code: args.zip_code, firm: args.firm, phone: args.phone, email: args.email, note: args.note, address_type: args.address_type, address_id: args.address_id }, args.confirmation_token))),
@@ -220,7 +224,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
         {
           title: "List after-order payment options",
           description:
-            "List the after-order payment options for an unpaid order part (mobile API getafterorderpayments). " +
+            "List the after-order payment options for an unpaid order part (mobile API getafterorderpayments). An `err:1` answer (e.g. the order does not exist) is returned as an error carrying Alza's message. " +
             "Use when the user has an unpaid order (see `order`) and wants to pay it through the mobile API; pass the returned payment id to `pay_after_order`. " +
             "Do not use for legacy web WCF orders — that path is `web_pay_after_order` (list ids via `mobile_read` operation=`web_after_payment_dialog`). " +
             AUTH_PREREQ + " Read-only.",
@@ -273,7 +277,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
             "Read an authenticated user's Alza order: lines, parts, milestones/tracking, and invoice document references; with `part_id`, the part detail as well. " +
             "Use to check order status, delivery tracking, or to collect the order/part ids needed by `after_order_payments`/`pay_after_order`. " +
             "Pass `user_id` — the numeric Alza user id from the `profile`/`user_data` read (`user_id` field); the read is `GET /api/users/{user_id}/v1/orders/{order_id}`. " +
-            AUTH_PREREQ + " Read-only.",
+            AUTH_PREREQ + " Read-only. An `err:1` answer (e.g. unknown order) is returned as an error carrying Alza's message.",
           inputSchema: {
             order_id: z.string().min(1).max(64).describe("The order id to read (e.g. from `order_archive`/`order_search`)."),
             part_id: z.string().min(1).max(64).optional().describe("Order part id for the part detail read. Omit for the whole order."),
@@ -283,7 +287,13 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["order"],
         },
-        async (args) => wrap("order", async () => withConciseText(await apiAccount(deps).order(args.order_id, args.part_id, args.user_id, args.initial_created), formatOrder)),
+        async (args) => wrap("order", async () => {
+          const out = (await apiAccount(deps).order(args.order_id, args.part_id, args.user_id, args.initial_created)) as { order?: unknown; part?: unknown };
+          // Issue #79: a nested `err:1` envelope is a failed read, reported as isError with Alza's msg.
+          assertNotRejected(out.order);
+          assertNotRejected(out.part);
+          return withConciseText(out, formatOrder);
+        }),
       );
     },
   };
@@ -524,7 +534,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
                   part_name: z.string().min(1).max(64).describe("Form part name from the form response."),
                   file_name: z.string().min(1).max(200).describe("Original file name, e.g. \"damage-1.jpg\"."),
                   mime_type: z.string().max(64).optional().describe("MIME type, e.g. \"image/jpeg\" (whitelisted image types only)."),
-                  data_url: z.string().startsWith("data:").describe("Full base64 data URL, e.g. \"data:image/jpeg;base64,...\"."),
+                  data_url: z.string().regex(/^data:/, "must start with \"data:\"").describe("Full base64 data URL, e.g. \"data:image/jpeg;base64,...\"."),
                 }),
               )
               .min(1)
@@ -697,7 +707,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
           title: "Change the account password",
           description:
             "Change the Alza account password (row A14, `POST /v2/account/password`): submit the current password and the new password twice (new + confirm). " +
-            "Credential mutation: requires a one-time token from `prepare_mutation` (action=`change_password`). " +
+            "Credential mutation: requires a one-time token from `prepare_mutation` (action=`change_password`). " + IDENTITY_CHECK +
             "Side effect: on success Alza logs the user out of every device — the current access token stops working, so re-run `auth_start`/`auth_exchange` with the new password.",
           inputSchema: {
             user_id: z.string().regex(/^\d{1,16}$/).describe("Numeric Alza user id (from the `profile`/`user_data` read)."),
@@ -706,7 +716,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
             new_password_confirm: z.string().min(8).max(64).describe("New password again (must match `new_password`)."),
             confirmation_token: confirmationToken,
           },
-          annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
+          annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: true, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["change_password"],
         },
         async (args) => wrap("change_password", async () => result(await apiAccount(deps).changePassword({ user_id: args.user_id, old_password: args.old_password, new_password: args.new_password, new_password_confirm: args.new_password_confirm }, args.confirmation_token))),
@@ -723,13 +733,13 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
           description:
             "Turn SMS two-factor on or off (row A15, `PATCH /v1/account` → `/2faEnabled`): `enabled=true` to activate, `false` to deactivate. " +
             "2FA sends a code by SMS to the account's contact phone, so set the phone first if it is wrong. " +
-            "Requires a one-time token from `prepare_mutation` (action=`two_factor_set`).",
+            "Requires a one-time token from `prepare_mutation` (action=`two_factor_set`). " + IDENTITY_CHECK,
           inputSchema: {
             user_id: z.string().regex(/^\d{1,16}$/).describe("Numeric Alza user id (from the `profile`/`user_data` read)."),
             enabled: z.boolean().describe("true to enable 2FA, false to disable it."),
             confirmation_token: confirmationToken,
           },
-          annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: true, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["two_factor_set"],
         },
         async (args) => wrap("two_factor_set", async () => result(await apiAccount(deps).twoFactorSet({ user_id: args.user_id, enabled: args.enabled }, args.confirmation_token))),
@@ -745,14 +755,14 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
           title: "Change the contact phone number",
           description:
             "Change the account's contact phone number (row A16, `PATCH /v1/account` → `/phone`): the number that receives pickup codes and 2FA SMS. " +
-            "Requires a one-time token from `prepare_mutation` (action=`phone_change`). " +
+            "Requires a one-time token from `prepare_mutation` (action=`phone_change`). " + IDENTITY_CHECK +
             "Side effect: the new number becomes the SMS destination for the account.",
           inputSchema: {
             user_id: z.string().regex(/^\d{1,16}$/).describe("Numeric Alza user id (from the `profile`/`user_data` read)."),
             phone: z.string().min(6).max(20).describe("New phone in international form, e.g. '+420777123456'."),
             confirmation_token: confirmationToken,
           },
-          annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: true, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["phone_change"],
         },
         async (args) => wrap("phone_change", async () => result(await apiAccount(deps).phoneChange({ user_id: args.user_id, phone: args.phone }, args.confirmation_token))),
@@ -768,13 +778,13 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
           title: "Change the contact email",
           description:
             "Change the account's contact email (row A16 bonus, `PATCH /v1/account` → `/email`): the address that receives invoices and order/claim notifications. " +
-            "Requires a one-time token from `prepare_mutation` (action=`email_change`).",
+            "Requires a one-time token from `prepare_mutation` (action=`email_change`). " + IDENTITY_CHECK,
           inputSchema: {
             user_id: z.string().regex(/^\d{1,16}$/).describe("Numeric Alza user id (from the `profile`/`user_data` read)."),
             email: z.string().min(3).max(100).describe("New contact email address."),
             confirmation_token: confirmationToken,
           },
-          annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+          annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: true, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["email_change"],
         },
         async (args) => wrap("email_change", async () => result(await apiAccount(deps).emailChange({ user_id: args.user_id, email: args.email }, args.confirmation_token))),
@@ -792,7 +802,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
             "Delete the Alza account and its personal data (row A18, `DELETE /v1/account` with `acknowledgeAndDelete`). " +
             "Irreversible: the account, invoices, e-library, and claims are removed. " +
             "Use only on a disposable account with the user's explicit double confirmation — never the standing E2E account. " +
-            "Requires a one-time token from `prepare_mutation` (action=`delete_account`).",
+            "Requires a one-time token from `prepare_mutation` (action=`delete_account`). " + IDENTITY_CHECK,
           inputSchema: {
             user_id: z.string().regex(/^\d{1,16}$/).describe("Numeric Alza user id to delete (from the `profile`/`user_data` read)."),
             confirmation_token: confirmationToken,

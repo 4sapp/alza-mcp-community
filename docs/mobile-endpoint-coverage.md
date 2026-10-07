@@ -31,7 +31,10 @@ exposed, and how it was verified.
   same-origin + HTTPS, path allowlist (`/api/`, `/services/restservice.svc/`), GET/POST only,
   sensitive field-name blocklist (password/token/card/cvv/iban/payment..., matched as
   case-insensitive substrings so camelCase names such as `oldPassword`/`paymentId` are caught),
-  one-time confirmation token for every mutation.
+  one-time confirmation token for every mutation. Redirects are followed by the executor, never
+  by the transport: it sends `redirect: "manual"`, which the `curl_cffi` sidecar honours with
+  `followRedirects: false` (issue #80), so every 3xx reaches the target checks below and a
+  mutation redirect is refused instead of replaying the body and bearer token.
 - Each typed AppAction tool carries a route policy (issues #61/#62, `APP_ACTION_ROUTE_POLICIES`
   in `src/infra/app-action.ts`), checked on the href and on every redirect target: the decoded
   path must contain the tool's family keyword (`address` for `address_upsert`/`address_delete`/
@@ -53,6 +56,25 @@ exposed, and how it was verified.
   (or the `checkout_preview` token for the order flow). The token is single-use and is
   consumed synchronously by the first call that presents it, before any request is sent, so
   concurrent calls with one token run at most once; a failed attempt also spends it (issue #56).
+  Since issue #79, `prepare_mutation` takes the mutation's `payload` (every argument except
+  `confirmation_token`; for `mutate_list` its `payload`) and binds the token to the action plus a
+  SHA-256 of the canonical payload (sorted keys, the tool schema's defaults filled in); a call
+  with different arguments is refused and spends the token. Tokens (and the checkout token) expire
+  5 minutes after issue, and each action has its own pending slot, so preparing two different
+  actions no longer invalidates the first.
+- `change_password`, `email_change`, `phone_change`, `two_factor_set` and `delete_account` confirm
+  `user_id` against a fresh `getUserData` read before sending (issue #79) and fail closed when the
+  signed-in user id cannot be read (anonymous `-1`, missing, or the read fails). Other user-id
+  routes (`order`, `order_search`, `order_archive`, `complaint_claims`, `subscription_overview`,
+  `gdpr_info`, `gdpr_export`, `watchdog_*`, `mobile_read` `quick_order_summary`/`premium_trial`/
+  `user_navigation`) refuse an id that differs from the one `profile`/`user_data` last reported.
+  `source-confirmed` (unit-tested with mocks; not run against a live account).
+- `mobile_read` checks each operation's required arguments (e.g. `user_id` for
+  `user_navigation`/`premium_trial`/`quick_order_summary`, `pgrik`/`ucik` for
+  `quick_order_summary`, numeric `product_id`/`commodity_id`) before any request (issue #79).
+- `after_order_payments` and `order` return an `err:1` envelope (e.g. "Objednávka se zadaným ID
+  neexistuje") as a tool error carrying Alza's `msg` (issue #79); `mobile_read` keeps returning the
+  raw envelope.
 - OAuth stays PKCE authorization-code flow; credentials never enter the MCP.
 - A 2xx response whose body is not a JSON object (204/202 empty body, `null`, an array, text) is
   returned as `{accepted: true, data, note}` instead of failing output validation after the
@@ -297,12 +319,12 @@ web rows are labeled with their exposure state (documented vs. typed-tool candid
 | OR12 | Order hash link | POST | `/api/anonymous/v1/orders/{orderId}/hashRequests` (form from `GET .../hashDialog`) | none | e-mail with the `?x=<hash>` details link to the purchase address | hashless order | sends e-mail | Documented | `live-verified` (2026-09-06, “Zkontrolujte prosím e-mail”) |
 | OR3 | Anonymous order read | GET | `/api/anonymous/v1/orders/{orderId}` or `?invoiceNumber=` | order/invoice id | order | none | none | Whitelist `anonymous_orders`, `anonymous_order` | `live-verified` (read journey) |
 | OR4 | Helpdesk questions | GET | `/api/orders/v1/helpdesk/questions` | none | questions | none | none | Whitelist `order_helpdesk_questions` | `live-verified` |
-| OR5 | Quick-order summary | GET | `/api/users/{userId}/v1/quickOrder/summary/commodities/{commodityId}[?pgrik=&ucik=]` | user + commodity (+ `pgrik`/`ucik` router params, optional) | quick-order summary | auth | none | Whitelist `quick_order_summary` | `live-verified` (2026-09-10: fresh-token GET with `pgrik=p__26752&ucik=u__401f1` → 200 real summary (`voucherCode:null, totalPrice:119.00, totalPriceWithoutVat:98.3471, deliveryId:2680, alzaBoxId:1168379`); expired token → 401 — MCP op unchanged, route as documented) |
+| OR5 | Quick-order summary | GET | `/api/users/{userId}/v1/quickOrder/summary/commodities/{commodityId}[?pgrik=&ucik=]` | user + commodity + `pgrik`/`ucik` router params (required: without them Alza answers 400 ModelState; `mobile_read` refuses before sending since #79) | quick-order summary | auth | none | Whitelist `quick_order_summary` | `live-verified` (2026-09-10: fresh-token GET with `pgrik=p__26752&ucik=u__401f1` → 200 real summary (`voucherCode:null, totalPrice:119.00, totalPriceWithoutVat:98.3471, deliveryId:2680, alzaBoxId:1168379`); expired token → 401 — MCP op unchanged, route as documented) |
 | OR6 | Order search | dynamic (now static) | `POST /api/users/{userId}/v1/orders/search/results?country=CZ`, `{searchTerm, productFilterType:0}` — `searchTerm` is a required bound field (400 without; 2026-09-22); both form-urlencoded and JSON bodies accepted live, implementation sends form-urlencoded per the APK `userOrdersSearch` form (an earlier 415 on JSON was context-dependent) | `searchTerm` (1–64 chars, e.g. an order number fragment) + `user_id` | `OrderSearchResult`: `orders[]` (status, phase, price, created, `documents[]` invoice refs) + `commodities[]` | auth | none | Typed `order_search` (read, no token) | `live-verified` (2026-09-22: form-urlencoded search → 200 with `orders[]` incl. invoice `documents[]`; record `docs/live-evidence/task5-a17-or6-or10-k2-2026-09-22.md`) |
 | OR7 | Order archive (read) | dynamic (now static) | `archiveOrders` section of the orders navigation → `GET /api/users/{userId}/v1/orders/archive?hideCancelledOrders={false,true}&productFilterType=0[&limit=]` (`hideCancelledOrders` default **false** = the app's "Skrýt zrušené" toggle off; fixed `productFilterType=0`; live form 2026-09-24) | `user_id` + optional `hide_cancelled_orders` (bool), `limit` (1–100) | `{self, paging {limit,size,first,next}, value[]}` (same order shape as `order_search`) | auth | none (read) | Typed `order_archive` (read, no token) | `live-verified` (2026-09-24: disposable account 100000002 → 200 both `hideCancelledOrders` variants, empty `value[]` + paging; record `docs/live-evidence/task6b-remaining-candidates-2026-09-24.md`) |
 | OR8 | Order data update / recalculation | dynamic | `updateOrderDataAction`, `recalculationAction` (server-provided forms on a mutable order) | form values | updated order | order in a mutable (pending) state | **mutates order** | `blocked` — dynamic, high-impact; **dated rationale (2026-09-24)**: full action scan of the standing account's two orders (2026-09-22, `task6-orders-sub-2026-09-22.json`) exposes **neither action** (only claim-guide / careBox-link / chatbot) — the forms need a pending-order state, unreachable here (creating one is blocked upstream by G5, server-side-conclusive 2026-09-16); the executor pattern (verbatim action + one-time token) would carry them; re-test target recorded | `blocked` |
 | OR9 | Cancel drop order (AlzaBox) | dynamic | `cancelDropOrder` dialog flow (`CancelDropOrderDialogResponse`) — the AlzaBox *subscription* drop-order dialog | confirmation values | cancelled drop order | **active AlzaBox drop order** | **cancels an order** | `blocked` — dynamic, high-impact; **dated rationale (2026-09-24)**: the standing account's AlzaBox order 1056808137 is a one-off (completed) and exposes no `cancelDropOrder` (2026-09-22 action scan); no active AlzaBox subscription exists (`subscriptionsOverview` 404, 2026-09-22) and none can be created without a payment-capable state; re-test target recorded | `blocked` |
-| OR10 | Invoice / document download | dynamic | follow `self.href` of a `Document`/`Attachment` object copied verbatim from a prior MCP response (live invoices serve from `https://pdf.alza.cz/Apps/pdfdoc.asp?d={orderId}P&x={hash}`) | `document` object (`{name?, self: {href}}`) | file (UTF-8 text or base64, max 8 MiB) | order | none | Typed `order_document` (read; HTTPS-only, origin-validated to the Alza host family, max 8 MiB, redirects to non-allowlisted locations blocked) | `live-verified` (2026-09-22: pdf.alza.cz invoice → 200, `%PDF-1.7`, 332,276 bytes; record `docs/live-evidence/task5-a17-or6-or10-k2-2026-09-22.md`) |
+| OR10 | Invoice / document download | dynamic | follow `self.href` of a `Document`/`Attachment` object copied verbatim from a prior MCP response (live invoices serve from `https://pdf.alza.cz/Apps/pdfdoc.asp?d={orderId}P&x={hash}`) | `document` object (`{name?, self: {href}}`) | file (UTF-8 text or base64, max 8 MiB) | order | none | Typed `order_document` (read; HTTPS-only, origin-validated to the Alza host family, max 8 MiB, redirects refused on both the sidecar and direct-fetch paths) | `live-verified` (2026-09-22: pdf.alza.cz invoice → 200, `%PDF-1.7`, 332,276 bytes; record `docs/live-evidence/task5-a17-or6-or10-k2-2026-09-22.md`) |
 
 ## 12. Attachments
 

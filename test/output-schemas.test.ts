@@ -113,7 +113,7 @@ describe("per-tool outputSchema (N-1)", () => {
   it("accepts the typed shapes (auth_start, prepare_mutation, checkout_preview, web_pickup_places, catalog)", () => {
     const S = OUTPUT_SCHEMAS;
     expect(S.auth_start.safeParse({ authorizationUrl: "https://login.alza.cz/…", state: "abc" }).success).toBe(true);
-    expect(S.prepare_mutation.safeParse({ action: "address_delete", confirmationToken: "hex24" }).success).toBe(true);
+    expect(S.prepare_mutation.safeParse({ action: "address_delete", confirmationToken: "hex24", expiresAt: "2026-10-07T12:05:00.000Z", payloadBound: true }).success).toBe(true);
     expect(S.checkout_preview.safeParse({ cart: { err: 0 }, deliveryPaymentGroups: {}, checkoutState: {}, confirmationToken: "hex24" }).success).toBe(true);
     expect(S.web_pickup_places.safeParse({ form: {}, places: [] }).success).toBe(true);
     expect(

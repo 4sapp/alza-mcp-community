@@ -47,6 +47,16 @@ const DESTRUCTIVE = new Set([
   "subscription_activate",
   "subscription_update_installment",
   "delete_account",
+  // Issue #79: overwrites/removals and credential changes are destructive in the
+  // MCP sense (not purely additive), so clients that auto-approve
+  // non-destructive tools still prompt for them.
+  "mutate_list",
+  "address_upsert",
+  "change_password",
+  "two_factor_set",
+  "phone_change",
+  "email_change",
+  "watchdog_delete",
 ]);
 
 const NO_OPEN_WORLD = new Set(["account_status", "prepare_mutation", "list_toolsets", "set_toolset", "report_issue"]);
@@ -71,7 +81,7 @@ describe("tool annotation contract", () => {
     }
   });
 
-  it("marks destructiveHint only on the 10 genuinely destructive tools", async () => {
+  it("marks destructiveHint only on the 17 genuinely destructive tools", async () => {
     const tools = await listTools();
     const marked = new Set(tools.filter((t) => t.annotations?.destructiveHint === true).map((t) => t.name));
     expect([...marked].sort()).toEqual([...DESTRUCTIVE].sort());
@@ -92,7 +102,7 @@ describe("tool annotation contract", () => {
   });
 
   it("marks readOnlyHint on every tool except the mutating ones", async () => {
-    // The 27 mutating tools: OAuth handshake (auth_start/auth_exchange),
+    // The 28 mutating tools: checkout_preview (#79), OAuth handshake (auth_start/auth_exchange),
     // whitelisted low-risk mutate_list, cart/checkout/registration/payment
     // writes, the chat send, order cancellation (OR11), the A14–A18
     // account credential/identity mutations (change_password, two_factor_set,
@@ -110,6 +120,8 @@ describe("tool annotation contract", () => {
       "change_password", "two_factor_set", "phone_change", "email_change", "delete_account",
       "watchdog_set", "watchdog_delete",
       "set_toolset",
+      // Issue #79: runs sendOrder1 (a server-side checkout step) and replaces the checkout token.
+      "checkout_preview",
     ]);
     const tools = await listTools();
     for (const t of tools) {

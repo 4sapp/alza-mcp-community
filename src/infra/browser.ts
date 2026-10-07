@@ -48,6 +48,10 @@ export class AlzaBrowser {
   private launching?: Promise<Browser>;
   private browser?: Browser;
   private context?: BrowserContext;
+  /** Single-flight context creation: concurrent first `withPage` calls share one context. */
+  private contextPromise?: Promise<BrowserContext>;
+  /** Bumped whenever the browser/context is dropped, so a creation that was in flight is discarded. */
+  private contextGeneration = 0;
   private idleTimer?: NodeJS.Timeout;
   private inFlight = 0;
   private closed = false;
@@ -102,6 +106,8 @@ export class AlzaBrowser {
     const ctx = this.context;
     const browser = this.browser;
     this.context = undefined;
+    this.contextPromise = undefined;
+    this.contextGeneration++;
     this.browser = undefined;
 
     await ctx?.close().catch(() => {});
@@ -134,6 +140,8 @@ export class AlzaBrowser {
   private async dropBrowser(): Promise<void> {
     const ctx = this.context;
     this.context = undefined;
+    this.contextPromise = undefined;
+    this.contextGeneration++;
     this.browser = undefined;
     await ctx?.close().catch(() => {});
   }
@@ -141,6 +149,16 @@ export class AlzaBrowser {
   private async ensureContext(): Promise<BrowserContext> {
     if (this.browser && !this.browser.isConnected()) await this.dropBrowser();
     if (this.context) return this.context;
+    if (this.contextPromise) return this.contextPromise;
+    const pending = this.createContext().finally(() => {
+      if (this.contextPromise === pending) this.contextPromise = undefined;
+    });
+    this.contextPromise = pending;
+    return pending;
+  }
+
+  private async createContext(): Promise<BrowserContext> {
+    const generation = this.contextGeneration;
     const browser = await this.ensureBrowser();
     const context = await browser.newContext({
       locale: this.locale.acceptLanguage.split(",")[0] ?? "cs-CZ",
@@ -164,6 +182,15 @@ export class AlzaBrowser {
       return route.continue();
     });
 
+    if (generation !== this.contextGeneration) {
+      // The browser was shut down or dropped while this context was being created:
+      // close it rather than track a context of a stale browser (or leak it into a
+      // user's Chrome over CDP). After a reconnect the message matches withPage's
+      // reconnect-once retry; after close() it does not.
+      await context.close().catch(() => {});
+      if (this.closed) throw new Error("browser closed");
+      throw new Error("browser context has been closed while it was being created");
+    }
     this.context = context;
     return context;
   }
@@ -199,6 +226,8 @@ export class AlzaBrowser {
       if (this.browser !== browser) return;
       this.browser = undefined;
       this.context = undefined;
+      this.contextPromise = undefined;
+      this.contextGeneration++;
     });
   }
 

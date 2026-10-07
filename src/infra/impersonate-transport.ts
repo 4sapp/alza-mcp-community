@@ -32,6 +32,9 @@ export interface CfRequest {
   headers?: Record<string, string>;
   body?: Buffer | string | null;
   timeoutMs?: number;
+  /** Default true. False returns a 3xx as-is (status + `location`) instead of
+   * following it, like fetch's `redirect: "manual"`. */
+  followRedirects?: boolean;
 }
 
 /** The request was never handed to the sidecar (disabled, dead, or failed to
@@ -216,6 +219,7 @@ export class ImpersonateTransport {
         body: bodyB64,
         impersonate: this.opts.profile ?? "chrome",
         timeoutMs: req.timeoutMs ?? this.opts.timeoutMs ?? 60_000,
+        followRedirects: req.followRedirects !== false,
       }) + "\n";
     return new Promise<CfResponse>((resolve, reject) => {
       const timeoutMs = req.timeoutMs ?? this.opts.timeoutMs ?? 60_000;
@@ -321,6 +325,10 @@ export function cfFetch(transport: ImpersonateTransport) {
       method: init.method,
       headers,
       body: sidecarBody,
+      // redirect:"manual" must reach the caller's own redirect checks (the
+      // AppAction route guards, the document host allowlist); following in the
+      // sidecar would replay the body and bearer token to an unchecked target.
+      followRedirects: init.redirect !== "manual",
     });
     return new CfResponseAdapter(res);
   };

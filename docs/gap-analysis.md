@@ -497,7 +497,14 @@ about *how* the working tools relate to each other:
   own redirect for a single-category-matching query) and found that
   Checkbox-type facets (the majority — brand, native contrast, panel type,
   resolution, interfaces, aspect ratio, backlight, color depth, energy
-  class, …) DO have working URLs: `{categoryId}-par{paramId}-{valueId}.htm`,
+  class, …) have a URL *form*, but only some values are served (**correction,
+  live 2026-10-07**: panel type `36359=239959909` (IPS) and resolution
+  `18073=239735343` (4K) on monitors category 18842948 are redirected to the
+  unfiltered page, like the earlier "Quad HD" redirect (2026-10-03); HDMI
+  works because Alza publishes an SEO landing page for it — which values have
+  one is only visible from the redirect, so `list_category_filters` cannot mark
+  them and `search_products` errors instead of returning unfiltered results)
+  with the URL form: `{categoryId}-par{paramId}-{valueId}.htm`,
   directly parallel to the producer pattern `{categoryId}-v{producerId}.htm`.
   Live-verified: (a) the facet JSON's `v` field is exactly the URL's
   `valueId` (byte-identical, e.g. `239739715` for HDMI) — filter URLs can be

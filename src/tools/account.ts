@@ -2,7 +2,7 @@ import { z } from "zod";
 import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import type { MobileAccount } from "../domain/mobile-account.js";
 import type { RegisterableTool, ToolDeps, ToolResult } from "./types.js";
-import { formatAddToCart, formatCart, formatCheckoutPreview, formatDeliveryOptions, jsonResult, withConciseText } from "./account-format.js";
+import { ANONYMOUS_NOTE, formatAddToCart, formatCart, formatCheckoutPreview, formatDeliveryOptions, isAnonymousUserData, jsonResult, withConciseText } from "./account-format.js";
 
 function apiAccount(deps: ToolDeps): MobileAccount {
   if (!deps.mobileAccount) throw new Error("mobile API account tools are not configured");
@@ -128,7 +128,7 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           description:
             "Read-only escape hatch for Alza mobile API operations that have no dedicated tool. " +
             "Prefer the typed tool when one exists — `cart` (operation `basket_info`), `profile` (`user_data`), `contacts` (`contacts`), `search_products` (`search`), `list_categories` (`category`), `order` (`user_order` {order_id, user_id} — the numeric user id from `profile`, not a 0/1 flag) — and use `mobile_read` for the rest. " +
-            "High-value operations: `router_product` {product_id} returns the full product envelope including the `parameterGroups` spec sheet (product_id is the numeric `d########` id from the product URL, e.g. 13078770 from https://www.alza.cz/...-d13078770.htm); `legacy_product` {product_id, ucik, pgrik, country} is the same with the server-required UCÍK/PGŘÍK values (copy them from a `router_product` response); also `alternatives` {product_id}, `ean_lookup`, `facets`, `hierarchical_filter`, `commodity_list(s)`, `cost_estimate`, `delivery_countries`, `web_after_payment_dialog` {order_id}, `order_part`/`order2_info` {order_id, ...}, `order_helpdesk_questions`, `user_review`, `discussion_posts`, `premium_trial`, `validate_login_name`, `validate_isic`, `o3_info`, `quick_order_summary`, `home_categories` (requires the server-side pgri/ui query values — copy them from an upstream `self` href in a navigation response, e.g. `?pgri=p__…&ui=u__…`), `zip_codes`/`web_zip_codes`, `branches`, `visitor_navigation`/`user_navigation`/`catalog_user_navigation`, `anonymous_orders`/`anonymous_order`, `url_info`. " +
+            "High-value operations: `router_product` {product_id} returns the full product envelope including the `parameterGroups` spec sheet (product_id is the numeric `d########` id from the product URL, e.g. 13078770 from https://www.alza.cz/...-d13078770.htm); `legacy_product` {product_id, ucik, pgrik, country} is the same with the server-required UCÍK/PGŘÍK values (copy them from a `router_product` response); also `alternatives` {commodity_id}, `ean_lookup` {ean_list}, `facets` {category_id}, `hierarchical_filter`, `commodity_lists`, `commodity_list` {list_id}, `cost_estimate`, `delivery_countries`, `web_after_payment_dialog` {order_id}, `order_part`/`after_order_payments` {order_id, part_id}, `order2_info`, `order_helpdesk_questions`, `user_review` {commodity_id}, `discussion_posts` {commodity_id}, `premium_trial` {user_id}, `validate_login_name` {email}, `validate_isic` {card_number, name}, `o3_info`, `quick_order_summary` {user_id, commodity_id, pgrik, ucik}, `user_navigation` {user_id}, `search` {search_term}, `category` {category_id}, `branches` {latitude, longitude}, `url_info` {url}, `anonymous_orders` {invoice_number}, `anonymous_order` {order_id}, `home_categories` (requires the server-side pgri/ui query values — copy them from an upstream `self` href in a navigation response, e.g. `?pgri=p__…&ui=u__…`), `zip_codes`, `web_zip_codes` {input}, `visitor_navigation`, `catalog_user_navigation`. Required arguments are checked before any request; a missing or non-numeric one is refused with an `Invalid arguments` error. " +
             "This tool never accepts arbitrary URLs or credentials, and never mutates state. " +
             "Account-scoped operations " + AUTH_PREREQ + " Returns the raw upstream envelope (`err`/`msg`/`data`); `err:1` with a `msg` is an Alza-side validation (e.g. unknown product id).",
           inputSchema: {
@@ -138,7 +138,13 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["mobile_read"],
         },
-        async (args) => wrap("mobile_read", async () => result(await apiAccount(deps).read(args.operation, args.args ?? {}))),
+        async (args) => wrap("mobile_read", async () => {
+          const out = result(await apiAccount(deps).read(args.operation, args.args ?? {}));
+          if (args.operation === "user_data" && isAnonymousUserData(out.structuredContent)) {
+            out.content[0]!.text = `${ANONYMOUS_NOTE}\n\n${out.content[0]!.text}`;
+          }
+          return out;
+        }),
       );
     },
   };
@@ -152,15 +158,18 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
           description:
             "Start a two-step mutation by returning a one-time confirmation token bound to exactly one action. This call itself sends nothing to Alza. " +
             "Use it before the high-impact typed mutations — `register` (action `register`), `address_upsert` (`address_create` or `address_edit`), `address_delete` (`address_delete`), `pay_after_order` (`after_order_payment`), `web_place_order` (`web_place_order`), `web_pay_after_order` (`web_after_order_payment`), `cancel_order` (`cancel_order`), `review_submit` (`review_submit`), `subscription_activate` (`subscription_activate`), `subscription_update_installment` (`subscription_update_installment`), `upload_attachment` (`attachment_upload`), `watchdog_set` (`watchdog_set`), `watchdog_delete` (`watchdog_delete`) — and before any low-risk `mutate_list` action (" + LOW_RISK_ACTIONS.map((a) => "`" + a + "`").join(", ") + "). " +
-            "Pass the returned token as `confirmation_token` on the matching call; the token is single-use — the first call that presents it spends it, even if that call fails, so prepare a new one to retry — and only valid for the exact action you prepared. " +
+            "Pass `payload`: exactly the arguments you will send to that tool, all except `confirmation_token` (for `mutate_list`, the object you will pass as its `payload`). The token is bound to the action and to that payload — a call with different arguments is refused and spends the token. " +
+            "Pass the returned token as `confirmation_token` on the matching call; the token is single-use — the first call that presents it spends it, even if that call fails, so prepare a new one to retry — and it expires 5 minutes after it is issued (`expiresAt`). " +
+            "Each action has its own pending token: preparing the same action again replaces its earlier token, tokens prepared for other actions stay valid. " +
             "Do not use for read-only tools, and not for `add_to_cart` (which is a low-risk cart write that needs no token).",
           inputSchema: {
             action: z.enum([...LOW_RISK_ACTIONS, ...HIGH_IMPACT_ACTIONS, ...TYPED_LOW_RISK_ACTIONS]).describe("Which mutation you are about to perform; the token will only be accepted by that action's tool."),
+            payload: jsonObject.describe("The exact arguments of the mutation call, without `confirmation_token` — e.g. cancel_order: {order_id, part_id, hash, reason}; mutate_list coupon_add: {coupon: \"CODE\"}. Show these to the user when asking for confirmation; the call must repeat them unchanged (omitted defaulted arguments are fine)."),
           },
           annotations: { readOnlyHint: true, idempotentHint: false, destructiveHint: false, openWorldHint: false },
           outputSchema: OUTPUT_SCHEMAS["prepare_mutation"],
         },
-        async (args) => wrap("prepare_mutation", async () => result(apiAccount(deps).prepareMutation(args.action))),
+        async (args) => wrap("prepare_mutation", async () => result(apiAccount(deps).prepareMutation(args.action, args.payload))),
       );
     },
   };
@@ -179,10 +188,10 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             "Side effect: persists the change on the user's Alza account. Example: `mutate_list({action: \"coupon_add\", confirmation_token: \"...\", payload: {coupon: \"WELCOME10\"}})`.",
           inputSchema: {
             action: z.enum(LOW_RISK_ACTIONS).describe("Which whitelisted mutation to execute; determines the expected `payload` shape."),
-            confirmation_token: z.string().min(32).describe("One-time token from `prepare_mutation` prepared with this same `action`."),
+            confirmation_token: z.string().min(32).describe("One-time token from `prepare_mutation` prepared with this same `action` and this same `payload`."),
             payload: jsonObject.describe("Mutation payload matching the mobile DTO for `action`, e.g. coupon_add: {coupon: \"CODE\"}; coupon_remove: {couponId: 123}; basket_update: {basket_id: 1, flag: true}."),
           },
-          annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
+          annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: true, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["mutate_list"],
         },
         async (args) => wrap("mutate_list", async () => result(await apiAccount(deps).mutateList(args.action, args.confirmation_token, args.payload))),
@@ -313,12 +322,13 @@ export function createAccountTools(deps: ToolDeps): RegisterableTool[] {
             "Run the read-side of the mobile checkout (sendOrder1 + delivery/payment-group reads) and return a one-time checkout token plus totals. " +
             "Use after `delivery_options`/`select_pickup_point` to preview fees and the final order shape before committing, and to obtain the token that `place_order` requires. " +
             "This never submits the order. " +
+            "Not read-only: it runs Alza's first checkout step (`sendOrder1`, which starts the server-side checkout state that `place_order` continues) and replaces any earlier checkout token (valid 5 minutes). " +
             "Requires a non-empty cart. " +
             AUTH_PREREQ + " Note: the mobile submission step (`sendOrder3`) currently returns HTTP 500 (https://github.com/lukabudik/alza-mcp/blob/main/docs/gap-analysis.md G1/G5) — the known-working submission path is `web_place_order`.",
           inputSchema: {
             selected_delivery_option_id: z.number().int().optional().describe("Delivery option id from `delivery_options` to preview that specific delivery method. Omit for the server default."),
           },
-          annotations: { readOnlyHint: true, idempotentHint: false, destructiveHint: false, openWorldHint: true },
+          annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["checkout_preview"],
         },
         async (args) => wrap("checkout_preview", async () => withConciseText(await apiAccount(deps).previewOrder(args.selected_delivery_option_id), formatCheckoutPreview)),

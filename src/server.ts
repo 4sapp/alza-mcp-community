@@ -1,12 +1,13 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ZodError } from "zod";
+import { CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { Catalog } from "./domain/catalog.js";
 import { MobileAccount } from "./domain/mobile-account.js";
 import { Pickup } from "./domain/pickup.js";
 import { Alternatives } from "./domain/alternatives.js";
 import { Reviews } from "./domain/reviews.js";
 import { AlzaBrowser } from "./infra/browser.js";
-import { ConfigurationError, NotFoundError, OutcomeUnknownError, UpstreamError } from "./infra/errors.js";
+import { AlzaRejectedError, AuthenticationError, ConfigurationError, NotFoundError, OutcomeUnknownError, UpstreamError, UserError, truncateInput } from "./infra/errors.js";
 import { log } from "./infra/logger.js";
 import { findProductPrompt } from "./prompts/find-product.js";
 import { createProductResource } from "./resources/product.js";
@@ -32,7 +33,7 @@ import { MobileApi } from "./infra/mobile-api.js";
 import { ImpersonateTransport, cfFetch } from "./infra/impersonate-transport.js";
 import type { ToolResult } from "./tools/types.js";
 
-const VERSION = "0.4.0";
+export const VERSION = "0.4.0";
 
 export interface BuildOptions {
   baseUrl?: string;
@@ -152,6 +153,8 @@ export function buildServer(opts: BuildOptions = {}): BuildResult {
     }),
   });
 
+  hardenToolCalls(server);
+
   const productResource = createProductResource(catalog);
   server.registerResource(
     productResource.name,
@@ -184,20 +187,67 @@ const REPORT_HINT =
 
 /** Errors caused by the request itself: no point asking the maintainers about them. */
 function isUserError(err: unknown): boolean {
-  return err instanceof ZodError || err instanceof NotFoundError || err instanceof ConfigurationError;
+  return (
+    err instanceof ZodError ||
+    err instanceof NotFoundError ||
+    err instanceof ConfigurationError ||
+    err instanceof UserError ||
+    err instanceof AuthenticationError ||
+    err instanceof AlzaRejectedError
+  );
+}
+
+/** `path: message` per issue, bounded: enums and long messages are summarised. */
+export function formatZodIssues(issues: ReadonlyArray<{ path: ReadonlyArray<string | number>; message: string; code?: string; options?: unknown; received?: unknown }>): string {
+  const shown = issues.slice(0, 5).map((i) => {
+    const where = i.path.length ? `${i.path.join(".")}: ` : "";
+    if (i.code === "invalid_enum_value" && Array.isArray(i.options)) {
+      const opts = i.options.length > 8 ? `one of ${i.options.length} allowed values (e.g. ${i.options.slice(0, 4).join(", ")})` : `one of ${i.options.join(", ")}`;
+      return `${where}invalid value ${truncateInput(JSON.stringify(i.received), 40)}; expected ${opts}`;
+    }
+    return `${where}${truncateInput(i.message, 160)}`;
+  });
+  return shown.join("; ") + (issues.length > 5 ? `; … ${issues.length - 5} more` : "");
+}
+
+const SDK_VALIDATION = /^(?:MCP error -32602: )?Input validation error: Invalid arguments for tool ([\w.-]+): ([\s\S]*)$/;
+
+/** Rewrite the SDK's raw-JSON input-validation text into `path: message` lines. */
+export function shortenValidationText(text: string): string {
+  const m = SDK_VALIDATION.exec(text);
+  if (!m) return text;
+  try {
+    const issues = JSON.parse(m[2]!);
+    if (Array.isArray(issues) && issues.every((i) => i && typeof i === "object" && typeof i.message === "string")) {
+      return `Invalid arguments for ${m[1]} — ${formatZodIssues(issues.map((i) => ({ ...i, path: Array.isArray(i.path) ? i.path : [] })))}`;
+    }
+  } catch { /* not JSON: keep the SDK text */ }
+  return truncateInput(text, 400);
+}
+
+/** Wrap the SDK's tools/call handler: a missing `arguments` is `{}` (it is optional in
+ * the spec), and the SDK's raw-JSON validation errors become short `path: message` text. */
+function hardenToolCalls(server: McpServer): void {
+  const inner = server.server as unknown as { _requestHandlers?: Map<string, (req: unknown, extra: unknown) => Promise<unknown>> };
+  const original = inner._requestHandlers?.get("tools/call");
+  if (!original) return;
+  server.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+    const params = request.params.arguments === undefined ? { ...request.params, arguments: {} } : request.params;
+    const result = (await original({ ...request, params }, extra)) as { isError?: boolean; content?: Array<{ type: string; text?: string }> };
+    if (result?.isError && Array.isArray(result.content)) {
+      for (const c of result.content) if (c.type === "text" && typeof c.text === "string") c.text = shortenValidationText(c.text);
+    }
+    return result as never;
+  });
 }
 
 export function friendlyError(err: unknown): string {
-  if (err instanceof NotFoundError) return err.message;
+  if (err instanceof NotFoundError || err instanceof UserError) return err.message;
   if (err instanceof UpstreamError) {
     return `Alza upstream error (HTTP ${err.status}). ${err.message}`;
   }
   if (err instanceof ZodError) {
-    const issues = err.issues
-      .slice(0, 5)
-      .map((i) => `${i.path.length ? i.path.join(".") + ": " : ""}${i.message}`)
-      .join("; ");
-    return `Invalid arguments — ${issues}`;
+    return `Invalid arguments — ${formatZodIssues(err.issues as never)}`;
   }
   // Never suggest a blind retry: the request may already have changed something.
   if (err instanceof OutcomeUnknownError) return `Outcome unknown — ${err.message}`;

@@ -19,13 +19,17 @@ import {
   MULTI_ROLES,
   PC_CATEGORY_IDS,
   RAM_CATEGORY_BY_TYPE,
+  REQUIRED_BUILD_ROLES,
   SUGGEST_ORDER,
   allocateBudget,
   checkBuild,
+  checkForcedRole,
   detectRole,
   estimatePower,
+  nonComponentReason,
   normalizeSpecs,
   overallVerdict,
+  rankCandidates,
   rulesForRole,
   socketHintFromBoardName,
   wattageHintFromName,
@@ -66,6 +70,10 @@ export interface BuildReport {
   currency: string;
   /** Codes of parts without a known price (excluded from `total`). */
   unpriced: string[];
+  /** true when `total` leaves out unpriced parts, so it understates the real cost. */
+  totalIncomplete: boolean;
+  /** Required roles (cpu, motherboard, ram, psu, case) the build lacks; non-empty means no "compatible" verdict. */
+  missingRoles: PcRole[];
   verdicts: RuleVerdict[];
   overall: OverallVerdict;
   powerEstimate?: PowerEstimate;
@@ -95,6 +103,7 @@ export interface SuggestInput {
   psuHeadroom?: number;
 }
 
+const DEFAULT_CURRENCY = "CZK";
 export const DEFAULT_MAX_DETAIL_FETCHES = 14;
 export const MAX_DETAIL_FETCHES = 24;
 export const MAX_CHECK_PARTS = 10;
@@ -106,8 +115,13 @@ const CARDS_PER_ROLE = 24;
 export function inStockFrom(availability: string | undefined): boolean | null {
   if (!availability) return null;
   if (/^(InStock|in stock)$/i.test(availability)) return true;
-  if (/OutOfStock|not purchasable|SoldOut|Discontinued|PreOrder|BackOrder/i.test(availability)) return false;
+  if (/out ?of ?stock|not purchasable|sold ?out|discontinued|pre ?order|back ?order/i.test(availability)) return false;
   return null;
+}
+
+/** A usable price: Alza's product pages report a Discontinued / unavailable offer as 0, which is "no price", not a free part. */
+function usablePrice(price: number | undefined): number | undefined {
+  return price !== undefined && Number.isFinite(price) && price > 0 ? price : undefined;
 }
 
 function toPart(role: PcRole, p: Product, specsFetched: boolean, origin?: "fixed" | "suggested"): BuildPartOut {
@@ -116,8 +130,8 @@ function toPart(role: PcRole, p: Product, specsFetched: boolean, origin?: "fixed
     code: p.code,
     name: p.name,
     url: p.url,
-    price: p.price,
-    currency: p.currency,
+    price: usablePrice(p.price),
+    currency: p.currency?.trim() || DEFAULT_CURRENCY,
     availability: p.availability,
     inStock: inStockFrom(p.availability),
     specs: specsFetched ? normalizeSpecs(role, p.params) : {},
@@ -141,11 +155,15 @@ function summarize(parts: BuildPartOut[], verdicts: RuleVerdict[], psuHeadroom: 
   const total = priced.reduce((s, p) => s + (p.price ?? 0), 0);
   const b = toBuildParts(parts);
   const powerEstimate = b.cpu || b.gpu ? estimatePower(b, psuHeadroom) : undefined;
+  const missingRoles = REQUIRED_BUILD_ROLES.filter((r) => !parts.some((p) => p.role === r));
+  const unpriced = parts.filter((p) => p.price === undefined).map((p) => p.code);
   return {
     total,
-    currency: parts[0]?.currency ?? "CZK",
-    unpriced: parts.filter((p) => p.price === undefined).map((p) => p.code),
-    overall: overallVerdict(verdicts),
+    currency: parts.find((p) => p.currency)?.currency ?? DEFAULT_CURRENCY,
+    unpriced,
+    totalIncomplete: unpriced.length > 0,
+    missingRoles,
+    overall: overallVerdict(verdicts, { complete: missingRoles.length === 0 }),
     powerEstimate,
   };
 }
@@ -161,13 +179,20 @@ export class PcBuilder {
     if (dup) throw new Error(`product code ${dup} is listed twice — list each part once`);
 
     const parts: BuildPartOut[] = [];
+    const roleWarnings: string[] = [];
     let detailFetches = 0;
     for (const req of input.parts) {
       const product = await this.catalog.getProductSpecs(req.code.trim());
       detailFetches++;
       const role = req.role ?? detectRole(product.name, product.params);
+      if (req.role) {
+        const c = checkForcedRole(req.role, product.name, product.params);
+        if (c.error) throw new Error(`${req.code}: ${c.error}`);
+        if (c.warning) roleWarnings.push(`${req.code}: ${c.warning}`);
+      }
       if (!role) {
-        const why = product.params?.length ? "from its specs" : "— its product page returned no spec table";
+        const device = nonComponentReason(product.params);
+        const why = device ? `— ${device}` : product.params?.length ? "from its specs" : "— its product page returned no spec table";
         throw new Error(
           `Could not tell which component ${req.code} ("${product.name}") is ${why}. Pass its role explicitly (cpu, motherboard, ram, gpu, storage, case, cooler, psu).`
         );
@@ -178,8 +203,9 @@ export class PcBuilder {
     assertSingleRoles(parts);
     const verdicts = checkBuild(toBuildParts(parts), { psuHeadroom: input.psuHeadroom });
     const notes: string[] = [];
-    const missingRoles = (["cpu", "motherboard", "ram", "psu", "case"] as PcRole[]).filter((r) => !parts.some((p) => p.role === r));
-    if (missingRoles.length) notes.push(`Not a complete build — no ${missingRoles.join(", ")}; rules needing them are not_applicable.`);
+    const missingRoles = REQUIRED_BUILD_ROLES.filter((r) => !parts.some((p) => p.role === r));
+    if (missingRoles.length) notes.push(`Not a complete build — no ${missingRoles.join(", ")}; rules needing them are not_applicable, so "no_conflicts_found" is not a "compatible" verdict.`);
+    notes.push(...roleWarnings);
     if (specless.length) notes.push(`No usable spec rows found for ${specless.map((p) => p.code).join(", ")} — their rules are unknown; retry later or check the product page.`);
     notes.push(...advisoryNotes(parts));
     const oos = parts.filter((p) => p.inStock === false);
@@ -240,11 +266,17 @@ export class PcBuilder {
         continue;
       }
       // Most expensive card within the allocation first (best part the money
-      // buys); for RAM, multi-module kits first (dual channel).
-      const kitFirst = (p: Product) => (role === "ram" && /\bKIT\b|\b[24]\s?[x×]\s?\d+\s?GB/i.test(p.name) ? 0 : 1);
-      const within = cards.filter((p) => p.price! <= target).sort((a, b) => kitFirst(a) - kitFirst(b) || b.price! - a.price!);
-      const over = cards.filter((p) => p.price! > target).sort((a, b) => a.price! - b.price!);
-      const ordered = [...within, ...over];
+      // buys); for RAM, multi-module kits first (dual channel). The budget is
+      // a hard limit: a card may exceed its allocation, but never the money
+      // left after earlier picks minus half the later roles' allocations.
+      const spent = parts.reduce((sum, p) => sum + (p.price ?? 0), 0);
+      const reserve = roles.slice(roles.indexOf(role) + 1).reduce((sum, r) => sum + Math.floor((allocation[r] ?? 0) / 2), 0);
+      const hardCap = Math.max(0, input.budget - spent - reserve);
+      const ordered = rankCandidates(role, cards, Math.min(target, hardCap), hardCap);
+      if (ordered.length === 0) {
+        notes.push(`${role}: every candidate on the first listing page costs more than the ${hardCap} left in the ${input.budget} budget — left empty (cannot fit the budget).`);
+        continue;
+      }
 
       let chosen: BuildPartOut | undefined;
       if (role === "storage") {
@@ -256,9 +288,13 @@ export class PcBuilder {
         const laterRoles = roles.slice(roles.indexOf(role) + 1).filter((r) => r !== "storage").length;
         let fallback: BuildPartOut | undefined; // no fail, but a warn/unknown — used if no clean pass turns up
         let tries = 0;
+        const psuLater = role !== "psu" && roles.slice(roles.indexOf(role) + 1).includes("psu");
         for (const card of ordered) {
           if (tries >= TRIES_PER_ROLE) break;
           if (detailFetches >= maxFetches) break;
+          // Keep one detail fetch for the PSU: it is the last role and the
+          // wattage rule needs its specs.
+          if (psuLater && tries >= 1 && maxFetches - detailFetches <= 1) break;
           // Keep looking past a warn only while the budget still covers the later roles.
           if (fallback && maxFetches - detailFetches <= laterRoles) break;
           detailFetches++;
@@ -277,19 +313,28 @@ export class PcBuilder {
           const relevant = checkBuild(toBuildParts([...parts, candidate]), { psuHeadroom: input.psuHeadroom }).filter((v) =>
             ruleIds.includes(v.rule)
           );
+          if (role === "psu") {
+            const w = candidate.specs.psuWattage?.value;
+            const need = estimatePower(built, input.psuHeadroom).recommendedPsuW;
+            if (w !== undefined && w < need) {
+              notes.push(`psu: skipped ${card.code} (${w} W is below the recommended ${need} W).`);
+              continue;
+            }
+          }
           const failing = relevant.filter((v) => v.verdict === "fail");
           if (failing.length > 0) {
             notes.push(`${role}: skipped ${card.code} (${failing.map((f) => f.rule).join(", ")} failed).`);
             continue;
           }
-          const doubtful = relevant.filter((v) => v.verdict === "warn" || v.verdict === "unknown");
+          const doubtful = relevant.filter((v) => v.verdict === "warn" || v.verdict === "unknown").map((v) => `${v.rule}=${v.verdict}`);
+          if (role === "ram" && candidate.specs.memoryModules?.value === 1) doubtful.push("single_channel");
           if (doubtful.length === 0) {
             chosen = candidate;
             break;
           }
           if (!fallback) {
             fallback = candidate;
-            notes.push(`${role}: ${card.code} only got ${doubtful.map((d) => `${d.rule}=${d.verdict}`).join(", ")} — looking for a clean pass.`);
+            notes.push(`${role}: ${card.code} only got ${doubtful.join(", ")} — looking for a clean pass.`);
           }
         }
         if (!chosen && fallback) {
@@ -331,6 +376,10 @@ export class PcBuilder {
 /** Non-compatibility advice worth surfacing (performance, not fit). */
 export function advisoryNotes(parts: BuildPartOut[]): string[] {
   const notes: string[] = [];
+  const unpriced = parts.filter((p) => p.price === undefined);
+  if (unpriced.length) {
+    notes.push(`Total excludes ${unpriced.length} unpriced part(s) (no usable offer on the product page): ${unpriced.map((p) => p.code).join(", ")}.`);
+  }
   const ram = parts.filter((p) => p.role === "ram");
   const modules = ram.reduce((s, p) => s + (p.specs.memoryModules?.value ?? 0), 0);
   if (ram.length > 0 && modules === 1) notes.push("RAM is a single module — runs single-channel; a 2-module kit is noticeably faster.");
