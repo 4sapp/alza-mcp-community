@@ -145,6 +145,16 @@ describe("#69: ALZA_PROXY_URL validation and no un-proxied fallback", () => {
     expect(plainCalls).toHaveLength(0);
   });
 
+  it("does not send OAuth, AppActions or document downloads over plain fetch when the sidecar is disabled and a proxy is set", async () => {
+    process.env.ALZA_PROXY_URL = "http://proxy.test:3128";
+    // No httpFetch/fetchImpl: what server.ts builds with ALZA_CF_TRANSPORT=0.
+    const api = new MobileApi({ baseUrl: "https://alza.test", loadTokenFile: false });
+    await expect(api.discovery()).rejects.toBeInstanceOf(ConfigurationError);
+    await expect(api.executeAppAction({ form: { href: "https://alza.test/api/x", method: "GET" } } as never)).rejects.toBeInstanceOf(ConfigurationError);
+    await expect(api.downloadDocument("https://pdf.alza.cz/Apps/pdfdoc.asp?d=1")).rejects.toBeInstanceOf(ConfigurationError);
+    expect(plainCalls).toHaveLength(0);
+  });
+
   it("uses the (proxied) browser instead of plain fetch when a proxy is set", async () => {
     process.env.ALZA_PROXY_URL = "http://proxy.test:3128";
     const { httpFetch } = failingSidecar(new TransportUnavailableError("spawn failed"));

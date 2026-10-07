@@ -193,7 +193,10 @@ export class MobileApi {
     url: string,
     init: { method?: string; headers?: Headers | Record<string, string>; body?: string } = {},
   ): Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }> {
-    if (!this.httpFetch) return fetch(url, init as RequestInit);
+    if (!this.httpFetch) {
+      assertDirectFetchAllowed("OAuth");
+      return fetch(url, init as RequestInit);
+    }
     const headers: Record<string, string> = {};
     if (init.headers instanceof Headers) {
       for (const [k, v] of init.headers.entries()) headers[k] = v;
@@ -532,6 +535,7 @@ export class MobileApi {
 
   async executeAppAction(action: ServerAppAction, options: ExecuteAppActionOptions = {}): Promise<unknown> {
     await this.ensureFreshAccessToken();
+    if (!this.fetchImpl) assertDirectFetchAllowed("AppAction execution");
     const executor = new AppActionExecutor({ baseUrl: this.baseUrl, visitorId: this.visitorId, userId: this.userId, authorizationToken: this.accessToken, fetchImpl: this.fetchImpl });
     return executor.execute(action, options);
   }
@@ -1051,6 +1055,7 @@ export class MobileApi {
         buf = Buffer.from(await r.text(), "utf8");
       }
     } else {
+      assertDirectFetchAllowed("document download");
       const r = await fetch(u.toString(), { method: "GET", headers, redirect: "manual" });
       status = r.status;
       contentType = r.headers.get("content-type") ?? null;
@@ -1164,6 +1169,12 @@ function proxyBypassRefused(cause: unknown): ConfigurationError {
       "Check that the proxy is reachable and its credentials are right, and that the curl_cffi sidecar is installed (scripts/ensure-cf-venv.sh).",
     cause,
   );
+}
+
+/** With ALZA_PROXY_URL set, a request must not go out over an un-proxied native
+ * fetch just because the (proxied) sidecar is disabled (ALZA_CF_TRANSPORT=0). */
+function assertDirectFetchAllowed(what: string): void {
+  if (proxyConfigured()) throw proxyBypassRefused(new Error(`the Chrome-fingerprint sidecar is not available for ${what}`));
 }
 
 /** JWT `exp` claim in epoch ms; undefined for opaque or malformed tokens. */
