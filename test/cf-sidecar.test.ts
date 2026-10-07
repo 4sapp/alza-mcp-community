@@ -158,6 +158,19 @@ function sidecarSuite(label: string, pythonFor: () => string | null, setup?: () 
       expect(res.headers.location).toBe("/elsewhere.pdf");
       expect(origin.seen).toHaveLength(1);
     }, 20_000);
+
+    it("does not hold a fast request behind a slow one (no head-of-line blocking)", async () => {
+      const slow = transport.request({ url: `${origin.base}/slow` });
+      await new Promise((r) => setTimeout(r, 50));
+      const started = Date.now();
+      const fast = await transport.request({ url: `${origin.base}/fast` });
+      const fastMs = Date.now() - started;
+      expect(fast.status).toBe(200);
+      // Before the fix the sidecar handled one line at a time, so the fast request
+      // waited for the 1.5 s one.
+      expect(fastMs).toBeLessThan(1000);
+      expect((await slow).body.toString()).toBe("slow");
+    }, 20_000);
   });
 }
 
