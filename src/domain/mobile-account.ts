@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { assertNotRejected } from "../infra/errors.js";
 import type { MobileApi, OAuthStart } from "../infra/mobile-api.js";
 import { APP_ACTION_ROUTE_POLICIES, type AppActionFilePart, type AppActionRoutePolicy, type AppActionValue, type ServerAppAction } from "../infra/app-action.js";
 import { WATCHDOG_ID_RE, parseWatchdogDialog, parseWatchdogList, type WatchdogEntry } from "./watchdog.js";
@@ -497,7 +498,10 @@ export class MobileAccount {
   async afterOrderPayments(orderId: string, partId: string): Promise<unknown> {
     if (typeof orderId !== "string" || orderId.length === 0 || orderId.length > 64) throw new Error("order_id must be a non-empty string (max 64)");
     if (typeof partId !== "string" || partId.length === 0 || partId.length > 64) throw new Error("part_id must be a non-empty string (max 64)");
-    return this.api.afterOrderPayments(orderId, partId);
+    // Issue #79: a 200 `err:1` envelope ("order does not exist") is a failure, not a list.
+    const res = await this.api.afterOrderPayments(orderId, partId);
+    assertNotRejected(res);
+    return res;
   }
 
   /** After-order payment execution (APK `AfterOrderRequestBody`) — money movement, one-time token. */

@@ -60,3 +60,19 @@ export class OutcomeUnknownError extends AlzaError {
     );
   }
 }
+
+/** Alza answered 2xx with an `err:1` envelope: it refused the request (e.g.
+ * "order does not exist"). A user-facing validation, not an alza-mcp bug. */
+export class AlzaRejectedError extends AlzaError {
+  override readonly name = "AlzaRejectedError";
+  constructor(public readonly alzaMessage: string | undefined) {
+    super(`Alza rejected the request (err:1): ${alzaMessage ?? "no message"}`);
+  }
+}
+
+/** Throws AlzaRejectedError when `value` is an `{err: 1, msg}` envelope. */
+export function assertNotRejected(value: unknown): void {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  const env = value as Record<string, unknown>;
+  if (env.err === 1) throw new AlzaRejectedError(typeof env.msg === "string" && env.msg.length > 0 ? env.msg : undefined);
+}

@@ -6,7 +6,7 @@ import { Pickup } from "./domain/pickup.js";
 import { Alternatives } from "./domain/alternatives.js";
 import { Reviews } from "./domain/reviews.js";
 import { AlzaBrowser } from "./infra/browser.js";
-import { ConfigurationError, NotFoundError, OutcomeUnknownError, UpstreamError } from "./infra/errors.js";
+import { AlzaRejectedError, ConfigurationError, NotFoundError, OutcomeUnknownError, UpstreamError } from "./infra/errors.js";
 import { log } from "./infra/logger.js";
 import { findProductPrompt } from "./prompts/find-product.js";
 import { createProductResource } from "./resources/product.js";
@@ -184,7 +184,7 @@ const REPORT_HINT =
 
 /** Errors caused by the request itself: no point asking the maintainers about them. */
 function isUserError(err: unknown): boolean {
-  return err instanceof ZodError || err instanceof NotFoundError || err instanceof ConfigurationError;
+  return err instanceof ZodError || err instanceof NotFoundError || err instanceof ConfigurationError || err instanceof AlzaRejectedError;
 }
 
 export function friendlyError(err: unknown): string {

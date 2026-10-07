@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import type { MobileAccount } from "../domain/mobile-account.js";
+import { assertNotRejected } from "../infra/errors.js";
 import type { RegisterableTool, ToolDeps, ToolResult } from "./types.js";
 import { formatOrder, formatOrderDocument, formatPaymentMethods, formatProfile, jsonResult, withConciseText } from "./account-format.js";
 
@@ -220,7 +221,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
         {
           title: "List after-order payment options",
           description:
-            "List the after-order payment options for an unpaid order part (mobile API getafterorderpayments). " +
+            "List the after-order payment options for an unpaid order part (mobile API getafterorderpayments). An `err:1` answer (e.g. the order does not exist) is returned as an error carrying Alza's message. " +
             "Use when the user has an unpaid order (see `order`) and wants to pay it through the mobile API; pass the returned payment id to `pay_after_order`. " +
             "Do not use for legacy web WCF orders — that path is `web_pay_after_order` (list ids via `mobile_read` operation=`web_after_payment_dialog`). " +
             AUTH_PREREQ + " Read-only.",
@@ -273,7 +274,7 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
             "Read an authenticated user's Alza order: lines, parts, milestones/tracking, and invoice document references; with `part_id`, the part detail as well. " +
             "Use to check order status, delivery tracking, or to collect the order/part ids needed by `after_order_payments`/`pay_after_order`. " +
             "Pass `user_id` — the numeric Alza user id from the `profile`/`user_data` read (`user_id` field); the read is `GET /api/users/{user_id}/v1/orders/{order_id}`. " +
-            AUTH_PREREQ + " Read-only.",
+            AUTH_PREREQ + " Read-only. An `err:1` answer (e.g. unknown order) is returned as an error carrying Alza's message.",
           inputSchema: {
             order_id: z.string().min(1).max(64).describe("The order id to read (e.g. from `order_archive`/`order_search`)."),
             part_id: z.string().min(1).max(64).optional().describe("Order part id for the part detail read. Omit for the whole order."),
@@ -283,7 +284,13 @@ export function createAdvancedTools(deps: ToolDeps): RegisterableTool[] {
           annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
           outputSchema: OUTPUT_SCHEMAS["order"],
         },
-        async (args) => wrap("order", async () => withConciseText(await apiAccount(deps).order(args.order_id, args.part_id, args.user_id, args.initial_created), formatOrder)),
+        async (args) => wrap("order", async () => {
+          const out = (await apiAccount(deps).order(args.order_id, args.part_id, args.user_id, args.initial_created)) as { order?: unknown; part?: unknown };
+          // Issue #79: a nested `err:1` envelope is a failed read, reported as isError with Alza's msg.
+          assertNotRejected(out.order);
+          assertNotRejected(out.part);
+          return withConciseText(out, formatOrder);
+        }),
       );
     },
   };
