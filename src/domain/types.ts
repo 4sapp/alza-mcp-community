@@ -19,6 +19,8 @@ export interface Product {
   availability?: string;
   /** The upstream text (schema.org token or CZ/SK display text) when it differs from `availability`. */
   availabilityText?: string;
+  /** Only set when the page's schema.org JSON-LD availability disagrees with the visible line (`availability` follows the visible line). */
+  jsonLdAvailability?: string;
   /** Rating on 0–5 scale (Alza serves 0–100, we normalize). */
   rating?: number;
   brand?: string;

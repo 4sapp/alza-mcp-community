@@ -53,7 +53,7 @@ function fixedValue(row: (typeof FIXED_ROWS)[number], p: Product): string | null
     case "Price":
       return formatPrice(p);
     case "Availability":
-      return p.availability ? `${p.availability}${p.availabilityText ? ` (${p.availabilityText})` : ""}` : null;
+      return p.availability ? `${p.availability}${p.availabilityText ? ` (${p.availabilityText})` : ""}${p.jsonLdAvailability ? ` [structured data says: ${p.jsonLdAvailability}]` : ""}` : null;
     case "Rating":
       return p.rating !== undefined ? `${Math.round(p.rating * 10) / 10}/5` : null;
     case "Brand":

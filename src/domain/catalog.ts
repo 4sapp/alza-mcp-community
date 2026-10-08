@@ -6,7 +6,7 @@ import { extractJsonLd, findProduct as findJsonLdProduct } from "../infra/jsonld
 import { log } from "../infra/logger.js";
 import type { AppliedRange, Category, CategoryFilters, FacetGroup, FacetValue, Product, ProductParam, SearchResult } from "./types.js";
 import { compareDeals, computeDeal, DEFAULT_DEAL_CATEGORIES, type Deal } from "./deals.js";
-import { availabilityFields } from "./availability.js";
+import { availabilityFields, normalizeAvailability } from "./availability.js";
 import { commodityIdFromUrl } from "./reviews.js";
 
 export type SortOrder = "relevance" | "price-asc" | "price-desc" | "rating" | "newest";
@@ -209,7 +209,9 @@ const PRODUCT_PAGE_EXTRACTOR = `(function() {
     // "Na objednávku – termín upřesníme" (live 2026-10-08, YUBIK002a10), so the
     // rendered text is the source of truth.
     availabilityText: (function() {
-      var el = document.querySelector('.av-container.availability') || document.querySelector('.av-container');
+      // The status itself lives in a button span; the rest of .av-container is
+      // delivery promos ("Zjistit přesný termín doručení…"), so prefer the span.
+      var el = document.querySelector('[data-testid*="availability-availabilityText"]') || document.querySelector('.av-container.availability') || document.querySelector('.av-container');
       var t = el ? (el.textContent || '').replace(/\\u00a0/g, ' ').trim().replace(/\\s+/g, ' ') : '';
       return t || null;
     })(),
@@ -736,7 +738,17 @@ export class Catalog {
       const data = await this.browser.withPage(async (p) => {
         await p.goto(url, { waitUntil: "commit", timeout: 30_000 });
         await p.waitForLoadState("load", { timeout: 30_000 }).catch(() => {});
-        const first = (await p.evaluate(PRODUCT_PAGE_EXTRACTOR)) as ProductPageData;
+        let first = (await p.evaluate(PRODUCT_PAGE_EXTRACTOR)) as ProductPageData;
+        // .av-container is a client-rendered React component: at "load" it is
+        // often still empty (live 2026-10-08), and the JSON-LD fallback then
+        // reports InStock for on-order items. Give it a moment to render.
+        if (first.product && !first.availabilityText) {
+          const ok = await p
+            .waitForSelector('[data-testid*="availability-availabilityText"]', { timeout: 5_000 })
+            .then(() => true)
+            .catch(() => false);
+          if (ok) first = (await p.evaluate(PRODUCT_PAGE_EXTRACTOR)) as ProductPageData;
+        }
         // Render race (live 2026-10-06, PSU AAnagp2a4): the spec table can be
         // missing at "load" and the result would then sit in the cache with no
         // params. When neither spec source has rows, wait briefly for the table
@@ -778,6 +790,7 @@ export class Catalog {
         price: offers.price,
         currency: offers.priceCurrency ?? this.browser.locale.currency,
         ...availabilityFields(data.availabilityText || offers.availability),
+        ...jsonLdConflict(data.availabilityText, offers.availability),
         rating: rating.average,
         brand: pickBrand(ld.brand),
         category: breadcrumbs[breadcrumbs.length - 2],
@@ -966,6 +979,17 @@ interface ProductPageData {
   breadcrumb: Record<string, unknown> | null;
   availabilityText?: string | null;
   params: Array<{ name: string; value: string }>;
+}
+
+/**
+ * When the visible availability line and the JSON-LD token disagree, surface
+ * the JSON-LD value (`jsonLdAvailability`) so callers can see the conflict;
+ * the visible text stays the reported `availability`.
+ */
+export function jsonLdConflict(visible: string | null | undefined, jsonLd: string | undefined): { jsonLdAvailability?: string } {
+  const v = normalizeAvailability(visible);
+  const j = normalizeAvailability(jsonLd);
+  return v && j && v !== j ? { jsonLdAvailability: j } : {};
 }
 
 function normText(s: string): string {

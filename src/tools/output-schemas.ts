@@ -263,6 +263,7 @@ const PRODUCT = z
     currency: z.string(),
     availability: z.string().optional(),
     availabilityText: z.string().optional(),
+    jsonLdAvailability: z.string().optional(),
     rating: z.number().optional(),
     brand: z.string().optional(),
     category: z.string().optional(),

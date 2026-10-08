@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Catalog } from "../src/domain/catalog.js";
+import { Catalog, jsonLdConflict } from "../src/domain/catalog.js";
 import type { AlzaBrowser } from "../src/infra/browser.js";
 
 /**
@@ -56,6 +56,42 @@ describe("Catalog.getProduct vs getProductSpecs", () => {
     const p = await new Catalog(browser).getProduct("GPU1");
     expect(p.availability).toBe("on order");
     expect(p.availabilityText).toBe("Na objednávku – termín upřesníme");
+    expect(p.jsonLdAvailability).toBe("in stock"); // conflict surfaced
+  });
+
+  it("waits for the client-rendered availability line before falling back to JSON-LD", async () => {
+    let reads = 0;
+    let waited = false;
+    const page = {
+      goto: async () => ({ status: () => 200 }),
+      waitForLoadState: async () => undefined,
+      waitForSelector: async (sel: string) => {
+        if (sel.includes("availabilityText")) waited = true;
+        return null;
+      },
+      url: () => "https://www.alza.cz/x.htm",
+      evaluate: async (script: string) => {
+        if (script.includes("data-code")) return "https://www.alza.cz/gpu-d1.htm";
+        reads++;
+        return {
+          title: "GPU", url: "https://www.alza.cz/gpu-d1.htm", h1: "GPU",
+          product: { name: "GPU", sku: "GPU1", offers: { price: 1, priceCurrency: "CZK", availability: "https://schema.org/InStock" }, additionalProperty: [{ name: "a", value: "b" }] },
+          breadcrumb: null,
+          availabilityText: reads === 1 ? null : "Na objednávku – termín upřesníme",
+          params: [{ name: "a", value: "b" }],
+        };
+      },
+    };
+    const browser = { locale: { baseUrl: "https://www.alza.cz", currency: "CZK" }, withPage: async <T>(fn: (p: typeof page) => Promise<T>) => fn(page) } as unknown as AlzaBrowser;
+    const p = await new Catalog(browser).getProduct("GPU1");
+    expect(waited).toBe(true);
+    expect(p.availability).toBe("on order");
+  });
+
+  it("does not flag a conflict when the visible line and JSON-LD agree", () => {
+    expect(jsonLdConflict("Skladem > 5 ks", "InStock")).toEqual({});
+    expect(jsonLdConflict(null, "InStock")).toEqual({});
+    expect(jsonLdConflict("Na objednávku – termín upřesníme", "InStock")).toEqual({ jsonLdAvailability: "in stock" });
   });
 
   it("re-reads the page once when the spec table had not rendered yet", async () => {
