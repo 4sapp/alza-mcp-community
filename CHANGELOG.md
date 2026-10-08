@@ -10,8 +10,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `scripts/local-canary.sh` and `docs/live-canary-local.md`: run the live canary from a home or office machine (where Cloudflare lets the checks through) and report like the workflow: open or comment on one `canary` issue on failure, comment and close it on recovery, file nothing when Cloudflare challenges the machine. It works in its own clone and is anonymous. Schedule it with a systemd user timer or cron.
 
 ### Fixed
+- The server no longer accepts requests before the MCP `initialize` handshake ([#80](https://github.com/lukabudik/alza-mcp-community/issues/80)). The SDK allows them by default, so every transport is now wrapped in `InitializeGuardTransport` (`src/infra/initialize-guard.ts`, used for stdio and for each Streamable HTTP session): until the `initialize` request has been answered successfully, any request other than `initialize` and `ping` gets a JSON-RPC `-32002` ("Server not initialized") error and never reaches a handler, and notifications are ignored. Nothing changes after the handshake; stdio still answers malformed JSON with `-32700`. HTTP already refused sessionless requests, so the guard there only closes the window between session creation and the initialize response. Tests: raw JSON-RPC over an in-memory pair, a stdio child process, and HTTP.
 - `search_products` no longer rejects a blank query for facet or range searches (category + `producer_ids`, `filters` or `ranges`), which go through the category-browse path that ignores the query. The QA blank-query check had broken `scripts/validate-api.ts`' "category + producer" check; the canary now passes it again.
 - `get_product` / `compare_products` / PC-builder stock: availability now comes from the visible `.av-container` line on the product page instead of JSON-LD alone. Live-verified 2026-10-08: YUBIK002a10 had JSON-LD `InStock` while the page said "Na objednávku – termín upřesníme". The JSON-LD value remains the fallback, and `inStockFrom` understands the Czech texts (`Skladem…` true; `Na objednávku`, `Není skladem`, … false).
+
+### Changed
+- SECURITY.md no longer says private vulnerability reporting is available: it may not be enabled on the repository, so the documented interim channel is a minimal public issue (no technical details) asking for a private contact channel.
 
 ## [0.6.0] — 2026-10-07
 
