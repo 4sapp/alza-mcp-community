@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Fixed
+- Follow-up to the visible-availability fix (Refs #99): the page's availability line is a client-rendered component that is often still empty at `load`, which silently fell back to JSON-LD `InStock` for on-order items. `get_product` / `compare_products` now wait up to 5 s for it, read only the status span (not the delivery promo text that used to be appended to `availabilityText`), and set the new `jsonLdAvailability` field (also shown in the text output) when the structured data disagrees with the visible line. Live-verified 2026-10-08 on YUBIK002a10 (on order) and YUBIK002a5 (in stock). Search cards still only know whether a purchase CTA exists.
 - `get_product` / `compare_products` / PC-builder stock: availability now comes from the visible `.av-container` line on the product page instead of JSON-LD alone. Live-verified 2026-10-08: YUBIK002a10 had JSON-LD `InStock` while the page said "Na objednávku – termín upřesníme". The JSON-LD value remains the fallback, and `inStockFrom` understands the Czech texts (`Skladem…` true; `Na objednávku`, `Není skladem`, … false).
 
 ## [0.6.0] — 2026-10-07
