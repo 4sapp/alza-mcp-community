@@ -416,6 +416,7 @@ describe("suggest helpers", () => {
     expect(inStockFrom("in stock")).toBe(true);
     expect(inStockFrom("not purchasable now")).toBe(false);
     expect(inStockFrom("OutOfStock")).toBe(false);
+    expect(inStockFrom("on order")).toBe(false);
     expect(inStockFrom(undefined)).toBeNull();
   });
 });

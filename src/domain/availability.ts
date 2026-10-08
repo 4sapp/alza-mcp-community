@@ -15,6 +15,8 @@ export const AVAILABILITY_LABELS = [
   "in stock",
   "limited stock",
   "preorder",
+  /** Orderable but not in stock ("Na objednávku – termín upřesníme"). */
+  "on order",
   "out of stock",
   "discontinued",
   /** Card-only: the purchase CTA is missing, Alza does not say why. */
@@ -61,6 +63,7 @@ export function normalizeAvailability(raw: string | undefined | null): Availabil
   if (/\b(neni|nie je)\b.*\bsklad/.test(t) || /nedostupn|vyprodan|vypredan/.test(t)) return "out of stock";
   if (/vyrazen|vyradeny|ukonc|discontinu|nevyraba/.test(t)) return "discontinued";
   if (/predobjednav|predobjednat|predprodej|predpredaj/.test(t)) return "preorder";
+  if (/na objednavku/.test(t)) return "on order";
   if (/\bsklad(em|om)\b/.test(t)) return /[<≤]\s*\d|posledni|posledne|last\b/.test(t) ? "limited stock" : "in stock";
   return undefined;
 }
