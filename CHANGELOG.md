@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+- `get_product` / `compare_products` / PC-builder stock: availability now comes from the visible `.av-container` line on the product page instead of JSON-LD alone. Live-verified 2026-10-08: YUBIK002a10 had JSON-LD `InStock` while the page said "Na objednávku – termín upřesníme". The JSON-LD value remains the fallback, and `inStockFrom` understands the Czech texts (`Skladem…` true; `Na objednávku`, `Není skladem`, … false).
+
 ## [0.6.0] — 2026-10-07
 
 ### Changed
