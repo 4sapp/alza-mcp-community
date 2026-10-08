@@ -4,6 +4,7 @@ import { parseCliConfig, startHttpServer } from "./http.js";
 import { informationalOutput, isSetupCf, replyForTransportError } from "./cli.js";
 import { ConfigurationError } from "./infra/errors.js";
 import { resolveLocale } from "./infra/locale.js";
+import { InitializeGuardTransport } from "./infra/initialize-guard.js";
 import { log } from "./infra/logger.js";
 import { proxyFromEnv } from "./infra/proxy.js";
 import { buildServer } from "./server.js";
@@ -54,7 +55,7 @@ async function main(): Promise<void> {
     if (reply) process.stdout.write(reply);
     else log.warn("transport error", { error: err instanceof Error ? err.message : String(err) });
   };
-  await server.connect(transport);
+  await server.connect(new InitializeGuardTransport(transport));
   // The host closed (or crashed and dropped) our stdin: there is nobody left to talk to. Without
   // this, the sidecar's piped stdio and Chromium keep the event loop alive forever.
   process.stdin.on("end", () => void shutdown("stdin end"));
