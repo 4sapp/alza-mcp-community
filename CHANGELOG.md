@@ -6,7 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- `scripts/local-canary.sh` and `docs/live-canary-local.md`: run the live canary from a home or office machine (where Cloudflare lets the checks through) and report like the workflow: open or comment on one `canary` issue on failure, comment and close it on recovery, file nothing when Cloudflare challenges the machine. It works in its own clone and is anonymous. Schedule it with a systemd user timer or cron.
+
 ### Fixed
+- `search_products` no longer rejects a blank query for facet or range searches (category + `producer_ids`, `filters` or `ranges`), which go through the category-browse path that ignores the query. The QA blank-query check had broken `scripts/validate-api.ts`' "category + producer" check; the canary now passes it again.
 - `get_product` / `compare_products` / PC-builder stock: availability now comes from the visible `.av-container` line on the product page instead of JSON-LD alone. Live-verified 2026-10-08: YUBIK002a10 had JSON-LD `InStock` while the page said "Na objednávku – termín upřesníme". The JSON-LD value remains the fallback, and `inStockFrom` understands the Czech texts (`Skladem…` true; `Na objednávku`, `Není skladem`, … false).
 
 ## [0.6.0] — 2026-10-07
