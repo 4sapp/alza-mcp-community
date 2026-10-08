@@ -21,7 +21,8 @@ name: Live canary
 # is on the egress IP's reputation, not the client fingerprint. Two fixes: a
 # self-hosted runner (CANARY_RUNS_ON, below) or an ALZA_PROXY_URL repository
 # secret pointing at a residential/office HTTP(S) or SOCKS5 proxy, which the
-# browser and the curl_cffi sidecar both use. To get a real
+# browser and the curl_cffi sidecar both use. A third option that needs neither:
+# run scripts/local-canary.sh from a home/office machine (docs/live-canary-local.md). To get a real
 # signal, register a self-hosted runner on a residential/office IP and set the
 # repository variable CANARY_RUNS_ON to its label (e.g. `self-hosted`). This is
 # a public repo: read GitHub's self-hosted runner security notes first (a fork

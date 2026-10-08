@@ -244,7 +244,9 @@ export class Catalog {
     if (opts.minPrice !== undefined && opts.maxPrice !== undefined && opts.minPrice > opts.maxPrice) {
       throw new Error(`min_price (${opts.minPrice}) is greater than max_price (${opts.maxPrice}) — no product can match an inverted price range`);
     }
-    if (!opts.browse && !opts.query.trim()) {
+    // Facet and range searches go through the category-browse path, which ignores the query,
+    // so only a plain keyword search needs one.
+    if (!opts.browse && !hasAttrFilters && !(opts.ranges && opts.ranges.length > 0) && !opts.query.trim()) {
       throw new Error("query must not be blank — pass search keywords (or use browse with a category)");
     }
     if (page > MAX_SEARCH_PAGE) {
