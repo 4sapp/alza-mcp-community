@@ -6,6 +6,7 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { AlzaBrowser } from "./infra/browser.js";
 import { ImpersonateTransport } from "./infra/impersonate-transport.js";
 import { ConfigurationError } from "./infra/errors.js";
+import { InitializeGuardTransport } from "./infra/initialize-guard.js";
 import { log } from "./infra/logger.js";
 import { buildServer, type BuildResult } from "./server.js";
 import { TOOLSET_DEFS, type LockedToolsets } from "./tools/toolsets.js";
@@ -255,7 +256,7 @@ export async function startHttpServer(opts: HttpServerOptions = {}): Promise<Run
       if (transport.sessionId) void closeSession(transport.sessionId);
     };
     try {
-      await built.server.connect(transport);
+      await built.server.connect(new InitializeGuardTransport(transport));
       await transport.handleRequest(req, res, body);
     } finally {
       if (!transport.sessionId || !sessions.has(transport.sessionId)) {

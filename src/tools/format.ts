@@ -45,7 +45,7 @@ export function formatProduct(p: Product): string {
     }
     lines.push(line);
   }
-  if (p.availability) lines.push(`Availability: ${p.availability}${p.availabilityText ? ` (${p.availabilityText})` : ""}`);
+  if (p.availability) lines.push(`Availability: ${p.availability}${p.availabilityText ? ` (${p.availabilityText})` : ""}${p.jsonLdAvailability ? ` [structured data says: ${p.jsonLdAvailability}]` : ""}`);
   if (p.rating !== undefined) lines.push(`Rating: ★ ${p.rating.toFixed(1)} / 5`);
   if (p.brand) lines.push(`Brand: ${p.brand}`);
   if (p.category) lines.push(`Category: ${p.category}`);

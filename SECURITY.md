@@ -4,9 +4,11 @@
 
 ## Reporting a vulnerability
 
-Please **do not open a public issue** for a security problem. Report it privately via GitHub's "Report a vulnerability" (Security → Advisories) on this repository. If that is unavailable, open a minimal public issue asking for a private contact channel, without technical details.
+Please **do not put technical details of a security problem in a public issue**.
 
-Include what you found, how to reproduce it, and the affected version. We aim to acknowledge reports within a few days. This is a volunteer project and no bounty is offered.
+GitHub's private vulnerability reporting (Security → Advisories → "Report a vulnerability") may not be enabled on this repository; check whether the button is there, and use it if it is. If it is not, open a **minimal public issue** that says only that you have a security report and asks for a private contact channel (no technical details, no reproduction, no credentials). A maintainer will answer in that issue with a way to send the details privately. There is no dedicated security mailbox at the moment.
+
+When you have a private channel, include what you found, how to reproduce it, and the affected version. We aim to acknowledge reports within a few days. This is a volunteer project and no bounty is offered.
 
 In scope: this repository's code and published package (for example a bypass of the one-time-token guard, leaking credentials or tokens into logs or tool output, unsafe handling of server-provided action URLs, command or path injection).
 
