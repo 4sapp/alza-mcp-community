@@ -7,7 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Fixed
+- The server no longer accepts requests before the MCP `initialize` handshake ([#80](https://github.com/lukabudik/alza-mcp-community/issues/80)). The SDK allows them by default, so every transport is now wrapped in `InitializeGuardTransport` (`src/infra/initialize-guard.ts`, used for stdio and for each Streamable HTTP session): until the `initialize` request has been answered successfully, any request other than `initialize` and `ping` gets a JSON-RPC `-32002` ("Server not initialized") error and never reaches a handler, and notifications are ignored. Nothing changes after the handshake; stdio still answers malformed JSON with `-32700`. HTTP already refused sessionless requests, so the guard there only closes the window between session creation and the initialize response. Tests: raw JSON-RPC over an in-memory pair, a stdio child process, and HTTP.
 - `get_product` / `compare_products` / PC-builder stock: availability now comes from the visible `.av-container` line on the product page instead of JSON-LD alone. Live-verified 2026-10-08: YUBIK002a10 had JSON-LD `InStock` while the page said "Na objednávku – termín upřesníme". The JSON-LD value remains the fallback, and `inStockFrom` understands the Czech texts (`Skladem…` true; `Na objednávku`, `Není skladem`, … false).
+
+### Changed
+- SECURITY.md no longer says private vulnerability reporting is available: it may not be enabled on the repository, so the documented interim channel is a minimal public issue (no technical details) asking for a private contact channel.
 
 ## [0.6.0] — 2026-10-07
 
